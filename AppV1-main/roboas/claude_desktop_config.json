@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "roboas-debugger": {
+      "command": "python",
+      "args": [
+        "C:/Users/domin/Downloads/AppV1/roboas/mcp_debugger_server.py"
+      ]
+    },
+    "roboas-emoji-server": {
+      "command": "python",
+      "args": [
+        "C:/Users/domin/Downloads/AppV1/roboas/mcp_emoji_server.py"
+      ]
+    }
+  }
+  
+}
