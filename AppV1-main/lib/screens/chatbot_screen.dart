@@ -505,8 +505,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     );
   }
 
-  Widget _buildPillBtn(String label, IconData icon, Color color, VoidCallback onTap) {
-    final bool blocked = _isInteractionBlocked;
+  Widget _buildPillBtn(String label, IconData icon, Color color, VoidCallback onTap, {bool allowAlways = false}) {
+    final bool blocked = _isInteractionBlocked && !allowAlways;
     return Padding(
       padding: const EdgeInsets.only(right: 6, bottom: 6),
       child: GestureDetector(
@@ -1276,8 +1276,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 _buildPresetQuestion("Pick up?", "How do I instruct the robotic arm to pick up a screwdriver?"),
                 _buildPresetQuestion("Payload?", "What are the payload limits of this robotic arm?"),
                 _buildPresetQuestion("Calibrate?", "Can you explain the calibration process for the arm?"),
-                _buildPillBtn("Stop", Icons.stop, Colors.amber[700]!, _stopSpeaking),
-                _buildPillBtn("Clear", Icons.delete, Colors.red[600]!, _clearChat),
+                _buildPillBtn("Stop", Icons.stop, Colors.amber[700]!, _stopSpeaking, allowAlways: true),
+                _buildPillBtn("Clear", Icons.delete, Colors.red[600]!, _clearChat, allowAlways: true),
               ],
             ),
           ),
