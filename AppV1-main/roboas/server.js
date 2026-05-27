@@ -523,9 +523,13 @@ app.post('/ask-question', async (req, res) => {
     }
   }
 
+  // Mute wake word during thinking/processing
+  await sendWakewordCommand('mute');
+
   try {
     const relevantDocs = await vectorStore.similaritySearch(question, 3);
     if (!relevantDocs.length) {
+      await sendWakewordCommand('unmute');
       return res.json({ success: true, answer: "I couldn't find relevant information in the document." });
     }
 
@@ -541,6 +545,7 @@ app.post('/ask-question', async (req, res) => {
             `Make it clear in your response that the information comes from the document. ` +
             `For example: "Wow! According to the document..." or "I'm happy to tell you that the PDF states..."\n` +
             `CRITICAL IDENTITY RULE: NEVER start your response with any introduction (e.g., do NOT say "I am John, your robotic assistant" or "I am John, the LARA 5 assistant"). NEVER repeat your name or role unless the user explicitly asks for it. Start answering the user's question directly and immediately.\n` +
+            `CRITICAL OUTPUT CLEANLINESS: DO NOT output any raw coordinate data (e.g. coordinates like x, y, z), tool arguments, or structured JSON/dictionary info. Always output only what the user asked for in a conversational tone. No technical data info.\n` +
             `IMPORTANT: Do not use hyphens (-) in your response.`
         },
         { role: "user", content: `Document:\n${context}\n\nQuestion:\n${question}` }
@@ -551,8 +556,10 @@ app.post('/ask-question', async (req, res) => {
 
     const answer = cleanChatbotResponse(completion.data.choices[0].message.content);
     const emoji = await getStatusEmoji("answering");
+    await sendWakewordCommand('unmute');
     res.json({ success: true, answer, emoji, persona: currentPersona });
   } catch (err) {
+    await sendWakewordCommand('unmute');
     const errorDetails = err.response ? JSON.stringify(err.response.data) : err.message;
     console.error('❌ Error in /ask-question:', errorDetails);
     res.status(500).json({ success: false, message: 'AI failed to respond.', error: errorDetails });
@@ -634,10 +641,32 @@ function cleanChatbotResponse(text) {
   return cleaned;
 }
 
+function sendWakewordCommand(action) {
+  return new Promise((resolve) => {
+    try {
+      const ws = new WebSocket('ws://localhost:8003');
+      ws.on('open', () => {
+        ws.send(JSON.stringify({ action }));
+        ws.close();
+        resolve(true);
+      });
+      ws.on('error', (err) => {
+        // Suppress connection errors if server is not fully spawned yet
+        resolve(false);
+      });
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
 // === GPT-Powered Chat (Voice + Tools) ===
 app.post('/ask-gpt', async (req, res) => {
   const question = req.body.question;
   if (!question) return res.status(400).json({ success: false, message: 'No question provided.' });
+
+  // Mute wake word during thinking/processing
+  await sendWakewordCommand('mute');
 
   try {
     let contextStr = "";
@@ -662,6 +691,9 @@ CRITICAL IDENTITY RULES:
 CRITICAL DUCKDUCKGO / INTERNET ACCESS RULES:
 - You DO have direct, real-time access to the internet/web search via the 'search_web' tool (powered by DuckDuckGo and Wikipedia).
 - When asked about search engines, DuckDuckGo, or internet access, you MUST clearly, confidently, and enthusiastically declare that you CAN query DuckDuckGo directly in real-time. Never deny having internet search access or claim you are limited to static knowledge.
+
+CRITICAL OUTPUT CLEANLINESS:
+- Do NOT output raw coordinates (e.g. x, y, z values), technical tool arguments, or structured JSON/dictionary info. Keep your responses purely conversational, natural, and concise. Speak about actions in plain English, not data info.
 
 IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr
       },
@@ -870,10 +902,12 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr
     if (chatHistory.length > 10) chatHistory = chatHistory.slice(-10);
 
     sendProgress(null); // Clear progress overlay
+    await sendWakewordCommand('unmute');
     res.json({ success: true, answer: answerText, emoji, persona: currentPersona });
 
   } catch (err) {
     sendProgress(null); // Clear progress overlay on error
+    await sendWakewordCommand('unmute');
     const errorDetails = err.response ? JSON.stringify(err.response.data) : err.message;
     console.error('❌ AI Chat Error:', errorDetails);
     res.status(500).json({ success: false, message: 'AI failed to respond.', error: errorDetails });
@@ -1019,6 +1053,9 @@ app.post('/ask-claude', async (req, res) => {
   const { question } = req.body;
   if (!question) return res.status(400).json({ success: false, message: 'No question provided.' });
 
+  // Mute wake word during thinking/processing
+  await sendWakewordCommand('mute');
+
   try {
     const recentTools = toolCallLog.slice(-10); // Last 10 tool calls
     const toolSummary = recentTools.length === 0
@@ -1040,8 +1077,10 @@ app.post('/ask-claude', async (req, res) => {
 
     const answer = message.content[0].text;
     console.log(`🧠 Claude response: ${answer.substring(0, 80)}...`);
+    await sendWakewordCommand('unmute');
     res.json({ success: true, answer, toolLog: recentTools });
   } catch (err) {
+    await sendWakewordCommand('unmute');
     console.error('❌ Claude error:', err.message);
     res.status(500).json({ success: false, message: err.message });
   }

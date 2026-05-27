@@ -3,6 +3,7 @@ import logging
 import base64
 import json
 import urllib.request
+import ast
 from typing import Any
 
 from mcp.server import Server
@@ -11,6 +12,7 @@ from mcp.server.sse import SseServerTransport
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 import uvicorn
 
 try:
@@ -497,12 +499,39 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     }))]
 
                 # ── Stage 5: Re-photograph after relocation ───────────────────
-                # Robot signals requires_redetection — take fresh photo and
-                # re-detect so Qwen's next action uses the updated scene.
-                logger.info("[Stage 5] Re-photographing after relocation...")
-                ok = capture_image(CAPTURE_PATH)
+                # Robot signals requires_redetection — check if it already returned
+                # the fresh detections. If not, capture image and re-detect.
+                logger.info("[Stage 5] Re-photographing check after relocation...")
+                
+                def extract_fresh_detections(res_dict):
+                    try:
+                        if not isinstance(res_dict, dict):
+                            return None
+                        content = res_dict.get("result", {}).get("content", [])
+                        if content and len(content) > 0:
+                            text_val = content[0].get("text", "")
+                            if "Completed:" in text_val:
+                                dict_str = text_val.split("Completed:", 1)[1].strip()
+                                parsed = ast.literal_eval(dict_str)
+                                if isinstance(parsed, dict) and "fresh_detections" in parsed:
+                                    return parsed["fresh_detections"]
+                    except Exception as parse_err:
+                        logger.error(f"Error parsing reloc_result: {parse_err}")
+                    return None
+
+                fresh_dets = extract_fresh_detections(reloc_result)
+                ok = False
+                if fresh_dets is not None:
+                    logger.info(f"Using fresh detections from robot relocate tool: {len(fresh_dets)} items")
+                    detections = fresh_dets
+                    ok = True
+                else:
+                    logger.info("No fresh detections returned from robot; performing fallback capture...")
+                    ok = capture_image(CAPTURE_PATH)
+                    if ok:
+                        detections = run_yolo_obb_detection(CAPTURE_PATH)
+
                 if ok:
-                    detections = run_yolo_obb_detection(CAPTURE_PATH)
                     target_detections = [d for d in detections if d["object_name"] == target]
                     if target_detections:
                         target_det = target_detections[0]
@@ -554,9 +583,30 @@ async def handle_sse(request: Request):
 async def handle_messages(request: Request):
     await sse.handle_post_message(request.scope, request.receive, request._send)
 
+async def handle_capture_and_detect(request: Request):
+    """
+    REST endpoint to trigger camera capture and return YOLO detections.
+    Called by Robot MCP after relocation.
+    """
+    logger.info("REST /api/capture-and-detect called.")
+    ok = capture_image(CAPTURE_PATH)
+    if not ok:
+        return JSONResponse({
+            "status": "ERROR",
+            "message": "Failed to capture image from webcam.",
+            "detections": [],
+        }, status_code=500)
+
+    detections = run_yolo_obb_detection(CAPTURE_PATH)
+    return JSONResponse({
+        "status": "ok",
+        "detections": detections,
+    })
+
 app = Starlette(routes=[
     Route("/sse",      endpoint=handle_sse),
     Route("/messages", endpoint=handle_messages, methods=["POST"]),
+    Route("/api/capture-and-detect", endpoint=handle_capture_and_detect, methods=["GET", "POST"]),
 ])
 
 if __name__ == "__main__":

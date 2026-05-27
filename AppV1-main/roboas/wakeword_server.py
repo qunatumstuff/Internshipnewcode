@@ -90,7 +90,7 @@ def vosk_worker(loop):
         print(f"Error in Vosk worker or audio stream: {e}", file=sys.stderr)
 
 async def handle_client(websocket):
-    global active_persona
+    global active_persona, is_muted
     connected_clients.add(websocket)
     print(f"Client connected to Wake Word Server! Total: {len(connected_clients)}")
     
