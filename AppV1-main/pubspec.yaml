@@ -41,6 +41,9 @@ dependencies:
   path_provider: ^2.1.5
   http_parser: ^4.1.2
   path: ^1.9.0
+  google_fonts: ^8.1.0
+  flutter_markdown: ^0.7.7+1
+  web_socket_channel: ^3.0.1
 
 dev_dependencies:
   flutter_test:
@@ -65,9 +68,14 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/video4_720p.mp4
-    - assets/video3_720p.mp4
+    - assets/john_talking.mp4
+    - assets/johnidle.mp4
+    - assets/johnthinking.mp4
+    - assets/linda_talking.mp4
+    - assets/lindaidle.mp4
+    - assets/lindathinking.mp4
     - assets/singaporepoly.png
+    - assets/inbgsplogo.png
   #   - images/a_dot_ham.jpeg
 
   # An image asset can refer to one or more resolution-specific "variants", see

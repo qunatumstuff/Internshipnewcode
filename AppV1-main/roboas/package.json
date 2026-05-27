@@ -12,12 +12,14 @@
     "@langchain/openai": "^0.0.13",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "cors": "^2.8.5",
+    "duck-duck-scrape": "^2.2.7",
     "express": "^4.21.2",
     "langchain": "^0.0.206",
     "multer": "^1.4.5-lts.1",
     "openai": "^3.3.0",
     "pdf-parse": "^1.1.1",
-    "serialport": "^13.0.0"
+    "serialport": "^13.0.0",
+    "ws": "^8.21.0"
   },
   "engines": {
     "node": ">=18.0.0"

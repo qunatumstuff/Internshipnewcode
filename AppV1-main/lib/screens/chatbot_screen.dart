@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:html' as html; // Used for Audio playback on Web
+import 'dart:html' as html;
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:web_audio' as wa;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -9,12 +12,17 @@ import 'package:http_parser/http_parser.dart';
 import 'package:record/record.dart';
 import 'package:video_player/video_player.dart';
 
+// ─── Data ────────────────────────────────────────────────────────────────────
+
+enum AvatarState { idle, thinking, talking }
+
 class ChatMessage {
   final String text;
   final bool isUser;
   ChatMessage({required this.text, required this.isUser});
 }
 
+// ─── Widget ───────────────────────────────────────────────────────────────────
 
 class ChatbotScreen extends StatefulWidget {
   const ChatbotScreen({super.key});
@@ -23,49 +31,108 @@ class ChatbotScreen extends StatefulWidget {
   State<ChatbotScreen> createState() => _ChatbotScreenState();
 }
 
-class _ChatbotScreenState extends State<ChatbotScreen> {
+class _ChatbotScreenState extends State<ChatbotScreen>
+    with TickerProviderStateMixin {
+  // ── Audio ──
   final _audioRecorder = AudioRecorder();
-  late VideoPlayerController _videoController;
-  bool _isVideoInitialized = false;
-  
   html.AudioElement? _audioElement;
   bool _isTtsInProgress = false;
-  
+  bool _isCcEnabled = true;
+  String? _currentSubtitleText;
+
+  // ── Video ──
+  VideoPlayerController? _videoController;
+  bool _isVideoInitialized = false;
+  AvatarState _avatarState = AvatarState.talking; // start on talking
+  String _loadedVideoPersona = 'john'; // tracks which persona the current video belongs to
+  bool _isSwitchingVideo = false;
+  AvatarState? _pendingAvatarState;
+  bool _pendingForce = false;
+
+  // ── UI ──
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  
-  String _answeringEmoji = "😊";
-  String _idleEmoji = "🤖";
-  String _currentPersona = "john";
-  String get _pName => _currentPersona == "linda" ? "Linda" : "John";
-
-  final List<ChatMessage> _messages = [
-    ChatMessage(text: "John(🤖): Welcome! I'm John, your robotic assistant. How can I assist you today?", isUser: false)
-  ];
-  
+  final ScrollController _subtitleScrollController = ScrollController();
   bool _isListening = false;
   bool _isMenuVisible = false;
 
-  // On Web: use '' (relative URL) so it always calls back the same server it was loaded from.
-  // This means it works on localhost, ngrok, or any other host automatically.
-  String get baseUrl {
-    if (kIsWeb) return ''; // Relative URL - works with ngrok, localhost, any host
-    return 'http://localhost:3000';
-  }
+  // ── Hands-free / wake-word ──
+  bool _isHandsFreeMode = false;
+  html.WebSocket? _wakeWordSocket;
 
+  // ── VAD Silence Detection ──
+  html.MediaStream? _vadStream;
+  wa.AudioContext? _vadAudioContext;
+  wa.AnalyserNode? _vadAnalyser;
+  Timer? _vadTimer;
+
+  // ── Persona ──
+  String _currentPersona = 'john';
+  String get _pName => _currentPersona == 'linda' ? 'Linda' : 'John';
+  bool get _isInteractionBlocked =>
+      _isTtsInProgress ||
+      _avatarState == AvatarState.thinking ||
+      (_messages.isNotEmpty && _messages.last.text == '__THINKING__');
+
+  // ── Emojis ──
+  String _answeringEmoji = '🤖';
+  String _idleEmoji = '🤗';
+
+  // ── Messages ──
+  final List<ChatMessage> _messages = [];
+
+  // ── Visualizer animation ──
+  late AnimationController _vizController;
+
+  // ── URL ──
   static const bool kIsWeb = identical(0, 0.0);
+  String get baseUrl => kIsWeb ? '' : 'http://localhost:3000';
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Lifecycle
+  // ─────────────────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
+    _vizController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    )..repeat(reverse: true);
+    _connectWakeWord(); // Start WebSocket connection instantly & concurrently on boot!
     _initializeAll();
   }
+
+  @override
+  void dispose() {
+    _vizController.dispose();
+    _audioRecorder.dispose();
+    _videoController?.dispose();
+    _textController.dispose();
+    _scrollController.dispose();
+    _subtitleScrollController.dispose();
+    _audioElement?.pause();
+    _audioElement = null;
+    _wakeWordSocket?.close();
+    super.dispose();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Init
+  // ─────────────────────────────────────────────────────────────────────────
 
   Future<void> _initializeAll() async {
     await _fetchEmojis();
     await _initRecorder();
-    await _initVideo();
-    _speak("Welcome! I'm $_pName, your robotic assistant. How can I help you today?");
+    // Load talking video first so it's ready immediately
+    await _loadVideo(AvatarState.talking);
+    const welcome =
+        "Welcome! I'm John, your robotic assistant. How can I help you today?";
+    setState(() {
+      _messages.add(ChatMessage(
+          text: 'John($_idleEmoji): $welcome', isUser: false));
+    });
+    _speak(welcome);
   }
 
   Future<void> _fetchEmojis() async {
@@ -75,146 +142,823 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         final data = json.decode(res.body);
         if (mounted) {
           setState(() {
-            _answeringEmoji = data['answering'] ?? "😊";
-            _idleEmoji = data['idle'] ?? "🤖";
-            if (_messages.length == 1 && _messages[0].text.startsWith("John(")) {
-              _messages[0] = ChatMessage(
-                text: "$_pName($_idleEmoji): Welcome! I'm $_pName, your robotic assistant. How can I assist you today?",
-                isUser: false
-              );
-            }
+            _answeringEmoji = data['answering'] ?? '🤖';
+            _idleEmoji = data['idle'] ?? '🤗';
           });
         }
       }
     } catch (e) {
-      debugPrint("❌ Failed to bind emojis from MCP server: $e");
-    }
-  }
-
-  Future<void> _initVideo() async {
-    String assetPath = _currentPersona == "linda" ? 'assets/video3_720p.mp4' : 'assets/video4_720p.mp4';
-    _videoController = VideoPlayerController.asset(assetPath);
-    try {
-      await _videoController.initialize();
-      await _videoController.setVolume(0); // MUTE OLD COMMERCIAL LOOP!
-      await _videoController.setLooping(true); // Loop while we talk
-      setState(() {
-        _isVideoInitialized = true;
-      });
-    } catch (e) {
-      debugPrint("Video init error: $e");
-    }
-  }
-
-  Future<void> _switchVideoMode() async {
-    final oldController = _videoController;
-    String assetPath = _currentPersona == "linda" ? 'assets/video3_720p.mp4' : 'assets/video4_720p.mp4';
-    _videoController = VideoPlayerController.asset(assetPath);
-    try {
-      await _videoController.initialize();
-      await _videoController.setVolume(0); // MUTE OLD COMMERCIAL LOOP!
-      await _videoController.setLooping(true);
-      setState(() {}); // Trigger rebuild to show new controller
-      // clean up old
-      Future.delayed(const Duration(milliseconds: 200), () => oldController.dispose());
-    } catch (e) {
-      debugPrint("Video swap error: $e");
-    }
-  }
-
-  Future<void> _speak(String text) async {
-    if (text.isEmpty) return;
-    debugPrint('📢 John is speaking: $text');
-
-    setState(() {
-      _isTtsInProgress = true;
-    });
-
-    try {
-      final url = '$baseUrl/tts';
-      _audioElement?.pause();
-      
-      final response = await http.post(
-        Uri.parse(url),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'text': text, 'persona': _currentPersona}),
-      );
-
-      if (response.statusCode == 200) {
-        final contentType = response.headers['content-type'] ?? 'audio/mpeg';
-        final blob = html.Blob([response.bodyBytes], contentType);
-        final blobUrl = html.Url.createObjectUrlFromBlob(blob);
-        _audioElement = html.AudioElement(blobUrl);
-        
-        _audioElement!.onEnded.listen((_) {
-          if (mounted) {
-            setState(() {
-              _isTtsInProgress = false;
-              // Reset video
-              _videoController.pause();
-              _videoController.seekTo(Duration.zero);
-              
-              // Update status message when speaking finishes
-              if (_messages.isNotEmpty && _messages.last.text.contains("($_answeringEmoji): Answering...")) {
-                _messages[_messages.length - 1] = ChatMessage(text: "$_pName($_idleEmoji): Please ask a question", isUser: false);
-              }
-            });
-          }
-          html.Url.revokeObjectUrl(blobUrl);
-        });
-
-        _audioElement!.onError.listen((e) {
-          debugPrint('❌ Audio error: $e');
-          if (mounted) {
-            setState(() {
-              _isTtsInProgress = false;
-            });
-          }
-          html.Url.revokeObjectUrl(blobUrl);
-        });
-
-        _videoController.setLooping(true);
-        _videoController.play();
-        await _audioElement!.play();
-      } else {
-        debugPrint('❌ TTS Server Error: ${response.statusCode}');
-        if (mounted) {
-          setState(() {
-            _isTtsInProgress = false;
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint('❌ TTS Exception: $e');
-      if (mounted) {
-        setState(() {
-          _isTtsInProgress = false;
-        });
-      }
+      debugPrint('Emoji fetch failed: $e');
     }
   }
 
   Future<void> _initRecorder() async {
     try {
-      if (await _audioRecorder.hasPermission()) {
-        debugPrint('Microphone permission granted.');
-      } else {
-        debugPrint('Microphone permission denied.');
-      }
+      await _audioRecorder.hasPermission();
     } catch (e) {
-      debugPrint('Recorder Init Exception: $e');
+      debugPrint('Recorder init error: $e');
     }
   }
 
-  @override
-  void dispose() {
-    _audioRecorder.dispose();
-    _videoController.dispose();
-    _textController.dispose();
-    _scrollController.dispose();
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Video state machine
+  // ─────────────────────────────────────────────────────────────────────────
+
+  String _assetFor(String persona, AvatarState state) {
+    if (persona == 'linda') {
+      switch (state) {
+        case AvatarState.idle:
+          return 'assets/lindaidle.mp4';
+        case AvatarState.thinking:
+          return 'assets/lindathinking.mp4';
+        case AvatarState.talking:
+          return 'assets/linda_talking.mp4';
+      }
+    } else {
+      switch (state) {
+        case AvatarState.idle:
+          return 'assets/johnidle.mp4';
+        case AvatarState.thinking:
+          return 'assets/johnthinking.mp4';
+        case AvatarState.talking:
+          return 'assets/john_talking.mp4';
+      }
+    }
+  }
+
+  Future<void> _loadVideo(AvatarState state, {bool force = false}) async {
+    if (force) {
+      _pendingForce = true;
+    }
+    if (_isSwitchingVideo) {
+      _pendingAvatarState = state;
+      debugPrint('🎬 [VIDEO] Queued pending state: $state (switching in progress)');
+      return;
+    }
+    final useForce = force || _pendingForce;
+    _pendingForce = false;
+
+    // Skip reload if same state, same persona, already initialized, and not forced
+    if (_avatarState == state && _loadedVideoPersona == _currentPersona && _isVideoInitialized && !useForce) {
+      debugPrint('🎬 [VIDEO] Skipping reload - already on $state for $_currentPersona');
+      return;
+    }
+    _isSwitchingVideo = true;
+    _pendingAvatarState = null;
+
+    final targetAsset = _assetFor(_currentPersona, state);
+    debugPrint('🎬 [VIDEO] Loading $state for $_currentPersona -> $targetAsset');
+    final oldController = _videoController;
+    final newController = VideoPlayerController.asset(targetAsset);
+
+    try {
+      await newController.initialize();
+      await newController.setVolume(0);
+      await newController.setLooping(true);
+      await newController.play();
+
+      if (mounted) {
+        setState(() {
+          _videoController = newController;
+          _avatarState = state;
+          _loadedVideoPersona = _currentPersona;
+          _isVideoInitialized = true;
+        });
+      }
+      debugPrint('🎬 [VIDEO] ✅ Now playing: $state for $_currentPersona');
+
+      // Dispose old controller after a short delay to avoid flicker
+      if (oldController != null) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        oldController.dispose();
+      }
+    } catch (e) {
+      debugPrint('🎬 [VIDEO] ❌ Error loading ($state): $e');
+      newController.dispose();
+    } finally {
+      _isSwitchingVideo = false;
+      // If a state switch request arrived while we were loading, handle it now
+      if (_pendingAvatarState != null) {
+        final nextState = _pendingAvatarState!;
+        _pendingAvatarState = null;
+        debugPrint('🎬 [VIDEO] Processing pending state: $nextState');
+        await _loadVideo(nextState, force: _pendingForce);
+      }
+    }
+  }
+
+  Future<void> _setAvatarState(AvatarState state) async {
+    // Always reload if persona changed
+    final personaChanged = _loadedVideoPersona != _currentPersona;
+    if (_avatarState == state && !personaChanged && _isVideoInitialized) return;
+    await _loadVideo(state, force: personaChanged);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  TTS / Stop
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Send a mute/unmute command to the wake word server so it doesn't
+  /// trigger on the robot's own voice.
+  void _setWakeWordMute(bool muted) {
+    if (_wakeWordSocket != null &&
+        _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+      _wakeWordSocket!.send(json.encode({
+        'action': muted ? 'mute' : 'unmute',
+      }));
+      debugPrint('🔇 Wake-word mute=${muted}');
+    }
+  }
+
+  Future<void> _speak(String text) async {
+    if (text.isEmpty) return;
+    _setWakeWordMute(true); // Mute wake word while speaking
+    if (mounted) {
+      setState(() {
+        _isTtsInProgress = true;
+        _currentSubtitleText = text;
+      });
+    }
+    await _setAvatarState(AvatarState.talking);
+
+    try {
+      // Kill any previous audio/speech synthesis sessions
+      _audioElement?.pause();
+      _audioElement?.src = '';
+      try {
+        html.window.speechSynthesis?.cancel();
+      } catch (_) {}
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/tts'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'text': text, 'persona': _currentPersona}),
+      );
+
+      if (response.statusCode == 200) {
+        final contentType =
+            response.headers['content-type'] ?? 'audio/mpeg';
+        final blob = html.Blob([response.bodyBytes], contentType);
+        final blobUrl = html.Url.createObjectUrlFromBlob(blob);
+
+        final audio = html.AudioElement(blobUrl);
+        _audioElement = audio;
+
+        audio.onEnded.listen((_) async {
+          if (_audioElement != audio) return; // Ignore events from old audio sessions
+          html.Url.revokeObjectUrl(blobUrl);
+          _setWakeWordMute(false); // Re-enable wake word
+          if (mounted) {
+            setState(() {
+              _isTtsInProgress = false;
+              _currentSubtitleText = null;
+            });
+          }
+          await _setAvatarState(AvatarState.idle);
+        });
+
+        audio.onError.listen((_) {
+          if (_audioElement != audio) return; // Ignore events from old audio sessions
+          html.Url.revokeObjectUrl(blobUrl);
+          debugPrint('⚠️ Audio playback encountered an error event.');
+        });
+
+        audio.play().catchError((playError) {
+          if (_audioElement != audio) return;
+          debugPrint('🔇 Autoplay warning caught or audio play failed: $playError. Falling back to Native TTS...');
+          _speakNative(text);
+        });
+      } else {
+        debugPrint('⚠️ Server TTS returned status ${response.statusCode}, falling back to Native TTS...');
+        _speakNative(text);
+      }
+    } catch (e) {
+      debugPrint('⚠️ TTS HTTP/Network error: $e, falling back to Native TTS...');
+      _speakNative(text);
+    }
+  }
+
+  /// Free Web Speech API local fallback (bypasses all backend audio key failures and crashes!)
+  void _speakNative(String text) {
+    try {
+      final synth = html.window.speechSynthesis;
+      if (synth == null) return;
+      _setWakeWordMute(true); // Mute wake word while speaking
+
+      // Cancel any ongoing speech
+      synth.cancel();
+
+      final utterance = html.SpeechSynthesisUtterance(text);
+      
+      // Set voice based on current persona
+      final voices = synth.getVoices();
+      html.SpeechSynthesisVoice? selectedVoice;
+      for (var voice in voices) {
+        final name = voice.name?.toLowerCase() ?? '';
+        final lang = voice.lang?.toLowerCase() ?? '';
+        if (_currentPersona == 'linda') {
+          if (lang.contains('en') && (name.contains('female') || name.contains('google us english') || name.contains('zira') || name.contains('hazel') || name.contains('samantha'))) {
+            selectedVoice = voice;
+            break;
+          }
+        } else {
+          if (lang.contains('en') && (name.contains('male') || name.contains('david') || name.contains('google uk english male') || name.contains('mark') || name.contains('microsoft david'))) {
+            selectedVoice = voice;
+            break;
+          }
+        }
+      }
+      if (selectedVoice != null) {
+        utterance.voice = selectedVoice;
+      }
+
+      utterance.onStart.listen((_) {
+        debugPrint('📢 [NATIVE TTS] Started speaking...');
+        if (mounted) {
+          setState(() {
+            _isTtsInProgress = true;
+            _currentSubtitleText = text;
+          });
+        }
+      });
+
+      utterance.onEnd.listen((_) async {
+        debugPrint('📢 [NATIVE TTS] Completed successfully.');
+        _setWakeWordMute(false);
+        if (mounted) {
+          setState(() {
+            _isTtsInProgress = false;
+            _currentSubtitleText = null;
+          });
+        }
+        await _setAvatarState(AvatarState.idle);
+      });
+
+      utterance.onError.listen((e) async {
+        debugPrint('❌ [NATIVE TTS] Error: $e');
+        _setWakeWordMute(false);
+        if (mounted) {
+          setState(() {
+            _isTtsInProgress = false;
+            _currentSubtitleText = null;
+          });
+        }
+        await _setAvatarState(AvatarState.idle);
+      });
+
+      synth.speak(utterance);
+    } catch (e) {
+      debugPrint('❌ [NATIVE TTS] Exception: $e');
+    }
+  }
+
+  Future<void> _stopSpeaking() async {
+    // Completely kill audio
     _audioElement?.pause();
+    _audioElement?.src = '';
     _audioElement = null;
-    super.dispose();
+    try {
+      html.window.speechSynthesis?.cancel();
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _isTtsInProgress = false;
+        _currentSubtitleText = null;
+      });
+    }
+    await _setAvatarState(AvatarState.idle);
+  }
+
+  Future<void> _emergencyStop() async {
+    // Kill audio
+    _audioElement?.pause();
+    _audioElement?.src = '';
+    _audioElement = null;
+    try {
+      html.window.speechSynthesis?.cancel();
+    } catch (_) {}
+
+    // Stop recording
+    if (_isListening) {
+      try {
+        await _audioRecorder.stop();
+      } catch (_) {}
+    }
+    _stopSilenceDetection();
+
+    // Reset wake word socket if connected
+    if (_isHandsFreeMode) {
+      _disconnectWakeWord();
+      _isHandsFreeMode = false;
+    }
+
+    // Set avatar to idle
+    await _setAvatarState(AvatarState.idle);
+
+    if (mounted) {
+      setState(() {
+        _isListening = false;
+        _isTtsInProgress = false;
+        _currentSubtitleText = null;
+        _textController.clear();
+        _messages.add(ChatMessage(
+            text: "⚠️ System: EMERGENCY STOP triggered! All operations halted.",
+            isUser: false));
+      });
+    }
+    _scrollToBottom();
+  }
+
+  void _clearChat() {
+    setState(() {
+      _messages.clear();
+      final welcome =
+          "Welcome! I'm John, your robotic assistant. How can I help you today?";
+      _messages.add(ChatMessage(
+          text: '$_pName($_idleEmoji): $welcome', isUser: false));
+    });
+    _scrollToBottom();
+  }
+
+  Widget _buildPresetQuestion(String label, String fullQuestion) {
+    final bool blocked = _isInteractionBlocked;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6, bottom: 6),
+      child: GestureDetector(
+        onTap: blocked ? () {} : () => _sendMessage(fullQuestion),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: blocked ? Colors.grey[300] : const Color(0xFFE0F7FA), // Light blue/teal tint matching screenshot
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: blocked ? Colors.black38 : Colors.black87,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPillBtn(String label, IconData icon, Color color, VoidCallback onTap) {
+    final bool blocked = _isInteractionBlocked;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6, bottom: 6),
+      child: GestureDetector(
+        onTap: blocked ? () {} : onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: blocked ? Colors.grey[400] : color,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: blocked ? Colors.black38 : Colors.white, size: 14),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: blocked ? Colors.black38 : Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Microphone / transcription
+  // ─────────────────────────────────────────────────────────────────────────
+
+  Future<void> _listen() async {
+    // Do not allow listening while chatbot is speaking
+    if (_isTtsInProgress) return;
+    _unlockAudio();
+
+    if (!_isListening) {
+      if (!await _audioRecorder.hasPermission()) return;
+
+      setState(() {
+        _isListening = true;
+        _textController.text = 'Listening...';
+      });
+
+      const config = RecordConfig(
+        encoder: AudioEncoder.wav,
+        sampleRate: 44100,
+        bitRate: 128000,
+        numChannels: 1,
+      );
+      await _audioRecorder.start(config, path: '');
+      if (_isHandsFreeMode) {
+        _startSilenceDetection();
+      }
+    } else {
+      setState(() {
+        _isListening = false;
+        _textController.text = 'Transcribing...';
+      });
+      await _setAvatarState(AvatarState.thinking);
+      _stopSilenceDetection();
+
+      // Small pad so trailing syllables are captured
+      await Future.delayed(const Duration(milliseconds: 400));
+      final path = await _audioRecorder.stop();
+
+      if (path == null) {
+        if (mounted) setState(() => _textController.clear());
+        await _setAvatarState(AvatarState.idle);
+        return;
+      }
+
+      try {
+        final audioBytes = await http.readBytes(Uri.parse(path));
+        final req = http.MultipartRequest(
+            'POST', Uri.parse('$baseUrl/transcribe'));
+        req.files.add(http.MultipartFile.fromBytes(
+          'audio',
+          audioBytes,
+          filename: 'audio.wav',
+          contentType: MediaType('audio', 'wav'),
+        ));
+
+        final res = await req.send();
+        if (res.statusCode == 200) {
+          final body = await res.stream.bytesToString();
+          final data = json.decode(body);
+          if (data['success'] == true && data['text'] != null) {
+            if (mounted) _textController.clear();
+            _sendMessage(data['text'] as String);
+          } else {
+            throw Exception('Empty transcription');
+          }
+        } else {
+          throw Exception('Transcription HTTP ${res.statusCode}');
+        }
+      } catch (e) {
+        debugPrint('Transcription error: $e');
+        if (mounted) {
+          setState(() {
+            _messages.add(ChatMessage(
+                text: 'System Error: Transcription failed.', isUser: false));
+            _textController.clear();
+          });
+        }
+        await _setAvatarState(AvatarState.idle);
+      }
+    }
+  }
+
+  void _startSilenceDetection() async {
+    try {
+      final mediaDevices = html.window.navigator.mediaDevices;
+      if (mediaDevices == null) {
+        debugPrint('⚠️ VAD: mediaDevices is null');
+        return;
+      }
+      final stream = await mediaDevices.getUserMedia({'audio': true});
+      _vadStream = stream;
+
+      final audioCtx = wa.AudioContext();
+      _vadAudioContext = audioCtx;
+      
+      final analyser = audioCtx.createAnalyser();
+      _vadAnalyser = analyser;
+      analyser.fftSize = 256;
+
+      final source = audioCtx.createMediaStreamSource(stream);
+      source.connectNode(analyser);
+
+      final bufferLength = analyser.frequencyBinCount ?? 0;
+      final dataArray = Float32List(bufferLength);
+
+      bool hasSpoken = false;
+      int silenceTicks = 0;
+      int maxTicks = 100; // 10 seconds max timeout (100 * 100ms)
+      int elapsedTicks = 0;
+
+      const silenceThreshold = 0.008; 
+      const speechThreshold = 0.02;
+
+      _vadTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) async {
+        if (!mounted || !_isListening) {
+          _stopSilenceDetection();
+          return;
+        }
+
+        elapsedTicks++;
+        if (elapsedTicks >= maxTicks) {
+          debugPrint('⏱️ VAD: Max recording duration reached (10s). Auto-stopping...');
+          _stopSilenceDetection();
+          if (_isListening) {
+            await _listen();
+          }
+          return;
+        }
+
+        analyser.getFloatTimeDomainData(dataArray);
+
+        double sum = 0;
+        for (int i = 0; i < bufferLength; i++) {
+          sum += dataArray[i] * dataArray[i];
+        }
+        double rms = math.sqrt(sum / bufferLength);
+
+        if (rms > speechThreshold) {
+          if (!hasSpoken) {
+            hasSpoken = true;
+            debugPrint('🗣️ VAD: Speech detected (RMS: ${rms.toStringAsFixed(4)})');
+          }
+          silenceTicks = 0;
+        } else if (rms < silenceThreshold) {
+          if (hasSpoken) {
+            silenceTicks++;
+            if (silenceTicks >= 15) { // 1.5 seconds of silence
+              debugPrint('🤫 VAD: Silence detected after speech (1.5s). Auto-stopping...');
+              _stopSilenceDetection();
+              if (_isListening) {
+                await _listen();
+              }
+            }
+          } else {
+            if (elapsedTicks >= 40) { // 4 seconds of initial silence
+              debugPrint('⏱️ VAD: No speech detected for 4s. Auto-stopping...');
+              _stopSilenceDetection();
+              if (_isListening) {
+                await _listen();
+              }
+            }
+          }
+        } else {
+          silenceTicks = 0;
+        }
+      });
+
+    } catch (e) {
+      debugPrint('⚠️ VAD Initialization failed: $e');
+      _vadTimer = Timer(const Duration(seconds: 5), () async {
+        if (mounted && _isListening) {
+          debugPrint('⏱️ VAD Fallback: Auto-stopping after 5s...');
+          await _listen();
+        }
+      });
+    }
+  }
+
+  void _stopSilenceDetection() {
+    _vadTimer?.cancel();
+    _vadTimer = null;
+    
+    try {
+      final tracks = _vadStream?.getTracks();
+      if (tracks != null) {
+        for (var track in tracks) {
+          track.stop();
+        }
+      }
+    } catch (_) {}
+    _vadStream = null;
+
+    try {
+      _vadAudioContext?.close();
+    } catch (_) {}
+    _vadAudioContext = null;
+    _vadAnalyser = null;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Hands-free / wake-word
+  // ─────────────────────────────────────────────────────────────────────────
+
+  void _toggleHandsFree() {
+    setState(() => _isHandsFreeMode = !_isHandsFreeMode);
+  }
+
+  String get _wakeWordUrl {
+    final host = html.window.location.hostname ?? '';
+    final socketHost = host.isEmpty ? 'localhost' : host;
+    final port = html.window.location.port;
+    final wsPort = (port != null && port.isNotEmpty) ? ':$port' : '';
+    // Use the same protocol scheme - wss for https, ws for http
+    final protocol = html.window.location.protocol == 'https:' ? 'wss' : 'ws';
+    return '$protocol://$socketHost$wsPort/wakeword';
+  }
+
+  void _connectWakeWord() {
+    try {
+      final wsUrl = _wakeWordUrl;
+      debugPrint('Connecting to wake-word WS at: $wsUrl');
+      _wakeWordSocket = html.WebSocket(wsUrl);
+      
+      _wakeWordSocket!.onOpen.listen((_) {
+        debugPrint('✅ Wake-word WS connected successfully');
+        _wakeWordSocket!.send(json.encode({
+          'action': 'set_persona',
+          'persona': _currentPersona
+        }));
+      });
+
+      _wakeWordSocket!.onMessage.listen((event) async {
+        debugPrint('📥 Wake-word WS raw message: ${event.data}');
+        try {
+          final data = json.decode(event.data.toString());
+          if (data['event'] == 'WAKE_WORD_DETECTED') {
+            debugPrint("🎯 [WAKE WORD DETECTED]");
+            if (!_isTtsInProgress && !_isListening) {
+              if (mounted) {
+                setState(() {
+                  _isHandsFreeMode = true; // Auto-enable hands-free mode
+                });
+              }
+              await _listen(); // start recording
+            }
+          }
+        } catch (e) {
+          debugPrint('Error parsing wake word message: $e');
+        }
+      });
+
+      _wakeWordSocket!.onError.listen((_) {
+        debugPrint('❌ Wake-word WS error');
+      });
+
+      _wakeWordSocket!.onClose.listen((_) {
+        debugPrint('⚠️ Wake-word WS closed');
+        // Auto-reconnect after 5 seconds
+        Future.delayed(const Duration(seconds: 5), () {
+          if (mounted && (_wakeWordSocket == null || _wakeWordSocket!.readyState != html.WebSocket.OPEN)) {
+            _connectWakeWord();
+          }
+        });
+      });
+    } catch (e) {
+      debugPrint('Wake-word connect error: $e');
+    }
+  }
+
+  void _disconnectWakeWord() {
+    _wakeWordSocket?.close();
+    _wakeWordSocket = null;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Send message
+  // ─────────────────────────────────────────────────────────────────────────
+
+  Future<void> _sendMessage(String text) async {
+    if (text.trim().isEmpty) return;
+    _unlockAudio();
+
+    setState(() => _messages.add(ChatMessage(text: text, isUser: true)));
+    _textController.clear();
+    _scrollToBottom();
+    
+    // Add a thinking placeholder in chat
+    final thinkingIndex = _messages.length;
+    setState(() => _messages.add(ChatMessage(text: '__THINKING__', isUser: false)));
+    _scrollToBottom();
+    
+    await _setAvatarState(AvatarState.thinking);
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/ask-gpt'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'question': text}),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          final answer = data['answer'] as String;
+          final newPersona = data['persona'] as String?;
+          if (newPersona != null && newPersona != _currentPersona) {
+            setState(() => _currentPersona = newPersona);
+            _loadVideo(_avatarState, force: true);
+            if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+              _wakeWordSocket!.send(json.encode({
+                'action': 'set_persona',
+                'persona': newPersona
+              }));
+            }
+          }
+          // Replace thinking placeholder with actual response
+          setState(() {
+            if (thinkingIndex < _messages.length && _messages[thinkingIndex].text == '__THINKING__') {
+              _messages[thinkingIndex] = ChatMessage(text: '$_pName($_answeringEmoji): $answer', isUser: false);
+            } else {
+              _messages.add(ChatMessage(text: '$_pName($_answeringEmoji): $answer', isUser: false));
+            }
+          });
+          _scrollToBottom();
+          _speak(answer);
+        } else {
+          throw Exception(data['message'] ?? 'Unknown error');
+        }
+      } else {
+        throw Exception('Server error ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Send error: $e');
+      const errMsg =
+          "Oops! I couldn't process that right now. Please try again!";
+      // Replace thinking placeholder with error
+      setState(() {
+        if (thinkingIndex < _messages.length && _messages[thinkingIndex].text == '__THINKING__') {
+          _messages[thinkingIndex] = ChatMessage(text: '$_pName(❌): $errMsg', isUser: false);
+        } else {
+          _messages.add(ChatMessage(text: '$_pName(❌): $errMsg', isUser: false));
+        }
+      });
+      _speak(errMsg);
+    } finally {
+      _scrollToBottom();
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  PDF upload
+  // ─────────────────────────────────────────────────────────────────────────
+
+  Future<void> _uploadPdf() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+      withData: true,
+    );
+    if (result == null || result.files.single.bytes == null) return;
+
+    final bytes = result.files.single.bytes!;
+    final filename = result.files.single.name;
+    setState(() => _messages.add(
+        ChatMessage(text: 'System: Uploading PDF...', isUser: false)));
+
+    try {
+      final req =
+          http.MultipartRequest('POST', Uri.parse('$baseUrl/upload-pdf'));
+      req.files.add(http.MultipartFile.fromBytes(
+        'pdf',
+        bytes,
+        filename: filename,
+        contentType: MediaType('application', 'pdf'),
+      ));
+      final res = await req.send();
+      setState(() => _messages.add(ChatMessage(
+          text: res.statusCode == 200
+              ? 'System: PDF uploaded successfully!'
+              : 'System Error: Upload failed (${res.statusCode}).',
+          isUser: false)));
+    } catch (e) {
+      setState(() => _messages.add(
+          ChatMessage(text: 'System Error: PDF upload failed.', isUser: false)));
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Persona switch
+  // ─────────────────────────────────────────────────────────────────────────
+
+  Future<void> _switchPersona(String newPersona) async {
+    if (_isTtsInProgress) return;
+    _unlockAudio();
+    setState(() => _currentPersona = newPersona);
+
+    await _loadVideo(AvatarState.talking, force: true); // Force talking animation on switch
+
+    try {
+      await http.post(
+        Uri.parse('$baseUrl/switch-persona'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'persona': newPersona}),
+      );
+      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+        _wakeWordSocket!.send(json.encode({
+          'action': 'set_persona',
+          'persona': newPersona
+        }));
+      }
+    } catch (_) {}
+
+    final greeting = newPersona == 'linda'
+        ? "Hi! I'm Linda, your robotic assistant. How can I help you today?"
+        : "Hey! I'm John, your robotic assistant. What can I do for you?";
+    setState(() => _messages.add(
+        ChatMessage(text: '$_pName($_idleEmoji): $greeting', isUser: false)));
+    _scrollToBottom();
+    _speak(greeting);
   }
 
   void _scrollToBottom() {
@@ -229,348 +973,374 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
   }
 
-  Future<void> _stopSpeaking() async {
-    _audioElement?.pause();
-    _videoController.pause();
-    _videoController.seekTo(Duration.zero);
-    
-    if (mounted) {
-      setState(() {
-        _isTtsInProgress = false;
-        // Update status if manually stopped too
-        if (_messages.isNotEmpty && _messages.last.text.contains("($_answeringEmoji): Answering...")) {
-          _messages[_messages.length - 1] = ChatMessage(text: "$_pName($_idleEmoji): Please ask a question", isUser: false);
-        }
-      });
-    }
-  }
-
-  Future<void> _sendMessage(String text) async {
-    if (text.trim().isEmpty) return;
-
-    setState(() {
-      _messages.add(ChatMessage(text: text, isUser: true));
-    });
-    _textController.clear();
-    _scrollToBottom();
-
+  void _unlockAudio() {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/ask-gpt'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'question': text}),
-      ).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          final answer = data['answer'];
-          final newPersona = data['persona'];
-          if (newPersona != null && newPersona != _currentPersona) {
-             _currentPersona = newPersona;
-             await _switchVideoMode();
-          }
-          setState(() {
-            _messages.add(ChatMessage(text: "$_pName($_answeringEmoji): Answering...", isUser: false));
-          });
-          _speak(answer);
-        } else {
-          throw Exception(data['message'] ?? 'Unknown error');
-        }
-      } else {
-        throw Exception('Server error: ${response.statusCode}');
-      }
-    } catch (e) {
-      debugPrint('Error sending message: $e');
-      final errorMsg = "Oops! I couldn't process that right now. Don't worry, please try again, I'm ready to help!";
-      setState(() {
-        _messages.add(ChatMessage(text: "$_pName(❌): $errorMsg", isUser: false));
-      });
-      _speak(errorMsg);
-    } finally {
-      _scrollToBottom();
-    }
+      final dummy = html.AudioElement()
+        ..src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+      dummy.play().catchError((_) {});
+    } catch (_) {}
   }
 
-  Future<void> _listen() async {
-    if (_isTtsInProgress) return;
-
-    if (!_isListening) {
-      if (!await _audioRecorder.hasPermission()) return;
-
-      setState(() {
-        _isListening = true;
-        _textController.text = "Listening...";
-      });
-
-      const config = RecordConfig(
-        encoder: AudioEncoder.wav,
-        sampleRate: 44100,
-        bitRate: 128000,
-        numChannels: 1,
-      );
-      await _audioRecorder.start(config, path: '');
-    } else {
-      setState(() {
-        _isListening = false;
-        _textController.text = "Transcribing...";
-      });
-
-      // 400ms audio-pad so trailing syllables don't get abruptly cut off.
-      await Future.delayed(const Duration(milliseconds: 400));
-      final path = await _audioRecorder.stop();
-      if (path == null) {
-        setState(() {
-          _textController.clear();
-        });
-        return;
-      }
-
-      try {
-        final audioBytes = await http.readBytes(Uri.parse(path));
-        
-        var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/transcribe'));
-        request.files.add(http.MultipartFile.fromBytes(
-          'audio', 
-          audioBytes,
-          filename: 'audio.wav',
-          contentType: MediaType('audio', 'wav'),
-        ));
-
-        var response = await request.send();
-        if (response.statusCode == 200) {
-          var resBody = await response.stream.bytesToString();
-          var data = json.decode(resBody);
-          if (data['success'] == true && data['text'] != null) {
-            final recognizedText = data['text'];
-            _textController.clear();
-            _sendMessage(recognizedText);
-          } else {
-            throw Exception('Transcription empty');
-          }
-        } else {
-          throw Exception('Transcription failed: ${response.statusCode}');
-        }
-      } catch (e) {
-        debugPrint('Transcription Error: $e');
-        setState(() {
-          _messages.add(ChatMessage(text: "System Error: Transcription failed.", isUser: false));
-          _textController.clear();
-        });
-      }
-    }
-  }
-
-  Future<void> _uploadPdf() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
-      withData: true,
-    );
-
-    if (result != null && result.files.single.bytes != null) {
-      final bytes = result.files.single.bytes!;
-      final filename = result.files.single.name;
-      
-      setState(() {
-        _messages.add(ChatMessage(text: "System: Uploading PDF...", isUser: false));
-      });
-
-      try {
-        var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/upload-pdf'));
-        request.files.add(http.MultipartFile.fromBytes(
-          'pdf', 
-          bytes,
-          filename: filename,
-          contentType: MediaType('application', 'pdf'),
-        ));
-
-        var response = await request.send();
-        if (response.statusCode == 200) {
-          setState(() {
-            _messages.add(ChatMessage(text: "System: PDF uploaded successfully!", isUser: false));
-          });
-        } else {
-          throw Exception('Upload failed: ${response.statusCode}');
-        }
-      } catch (e) {
-        debugPrint('Upload Error: $e');
-        setState(() {
-          _messages.add(ChatMessage(text: "System Error: PDF upload failed.", isUser: false));
-        });
-      }
-    }
-  }
-
-  Widget _buildTopLogo() {
-    return Positioned(
-      top: 20,
-      right: 20,
-      child: SafeArea(
-        child: Image.asset('assets/singaporepoly.png', height: 40),
-      ),
-    );
-  }
-
-  Widget _buildBackButton() {
-    return Positioned(
-      top: 20,
-      left: 20,
-      child: SafeArea(
-        child: ElevatedButton.icon(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back, size: 16),
-          label: const Text("Back"),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.grey[600],
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          ),
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildPresetQuestion(String question) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: OutlinedButton(
-        onPressed: () => _sendMessage(question),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: Colors.green, width: 1.5),
-          backgroundColor: Colors.blue[50]?.withValues(alpha: 0.8),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-          minimumSize: const Size(double.infinity, 40),
-        ),
-        child: Text(
-          question,
-          style: const TextStyle(color: Colors.black87),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExpandedChatInterface() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.grey[850]?.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_messages.isNotEmpty)
-          Text(
-            _messages.last.text,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-            textAlign: TextAlign.center,
-          ),
-        const SizedBox(height: 15),
-        const Text(
-          "Get started with these questions:",
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70),
-        ),
-        const SizedBox(height: 10),
-        _buildPresetQuestion("How do I instruct the robotic arm to pick up a screwdriver?"),
-        _buildPresetQuestion("What are the payload limits of this robotic arm?"),
-        _buildPresetQuestion("Can you explain the calibration process for the arm?"),
-        const SizedBox(height: 15),
-        
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _textController,
-                decoration: InputDecoration(
-                  hintText: "Type a question...",
-                  hintStyle: const TextStyle(color: Colors.green),
-                  filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.9),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25),
-                    borderSide: const BorderSide(color: Colors.grey),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                ),
-                onSubmitted: _sendMessage,
-              ),
-            ),
-            const SizedBox(width: 10),
-            ElevatedButton(
-              onPressed: () => _sendMessage(_textController.text),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green, 
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
-              ),
-              child: const Text("Send"),
-            ),
-            const SizedBox(width: 10),
-            GestureDetector(
-              onTap: _listen,
-              child: CircleAvatar(
-                radius: 24,
-                backgroundColor: _isListening ? Colors.red : Colors.blue,
-                child: const Icon(Icons.mic, color: Colors.white),
-              ),
-            ),
-            const SizedBox(width: 10),
-            ElevatedButton(
-              onPressed: _stopSpeaking,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber, 
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
-              ),
-              child: const Text("Stop"),
-            ),
-            const SizedBox(width: 10),
-            ElevatedButton(
-              onPressed: () => setState(() => _messages.clear()),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent, 
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
-              ),
-              child: const Text("Clear"),
-            ),
-          ],
-        ),
-      ],
-    ),
-    );
-  }
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Build helpers
+  // ─────────────────────────────────────────────────────────────────────────
 
   Widget _buildAvatar() {
-    if (!_isVideoInitialized) {
+    if (!_isVideoInitialized || _videoController == null) {
       return Container(
         color: Colors.white,
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.green),
-        ),
+        child:
+            const Center(child: CircularProgressIndicator(color: Colors.green)),
       );
     }
 
-    return Container(
-      color: Colors.white,
-      width: double.infinity,
-      height: double.infinity,
-      child: FittedBox(
-        fit: BoxFit.cover,
-        child: SizedBox(
-          width: _videoController.value.size.width,
-          height: _videoController.value.size.height,
-          child: VideoPlayer(_videoController),
+    final bool isTalking = _avatarState == AvatarState.talking;
+
+    if (isTalking) {
+      // Full-screen talking video
+      return Container(
+        color: Colors.white,
+        width: double.infinity,
+        height: double.infinity,
+        child: FittedBox(
+          fit: BoxFit.cover,
+          child: SizedBox(
+            width: _videoController!.value.size.width,
+            height: _videoController!.value.size.height,
+            child: VideoPlayer(_videoController!, key: ValueKey(_videoController)),
+          ),
+        ),
+      );
+    } else {
+      // Idle / thinking: 80% size for John, 100% size for Linda (increased by 20%), centered, white background
+      final double factor = _currentPersona == 'linda' ? 1.0 : 0.8;
+      return Container(
+        color: Colors.white,
+        width: double.infinity,
+        height: double.infinity,
+        child: Center(
+          child: FractionallySizedBox(
+            widthFactor: factor,
+            heightFactor: factor,
+            child: FittedBox(
+              fit: BoxFit.contain,
+              child: SizedBox(
+                width: _videoController!.value.size.width,
+                height: _videoController!.value.size.height,
+                child: VideoPlayer(_videoController!, key: ValueKey(_videoController)),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildVisualizer() {
+    return AnimatedBuilder(
+      animation: _vizController,
+      builder: (_, __) {
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(6, (i) {
+            final h = 6.0 +
+                18.0 *
+                    math
+                        .sin((_vizController.value * math.pi * 2) + i * 0.8)
+                        .abs();
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              width: 4,
+              height: h,
+              decoration: BoxDecoration(
+                color: Colors.greenAccent,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+
+  Widget _buildCollapsedBarContent() {
+    final bool isTalking = _isTtsInProgress || _avatarState == AvatarState.talking;
+    if (isTalking) {
+      return Center(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                '$_pName($_answeringEmoji): $_pName is talking ',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            _buildBouncingDots(color: Colors.greenAccent),
+          ],
+        ),
+      );
+    }
+    
+    final bool isThinking = _avatarState == AvatarState.thinking ||
+        (_messages.isNotEmpty && _messages.last.text == '__THINKING__');
+    if (isThinking) {
+      return Center(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                '$_pName($_idleEmoji): $_pName is thinking ',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            _buildBouncingDots(color: Colors.amber),
+          ],
+        ),
+      );
+    }
+    
+    return Row(
+      children: [
+        _circleBtn(
+          _isListening ? Icons.mic : Icons.mic_none,
+          _isInteractionBlocked
+              ? Colors.grey
+              : (_isListening ? Colors.red : Colors.blue),
+          _isInteractionBlocked ? () {} : _listen,
+        ),
+        const SizedBox(width: 10),
+        if (_isListening) ...[
+          _buildVisualizer(),
+          const SizedBox(width: 10),
+        ],
+        Expanded(
+          child: Text(
+            'Ask $_pName anything...',
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Three bouncing dots animation for "Speaking..." and "Thinking..."
+  Widget _buildBouncingDots({Color color = Colors.white}) {
+    return AnimatedBuilder(
+      animation: _vizController,
+      builder: (_, __) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) {
+            final offset = 4.0 *
+                math.sin((_vizController.value * math.pi * 2) + i * 1.2).abs();
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              child: Transform.translate(
+                offset: Offset(0, -offset),
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+
+  Widget _buildChatBubble(ChatMessage msg) {
+    // Thinking placeholder → show bouncing dots
+    if (!msg.isUser && msg.text == '__THINKING__') {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          constraints: const BoxConstraints(maxWidth: 340),
+          decoration: BoxDecoration(
+            color: Colors.grey[800],
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+              bottomLeft: Radius.circular(4),
+              bottomRight: Radius.circular(16),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('$_pName is thinking ',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13, fontStyle: FontStyle.italic)),
+              _buildBouncingDots(color: Colors.amber),
+            ],
+          ),
+        ),
+      );
+    }
+    return Align(
+      alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        constraints: const BoxConstraints(maxWidth: 340),
+        decoration: BoxDecoration(
+          color: msg.isUser ? Colors.green[700] : Colors.grey[800],
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(msg.isUser ? 16 : 4),
+            bottomRight: Radius.circular(msg.isUser ? 4 : 16),
+          ),
+        ),
+        child: Text(
+          msg.text,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
         ),
       ),
     );
   }
+
+  Widget _circleBtn(IconData icon, Color color, VoidCallback onTap,
+      {double radius = 22}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: CircleAvatar(
+        radius: radius,
+        backgroundColor: color,
+        child: Icon(icon, color: Colors.white, size: radius * 0.9),
+      ),
+    );
+  }
+
+  Widget _buildExpandedChat() {
+    return Container(
+      height: 380, // Fixed height!
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.grey[900]!.withOpacity(0.93),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        children: [
+          // ── Chat history ──────────────────────────────────
+          Expanded(
+            child: _messages.isEmpty
+                ? const Center(
+                    child: Text('No messages yet',
+                        style: TextStyle(color: Colors.white38)))
+                : ListView.builder(
+                    controller: _scrollController,
+                    itemCount: _messages.length,
+                    itemBuilder: (_, i) => _buildChatBubble(_messages[i]),
+                  ),
+          ),
+          const SizedBox(height: 8),
+
+          // ── Visualizer when listening ─────────────────────
+          if (_isListening) ...[
+            _buildVisualizer(),
+            const SizedBox(height: 8),
+          ],
+
+          // ── Preset sample questions + Stop + Clear Row ───
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              alignment: WrapAlignment.start,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _buildPresetQuestion("Pick up?", "How do I instruct the robotic arm to pick up a screwdriver?"),
+                _buildPresetQuestion("Payload?", "What are the payload limits of this robotic arm?"),
+                _buildPresetQuestion("Calibrate?", "Can you explain the calibration process for the arm?"),
+                _buildPillBtn("Stop", Icons.stop, Colors.amber[700]!, _stopSpeaking),
+                _buildPillBtn("Clear", Icons.delete, Colors.red[600]!, _clearChat),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // ── Input row ─────────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _textController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                     hintText: 'Type a question...',
+                    hintStyle: const TextStyle(color: Colors.green),
+                    filled: true,
+                    fillColor: Colors.grey[800],
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(25),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onSubmitted: _sendMessage,
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Headphone (hands-free toggle) - green when active (LEFT of mic)
+              _circleBtn(
+                Icons.headphones,
+                _isHandsFreeMode ? Colors.green : Colors.grey[600]!,
+                _toggleHandsFree,
+                radius: 18,
+              ),
+              const SizedBox(width: 6),
+              // Mic
+              _circleBtn(
+                _isListening ? Icons.mic : Icons.mic_none,
+                _isInteractionBlocked
+                    ? Colors.grey
+                    : (_isListening ? Colors.red : Colors.blue),
+                _isInteractionBlocked ? () {} : _listen,
+                radius: 22,
+              ),
+              const SizedBox(width: 6),
+              // Send
+              _circleBtn(
+                Icons.send,
+                _isInteractionBlocked ? Colors.grey : Colors.green,
+                _isInteractionBlocked ? () {} : () => _sendMessage(_textController.text),
+                radius: 22,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Build
+  // ─────────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -578,99 +1348,113 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       backgroundColor: Colors.white,
       body: Stack(
         children: [
-          Positioned.fill(
-            child: _buildAvatar(),
+          // ── Avatar (full screen) ──────────────────────────
+          Positioned.fill(child: _buildAvatar()),
+
+          // ── Logo ──────────────────────────────────────────
+          Positioned(
+            top: 20,
+            right: 20,
+            child: SafeArea(
+                child: Image.asset('assets/singaporepoly.png', height: 40)),
           ),
-          
-          _buildTopLogo(),
-          _buildBackButton(),
 
-          if (_isMenuVisible)
-            Positioned(
-              bottom: 100,
-              left: 20,
-              right: 20,
-              child: _buildExpandedChatInterface(),
-            ),
-
-          if (!_isMenuVisible && _messages.isNotEmpty)
-            Positioned(
-              bottom: 150,
-              left: 100,
-              right: 100,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
-                decoration: BoxDecoration(
-                  color: Colors.grey[900]?.withValues(alpha: 0.8), 
-                  borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: Colors.white24),
-                ),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: _listen,
-                      child: CircleAvatar(
-                        radius: 25,
-                        backgroundColor: _isListening ? Colors.red : Colors.blue,
-                        child: Icon(Icons.mic, color: Colors.white, size: 30),
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      child: Text(
-                        _messages.last.text,
-                        style: const TextStyle(color: Colors.white, fontSize: 16),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
+          // ── E-STOP Button ─────────────────────────────────
+          Positioned(
+            top: 20,
+            right: 170,
+            child: SafeArea(
+              child: ElevatedButton.icon(
+                onPressed: _emergencyStop,
+                icon: const Icon(Icons.warning, size: 18, color: Colors.white),
+                label: const Text('E-STOP',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red[800],
+                  foregroundColor: Colors.white,
+                  elevation: 8,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: const BorderSide(color: Colors.white, width: 2),
+                  ),
                 ),
               ),
             ),
+          ),
 
-          // Persona Switch FAB — bottom left
+          // ── Back button ───────────────────────────────────
           Positioned(
-            bottom: 30,
+            top: 20,
             left: 20,
+            child: SafeArea(
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.arrow_back, size: 16),
+                label: const Text('Back'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey[600],
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20)),
+                ),
+              ),
+            ),
+          ),
+
+          // ── Collapsed status bar (menu hidden) ────────────
+          if (!_isMenuVisible)
+            Positioned(
+              bottom: 76,
+              left: 80,
+              right: 80,
+              height: 68, // Fixed height for consistency and shape!
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 18, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[900]!.withOpacity(0.87),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: _buildCollapsedBarContent(),
+              ),
+            ),
+
+          // ── Expanded chat panel ───────────────────────────
+          if (_isMenuVisible)
+            Positioned(
+              bottom: 88,
+              left: 14,
+              right: 14,
+              child: _buildExpandedChat(),
+            ),
+
+          // ── Persona switch – bottom left ──────────────────
+          Positioned(
+            bottom: 26,
+            left: 16,
             child: GestureDetector(
-              onTap: () async {
-                if (_isTtsInProgress) return;
-                final newPersona = _currentPersona == "john" ? "linda" : "john";
-                setState(() => _currentPersona = newPersona);
-                await _switchVideoMode();
-
-                // Notify backend so voice (TTS) matches the new persona
-                await http.post(
-                  Uri.parse('$baseUrl/switch-persona'),
-                  headers: {'Content-Type': 'application/json'},
-                  body: jsonEncode({'persona': newPersona}),
-                );
-
-                final greeting = newPersona == "linda"
-                    ? "Hi! I'm Linda, your robotic assistant. How can I help you today?"
-                    : "Hey! I'm John, your robotic assistant. What can I do for you?";
-                setState(() {
-                  _messages.add(ChatMessage(
-                    text: "$_pName($_idleEmoji): $greeting",
-                    isUser: false,
-                  ));
-                });
-                _scrollToBottom();
-                _speak(greeting);
-              },
+              onTap: () => _switchPersona(
+                  _currentPersona == 'john' ? 'linda' : 'john'),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
-                  color: _currentPersona == "linda"
+                  color: _currentPersona == 'linda'
                       ? Colors.pink[600]
                       : Colors.blue[700],
                   borderRadius: BorderRadius.circular(30),
                   boxShadow: [
                     BoxShadow(
-                      color: (_currentPersona == "linda" ? Colors.pink : Colors.blue)
-                          .withValues(alpha: 0.5),
-                      blurRadius: 12,
+                      color: (_currentPersona == 'linda'
+                              ? Colors.pink
+                              : Colors.blue)
+                          .withOpacity(0.45),
+                      blurRadius: 10,
                       spreadRadius: 2,
                     ),
                   ],
@@ -679,62 +1463,125 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      _currentPersona == "linda" ? Icons.female : Icons.male,
+                      _currentPersona == 'linda'
+                          ? Icons.female
+                          : Icons.male,
                       color: Colors.white,
-                      size: 24,
+                      size: 20,
+                      key: const ValueKey('persona_icon'),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Text(
-                      _currentPersona == "linda" ? "Linda ♀" : "John ♂",
+                      _currentPersona == 'linda' ? 'Linda ⇆' : 'John ⇆',
                       style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15),
                     ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.swap_horiz, color: Colors.white70, size: 18),
                   ],
                 ),
               ),
             ),
           ),
 
-          // Menu button — bottom right
+          // ── Upload PDF + CC Toggle + Menu toggle – bottom right ──
           Positioned(
-            bottom: 30,
-            right: 20,
+            bottom: 26,
+            right: 16,
             child: Row(
               children: [
-                if (_isMenuVisible)
-                  ElevatedButton(
+                if (_isMenuVisible) ...[
+                  ElevatedButton.icon(
                     onPressed: _uploadPdf,
+                    icon: const Icon(Icons.upload_file, size: 16),
+                    label: const Text('Upload PDF'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.grey[700],
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
                     ),
-                    child: const Text("Upload PDF"),
                   ),
-                const SizedBox(width: 10),
+                  const SizedBox(width: 8),
+                ],
                 ElevatedButton.icon(
-                  onPressed: () {
-                    setState(() => _isMenuVisible = !_isMenuVisible);
-                  },
-                  icon: const Icon(Icons.menu, size: 18),
-                  label: Text(_isMenuVisible ? "Hide Menu" : "Menu"),
+                  onPressed: () => setState(() => _isCcEnabled = !_isCcEnabled),
+                  icon: Icon(
+                    _isCcEnabled ? Icons.closed_caption : Icons.closed_caption_disabled,
+                    size: 16,
+                  ),
+                  label: Text(_isCcEnabled ? 'CC On' : 'CC Off'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[600],
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: () =>
+                      setState(() => _isMenuVisible = !_isMenuVisible),
+                  icon: const Icon(Icons.menu, size: 16),
+                  label: Text(_isMenuVisible ? 'Hide Menu' : 'Menu'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.grey[700],
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
                   ),
                 ),
               ],
             ),
           ),
 
+          // ── Subtitle Overlay ──
+          // Separate box above the message box showing what the robot is saying
+          Positioned(
+            bottom: _isMenuVisible ? 518 : 194, // Exactly 50px above the message box!
+            left: 30,
+            right: 30,
+            height: 110, // Strictly bounded height to prevent layout crashes on Flutter Web!
+            child: Visibility(
+              visible: _isCcEnabled && _isTtsInProgress && (_currentSubtitleText ?? '').isNotEmpty,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Scrollbar(
+                  controller: _subtitleScrollController,
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    controller: _subtitleScrollController,
+                    physics: const BouncingScrollPhysics(),
+                    child: Container(
+                      alignment: Alignment.center,
+                      width: double.infinity,
+                      child: Text(
+                        _currentSubtitleText ?? '',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

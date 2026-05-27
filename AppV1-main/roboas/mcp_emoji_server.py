@@ -79,9 +79,9 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         state = (arguments or {}).get("state")
         # Strict mappings as requested
         if state == "answering":
-            return [TextContent(type="text", text="😊")]
-        else:
             return [TextContent(type="text", text="🤖")]
+        else:
+            return [TextContent(type="text", text="🤗")]
             
     else:
         raise ValueError(f"Unknown tool: {name}")

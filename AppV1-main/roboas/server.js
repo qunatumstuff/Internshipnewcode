@@ -14,6 +14,16 @@ const { exec } = require('child_process');
 const https = require('https');
 const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
 const { StdioClientTransport } = require("@modelcontextprotocol/sdk/client/stdio.js");
+const { SSEClientTransport } = require("@modelcontextprotocol/sdk/client/sse.js");
+const { search } = require('duck-duck-scrape');
+const WebSocket = require('ws');
+const http = require('http');
+
+// ==========================================
+// CONFIGURATION
+// ==========================================
+// Laptop B (Robot/Vision Laptop) IP Address
+const LAPTOP_B_IP = "172.22.11.140"; // Wi-Fi IP for Laptop B
 // === Tool Call Activity Log ===
 const toolCallLog = [];
 const TOOL_LOG_FILE = path.join(__dirname, 'gpt_tool_log.json');
@@ -62,8 +72,43 @@ async function startMcpClient() {
 }
 startMcpClient();
 
+// === Wake Word Server (Python) ===
+function startWakeWordServer() {
+  try {
+    const { spawn } = require('child_process');
+    const wakeWordProcess = spawn('python', ['-u', path.join(__dirname, 'wakeword_server.py')]);
+    
+    wakeWordProcess.stdout.on('data', (data) => {
+      console.log(`[WAKEWORD]: ${data.toString().trim()}`);
+    });
+    
+    wakeWordProcess.stderr.on('data', (data) => {
+      console.error(`[WAKEWORD ERROR]: ${data.toString().trim()}`);
+    });
+    
+    console.log("✅ Python Wake Word Server spawned automatically.");
+  } catch (err) {
+    console.error("❌ Failed to start Wake Word Server:", err.message);
+  }
+}
+startWakeWordServer();
+
+// === Vision MCP Server Client (Remote on Laptop B) ===
+let visionMcpClient = null;
+async function startVisionMcpClient() {
+  try {
+    const transport = new SSEClientTransport(new URL(`http://${LAPTOP_B_IP}:8001/sse`));
+    visionMcpClient = new Client({ name: "roboas-main", version: "1.0.0" }, { capabilities: {} });
+    await visionMcpClient.connect(transport);
+    console.log(`✅ Vision MCP Server connected via SSE at ${LAPTOP_B_IP}:8001`);
+  } catch (err) {
+    console.error(`❌ Failed to bind Vision MCP Client at ${LAPTOP_B_IP}:`, err.message);
+  }
+}
+startVisionMcpClient();
+
 async function getStatusEmoji(state) {
-  if (!mcpEmojiClient) return state === "answering" ? "😊" : "🤖";
+  if (!mcpEmojiClient) return state === "answering" ? "🤖" : "🤗";
   try {
     const result = await mcpEmojiClient.callTool({
       name: "get_status_emoji",
@@ -74,7 +119,7 @@ async function getStatusEmoji(state) {
     return emoji;
   } catch (e) {
     console.error("❌ MCP Tool error:", e.message);
-    return state === "answering" ? "😊" : "🤖";
+    return state === "answering" ? "🤖" : "🤗";
   }
 }
 
@@ -245,6 +290,29 @@ async function loadLatestPdf() {
   }
 }
 
+// Clear PDF state on startup so each session starts fresh
+function clearPdfOnStartup() {
+  try {
+    // Delete the tracker file so no PDF is remembered
+    if (fs.existsSync(PDF_TRACKER_FILE)) {
+      fs.unlinkSync(PDF_TRACKER_FILE);
+    }
+    // Delete all uploaded PDF files so storage stays clean
+    if (fs.existsSync(uploadsDir)) {
+      const files = fs.readdirSync(uploadsDir);
+      files.filter(f => f.endsWith('.pdf')).forEach(f => {
+        try { fs.unlinkSync(path.join(uploadsDir, f)); } catch (_) {}
+      });
+    }
+    currentPdfName = '';
+    currentPdfPath = '';
+    vectorStore = null;
+    console.log('🧹 PDF session cleared on startup.');
+  } catch (err) {
+    console.error('❌ Error clearing PDF on startup:', err.message);
+  }
+}
+
 // === Dynamic Reasoning Classifier ===
 function getReasoningLevel(question) {
   const q = question.toLowerCase().trim();
@@ -284,6 +352,31 @@ function getReasoningLevel(question) {
 
 // === Endpoints ===
 
+// Progress Status SSE Channel
+let progressClients = [];
+app.get('/progress', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  progressClients.push(res);
+  req.on('close', () => {
+    progressClients = progressClients.filter(client => client !== res);
+  });
+});
+
+function sendProgress(status) {
+  console.log(`📡 [SSE Progress Broadcast]: "${status}"`);
+  progressClients.forEach(client => {
+    try {
+      client.write(`data: ${JSON.stringify({ status })}\n\n`);
+    } catch (e) {
+      console.error('❌ SSE write error:', e.message);
+    }
+  });
+}
+
 // Arduino LED endpoint removed.
 
 // Upload PDF
@@ -295,6 +388,34 @@ app.post('/upload-pdf', upload.single('pdf'), async (req, res) => {
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
+});
+
+// Clear / Remove PDF
+app.post('/clear-pdf', async (req, res) => {
+  try {
+    // Delete the physical file
+    if (currentPdfPath && fs.existsSync(currentPdfPath)) {
+      fs.unlinkSync(currentPdfPath);
+    }
+    // Delete tracker
+    if (fs.existsSync(PDF_TRACKER_FILE)) {
+      fs.unlinkSync(PDF_TRACKER_FILE);
+    }
+    // Reset in-memory state
+    currentPdfName = '';
+    currentPdfPath = '';
+    vectorStore = null;
+    console.log('🗑️ PDF cleared by user.');
+    res.json({ success: true, message: 'PDF removed.' });
+  } catch (err) {
+    console.error('❌ Error clearing PDF:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Get current PDF status
+app.get('/pdf-status', (req, res) => {
+  res.json({ loaded: !!currentPdfName, filename: currentPdfName || null });
 });
 
 // Transcribe Audio (Whisper STT - Optimized for Option B: Prompt + Regex + LLM)
@@ -419,6 +540,7 @@ app.post('/ask-question', async (req, res) => {
           content: `You are a super-friendly and excited AI assistant named John. Answer only from the document "${currentPdfName}" in an upbeat and helpful tone. ` +
             `Make it clear in your response that the information comes from the document. ` +
             `For example: "Wow! According to the document..." or "I'm happy to tell you that the PDF states..."\n` +
+            `CRITICAL IDENTITY RULE: NEVER start your response with any introduction (e.g., do NOT say "I am John, your robotic assistant" or "I am John, the LARA 5 assistant"). NEVER repeat your name or role unless the user explicitly asks for it. Start answering the user's question directly and immediately.\n` +
             `IMPORTANT: Do not use hyphens (-) in your response.`
         },
         { role: "user", content: `Document:\n${context}\n\nQuestion:\n${question}` }
@@ -427,7 +549,7 @@ app.post('/ask-question', async (req, res) => {
       max_tokens: 500
     });
 
-    const answer = completion.data.choices[0].message.content;
+    const answer = cleanChatbotResponse(completion.data.choices[0].message.content);
     const emoji = await getStatusEmoji("answering");
     res.json({ success: true, answer, emoji, persona: currentPersona });
   } catch (err) {
@@ -436,6 +558,81 @@ app.post('/ask-question', async (req, res) => {
     res.status(500).json({ success: false, message: 'AI failed to respond.', error: errorDetails });
   }
 });
+
+function parseTextToolCall(text) {
+  if (!text) return null;
+  const toolNames = ["search_web", "switch_avatar", "locate_object"];
+  let matchedTool = null;
+  
+  for (const name of toolNames) {
+    if (text.includes(name)) {
+      matchedTool = name;
+      break;
+    }
+  }
+  
+  if (!matchedTool) return null;
+  
+  const jsonStart = text.indexOf('{');
+  const jsonEnd = text.lastIndexOf('}');
+  
+  if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+    const jsonStr = text.substring(jsonStart, jsonEnd + 1);
+    try {
+      const args = JSON.parse(jsonStr);
+      return { toolName: matchedTool, args };
+    } catch (e) {
+      if (matchedTool === "search_web") {
+        const queryMatch = text.match(/"query"\s*:\s*"([^"]+)"/);
+        if (queryMatch) return { toolName: matchedTool, args: { query: queryMatch[1] } };
+      } else if (matchedTool === "locate_object") {
+        const targetMatch = text.match(/"target_name"\s*:\s*"([^"]+)"/);
+        if (targetMatch) return { toolName: matchedTool, args: { target_name: targetMatch[1] } };
+      } else if (matchedTool === "switch_avatar") {
+        const personaMatch = text.match(/"persona"\s*:\s*"([^"]+)"/);
+        if (personaMatch) return { toolName: matchedTool, args: { persona: personaMatch[1] } };
+      }
+    }
+  }
+  
+  if (matchedTool === "search_web") {
+    const queryMatch = text.match(/"query"\s*:\s*"([^"]+)"/) || text.match(/query\s*=\s*([^&\n\r]+)/);
+    if (queryMatch) {
+      return { toolName: matchedTool, args: { query: queryMatch[1] } };
+    }
+  }
+  
+  return null;
+}
+
+function cleanChatbotResponse(text) {
+  if (!text) return text;
+  
+  let cleaned = text;
+  
+  // Strip out tool call markers, target destinations, and raw JSON strings
+  cleaned = cleaned.replace(/to=functions\.[a-zA-Z_]+\s*([^\n]+)?/gi, '');
+  cleaned = cleaned.replace(/to=[a-zA-Z_]+\s*([^\n]+)?/gi, '');
+  cleaned = cleaned.replace(/[a-zA-Z_]+:\s*wuregjson/gi, '');
+  cleaned = cleaned.replace(/[a-zA-Z_]+:\s*json/gi, '');
+  
+  // Strip explicit JSON properties/values
+  cleaned = cleaned.replace(/\{[^{}]*"query"[^{}]*\}/gi, '');
+  cleaned = cleaned.replace(/\{[^{}]*"target_name"[^{}]*\}/gi, '');
+  cleaned = cleaned.replace(/\{[^{}]*"persona"[^{}]*\}/gi, '');
+  cleaned = cleaned.replace(/\{[^{}]*:[^{}]*\}/gi, '');
+  cleaned = cleaned.replace(/```(json)?\s*[\s\S]*?```/gi, '');
+
+  // Strip token-level Chinese/gibberish hallucinations caused by broken stop tokens
+  cleaned = cleaned.replace(/天天中彩票有人\s*(json)?/gi, '');
+  cleaned = cleaned.replace(/wuregjson/gi, '');
+
+  // Trim extra spaces and duplicates
+  cleaned = cleaned.replace(/\n\s*\n+/g, '\n');
+  cleaned = cleaned.trim();
+  
+  return cleaned;
+}
 
 // === GPT-Powered Chat (Voice + Tools) ===
 app.post('/ask-gpt', async (req, res) => {
@@ -455,8 +652,18 @@ app.post('/ask-gpt', async (req, res) => {
     const messages = [
       {
         role: "system",
-        content: `You are a helpful, super-excited AI named ${currentPersona === 'linda' ? 'Linda' : 'John'}. Describe things enthusiastically and clearly. You can switch between John (male) and Linda (female) using switch_avatar when the user explicitly asks.\n` +
-          `IMPORTANT: Do not use hyphens (-) in your response.` + contextStr
+        content: `You are a helpful, super-excited AI named ${currentPersona === 'linda' ? 'Linda' : 'John'}. You represent LARA 5, a collaborative robot (cobot) by NEURA Robotics at Singapore Polytechnic.
+
+CRITICAL IDENTITY RULES:
+- NEVER introduce yourself or state your name, role, or that you are a robotic assistant at the beginning of your responses. Do NOT say "I am John, the LARA 5 robotic assistant" or "I am Linda, the LARA 5 assistant" or anything similar.
+- NEVER start your answers with a repetitive introductory formula. Start answering the user's question directly, naturally, and immediately.
+- Only state your name or identity if the user explicitly asks "Who are you?", "What is your name?", or similar identity-focused questions.
+
+CRITICAL DUCKDUCKGO / INTERNET ACCESS RULES:
+- You DO have direct, real-time access to the internet/web search via the 'search_web' tool (powered by DuckDuckGo and Wikipedia).
+- When asked about search engines, DuckDuckGo, or internet access, you MUST clearly, confidently, and enthusiastically declare that you CAN query DuckDuckGo directly in real-time. Never deny having internet search access or claim you are limited to static knowledge.
+
+IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr
       },
       ...chatHistory,
       { role: "user", content: question }
@@ -480,6 +687,38 @@ app.post('/ask-gpt', async (req, res) => {
               required: ["persona"]
             }
           }
+        },
+        {
+          type: "function",
+          function: {
+            name: "locate_object",
+            description: "Uses the robotic vision camera to identify an object and get its coordinates.",
+            parameters: {
+              type: "object",
+              properties: { 
+                target_name: { 
+                  type: "string", 
+                  description: "Name of the object to locate.", 
+                  enum: ["black marker", "blue marker", "cube", "green marker", "medicine", "nut", "pipe", "sponge"] 
+                } 
+              },
+              required: ["target_name"]
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "search_web",
+            description: "Search the internet for real-time information and facts.",
+            parameters: {
+              type: "object",
+              properties: { 
+                query: { type: "string", description: "The search query to look up on the web." } 
+              },
+              required: ["query"]
+            }
+          }
         }
       ],
       tool_choice: "auto",
@@ -488,20 +727,127 @@ app.post('/ask-gpt', async (req, res) => {
     const responseMessage = completion.data.choices[0].message;
     let answerText = "";
 
-    // Hande tool calling from GPT
+    // 1. Detect if the model output a tool call as plain text instead of native tool_calls
+    let textToolCall = null;
+    if (!responseMessage.tool_calls || responseMessage.tool_calls.length === 0) {
+      if (responseMessage.content) {
+        textToolCall = parseTextToolCall(responseMessage.content);
+      }
+    }
+
+    // 2. Normalize tool calls into a unified array to process
+    let toolCallsToProcess = [];
+    let isTextBasedCall = false;
+
     if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-      const toolCall = responseMessage.tool_calls[0];
-      const args = JSON.parse(toolCall.function.arguments);
-
-      await switchAvatar(args.persona);
-      logToolCall(question, toolCall.function.name, args, `switched to ${args.persona}`);
-
-      messages.push(responseMessage);
+      toolCallsToProcess = responseMessage.tool_calls.map(tc => ({
+        id: tc.id,
+        name: tc.function.name,
+        arguments: JSON.parse(tc.function.arguments)
+      }));
+    } else if (textToolCall) {
+      isTextBasedCall = true;
+      toolCallsToProcess = [{
+        id: "call_txt_" + Date.now(),
+        name: textToolCall.toolName,
+        arguments: textToolCall.args
+      }];
+      
+      // Push the assistant's intermediate message to history
       messages.push({
-        role: "tool",
-        tool_call_id: toolCall.id,
-        content: `Switched to ${currentPersona}. Now greeting the user warmly as ${currentPersona === 'linda' ? 'Linda' : 'John'}.`
+        role: "assistant",
+        content: responseMessage.content
       });
+    }
+
+    // 3. Process the tool calls
+    if (toolCallsToProcess.length > 0) {
+      if (!isTextBasedCall) {
+        messages.push(responseMessage); // Push the native assistant message
+      }
+
+      for (const toolCall of toolCallsToProcess) {
+        const args = toolCall.arguments;
+        let toolResultText = "";
+
+        if (toolCall.name === "switch_avatar") {
+          await switchAvatar(args.persona);
+          logToolCall(question, toolCall.name, args, `switched to ${args.persona}`);
+          toolResultText = `Switched to ${currentPersona}. Now greeting the user warmly as ${currentPersona === 'linda' ? 'Linda' : 'John'}.`;
+        } 
+        else if (toolCall.name === "locate_object") {
+          logToolCall(question, "locate_object", args, "Calling Remote Vision MCP...");
+          sendProgress(`Initiating workspace scan for "${args.target_name}"...`);
+          if (visionMcpClient) {
+            try {
+              sendProgress(`Capturing frame on Laptop B & running Qwen environment safety scan...`);
+              const res = await visionMcpClient.callTool({ name: "locate_object", arguments: args });
+              toolResultText = res.content[0].text;
+              logToolCall(question, "locate_object", args, "Success");
+              
+              // Parse progress details for premium UI status updates
+              try {
+                const parsed = JSON.parse(toolResultText);
+                if (parsed.status && parsed.status.startsWith("SUCCESS")) {
+                  sendProgress(`Success! YOLO localized "${args.target_name}". Directing robotic arm to move...`);
+                  await new Promise(resolve => setTimeout(resolve, 2500));
+                } else if (parsed.status && parsed.status.startsWith("BLOCKED")) {
+                  sendProgress(`Blocked: Qwen safety gate determined pickup is NOT safe!`);
+                  await new Promise(resolve => setTimeout(resolve, 3000));
+                } else if (parsed.status) {
+                  sendProgress(parsed.status);
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+              } catch (jsonErr) {
+                sendProgress(`Target scan completed. Generating final response...`);
+              }
+            } catch (e) {
+              toolResultText = `Error calling Vision MCP: ${e.message}`;
+              sendProgress(`Error: ${e.message}`);
+              logToolCall(question, "locate_object", args, `Failed: ${e.message}`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          } else {
+            toolResultText = "Error: Vision MCP is not connected.";
+            sendProgress("Error: Remote Vision MCP is not connected.");
+            logToolCall(question, "locate_object", args, "Failed: Not Connected");
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+        else if (toolCall.name === "search_web") {
+          logToolCall(question, "search_web", args, "Searching web...");
+          sendProgress(`Searching the web for "${args.query}"...`);
+          try {
+            const searchResults = await search(args.query);
+            const topResults = searchResults.results.slice(0, 4).map(r => `Title: ${r.title}\nSnippet: ${r.description}\nURL: ${r.url}`).join('\n\n');
+            toolResultText = `Search Results for '${args.query}':\n\n${topResults || "No results found."}`;
+            logToolCall(question, "search_web", args, `Found results`);
+          } catch (err) {
+            console.log(`DDG failed, falling back to Wikipedia: ${err.message}`);
+            try {
+              // Fallback to free Wikipedia API
+              const wikiRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(args.query)}&utf8=&format=json`);
+              const wikiData = await wikiRes.json();
+              if (wikiData.query && wikiData.query.search && wikiData.query.search.length > 0) {
+                const topResults = wikiData.query.search.slice(0, 4).map(r => `Title: ${r.title}\nSnippet: ${r.snippet.replace(/<[^>]*>?/gm, '')}`).join('\n\n');
+                toolResultText = `Search Results (Wikipedia) for '${args.query}':\n\n${topResults}`;
+                logToolCall(question, "search_web", args, `Found Wikipedia results`);
+              } else {
+                throw new Error("No Wikipedia results found.");
+              }
+            } catch (wikiErr) {
+              toolResultText = `Search failed: ${err.message}. Wikipedia fallback also failed: ${wikiErr.message}`;
+              logToolCall(question, "search_web", args, `Failed: DDG and Wiki both failed.`);
+            }
+          }
+        }
+
+        messages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: toolResultText
+        });
+      }
 
       const secondCompletion = await openai.createChatCompletion({
         model: "gpt-5.4-mini",
@@ -513,6 +859,9 @@ app.post('/ask-gpt', async (req, res) => {
       answerText = responseMessage.content;
     }
 
+    // 4. Clean up any leftover tool calling traces or token spam from the final answer text
+    answerText = cleanChatbotResponse(answerText);
+
     const emoji = await getStatusEmoji("answering");
 
     // Sync Chat History
@@ -520,9 +869,11 @@ app.post('/ask-gpt', async (req, res) => {
     chatHistory.push({ role: "assistant", content: answerText });
     if (chatHistory.length > 10) chatHistory = chatHistory.slice(-10);
 
+    sendProgress(null); // Clear progress overlay
     res.json({ success: true, answer: answerText, emoji, persona: currentPersona });
 
   } catch (err) {
+    sendProgress(null); // Clear progress overlay on error
     const errorDetails = err.response ? JSON.stringify(err.response.data) : err.message;
     console.error('❌ AI Chat Error:', errorDetails);
     res.status(500).json({ success: false, message: 'AI failed to respond.', error: errorDetails });
@@ -724,10 +1075,76 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'Public', 'index.html'));
 });
 
-// Start server
-app.listen(port, async () => {
+// Start server with WebSocket proxy for wake word
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server, path: '/wakeword' });
+
+wss.on('connection', (clientWs) => {
+  console.log('🔗 [WS Proxy] Flutter client connected to /wakeword proxy');
+
+  // Connect to the Python wake word server
+  let pythonWs;
+  try {
+    pythonWs = new WebSocket('ws://localhost:8003');
+  } catch (e) {
+    console.error('❌ [WS Proxy] Failed to create connection to Python wake word server:', e.message);
+    clientWs.close();
+    return;
+  }
+
+  pythonWs.on('open', () => {
+    console.log('✅ [WS Proxy] Connected to Python wake word server on port 8003');
+  });
+
+  // Relay messages from Python → Flutter client
+  pythonWs.on('message', (data) => {
+    if (clientWs.readyState === WebSocket.OPEN) {
+      clientWs.send(data.toString());
+    }
+  });
+
+  // Relay messages from Flutter client → Python
+  clientWs.on('message', (data) => {
+    if (pythonWs.readyState === WebSocket.OPEN) {
+      pythonWs.send(data.toString());
+    }
+  });
+
+  pythonWs.on('error', (err) => {
+    console.error('❌ [WS Proxy] Python WS error:', err.message);
+  });
+
+  pythonWs.on('close', () => {
+    console.log('⚠️ [WS Proxy] Python WS closed');
+    if (clientWs.readyState === WebSocket.OPEN) clientWs.close();
+  });
+
+  clientWs.on('close', () => {
+    console.log('⚠️ [WS Proxy] Flutter client disconnected');
+    if (pythonWs.readyState === WebSocket.OPEN) pythonWs.close();
+  });
+
+  clientWs.on('error', (err) => {
+    console.error('❌ [WS Proxy] Client WS error:', err.message);
+  });
+});
+
+server.listen(port, async () => {
   console.log(`🚀 Server running at http://localhost:${port}`);
-  await loadLatestPdf();
+  console.log(`🔊 Wake word WebSocket proxy available at ws://localhost:${port}/wakeword`);
+  clearPdfOnStartup(); // Always start fresh — no PDF memory between sessions
+  
+  // Auto-load the LARA datasheet from resources so the robot has product knowledge
+  const laraPath = path.join(__dirname, 'resources', 'LARA_NEURA_Robotics_Datasheet_Web.pdf');
+  if (fs.existsSync(laraPath)) {
+    try {
+      await processPdf(laraPath, 'LARA_NEURA_Robotics_Datasheet_Web.pdf');
+      console.log('📄 Auto-loaded LARA datasheet from resources/');
+    } catch (e) {
+      console.error('⚠️ Failed to auto-load LARA datasheet:', e.message);
+    }
+  }
+  
   cleanupOldFiles();
   setInterval(cleanupOldFiles, 24 * 60 * 60 * 1000);
 });
