@@ -113,10 +113,10 @@ async def handle_client(websocket):
                         print(f"Active persona changed to: {active_persona}")
                     elif data.get("action") == "mute":
                         is_muted = True
-                        print("🔇 Wake word detection MUTED (TTS speaking)")
+                        print("[MUTE] Wake word detection MUTED (TTS speaking)")
                     elif data.get("action") == "unmute":
                         is_muted = False
-                        print("🔊 Wake word detection UNMUTED (TTS finished)")
+                        print("[UNMUTE] Wake word detection UNMUTED (TTS finished)")
                 except Exception as e:
                     print(f"Error parsing text message: {e}")
     except websockets.exceptions.ConnectionClosed:

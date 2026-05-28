@@ -191,6 +191,37 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
   }
 
+  Future<void> _preInitPersonaVideos() async {
+    final states = [AvatarState.idle, AvatarState.thinking, AvatarState.talking];
+    for (final state in states) {
+      final asset = _assetFor(_currentPersona, state);
+      if (!_cachedControllers.containsKey(asset)) {
+        debugPrint('🎬 [VIDEO] Pre-initializing $state for $_currentPersona -> $asset');
+        final controller = VideoPlayerController.asset(asset);
+        await controller.initialize();
+        await controller.setVolume(0);
+        await controller.setLooping(true);
+        
+        // Bulletproof fix for browser auto-pausing the video AND broken web looping
+        controller.addListener(() {
+          if (!mounted) return;
+          final bool isAtEnd = controller.value.isInitialized && 
+                               controller.value.duration > Duration.zero &&
+                               controller.value.position >= controller.value.duration;
+                               
+          if (!controller.value.isPlaying && asset.contains(_currentPersona)) {
+            if (isAtEnd) {
+              controller.seekTo(Duration.zero);
+            }
+            controller.play().catchError((_) {});
+          }
+        });
+        
+        _cachedControllers[asset] = controller;
+      }
+    }
+  }
+
   Future<void> _loadVideo(AvatarState state, {bool force = false}) async {
     if (force) {
       _pendingForce = true;
@@ -211,25 +242,22 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _isSwitchingVideo = true;
     _pendingAvatarState = null;
 
-    final targetAsset = _assetFor(_currentPersona, state);
-    debugPrint('🎬 [VIDEO] Loading $state for $_currentPersona -> $targetAsset');
-
     try {
-      VideoPlayerController controller;
-      if (_cachedControllers.containsKey(targetAsset)) {
-        controller = _cachedControllers[targetAsset]!;
-        debugPrint('🎬 [VIDEO] Retrieved from cache: $targetAsset');
-      } else {
-        debugPrint('🎬 [VIDEO] Cache miss, initializing: $targetAsset');
-        controller = VideoPlayerController.asset(targetAsset);
-        await controller.initialize();
-        await controller.setVolume(0);
-        await controller.setLooping(true);
-        _cachedControllers[targetAsset] = controller;
-      }
+      // Ensure all 3 videos for the active persona are fully initialized and cached!
+      await _preInitPersonaVideos();
 
-      // Play the selected video
-      await controller.play();
+      final targetAsset = _assetFor(_currentPersona, state);
+      final controller = _cachedControllers[targetAsset]!;
+
+      // Keep all 3 videos for the active persona playing to prevent CanvasKit freeze
+      final states = [AvatarState.idle, AvatarState.thinking, AvatarState.talking];
+      for (final s in states) {
+        final asset = _assetFor(_currentPersona, s);
+        final c = _cachedControllers[asset];
+        if (c != null && !c.value.isPlaying) {
+          c.play();
+        }
+      }
 
       if (mounted) {
         setState(() {
@@ -241,9 +269,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       }
       debugPrint('🎬 [VIDEO] ✅ Now playing: $state for $_currentPersona');
 
-      // Pause all other cached controllers to free up massive CPU/GPU resources on Pi 5!
+      // Pause controllers for the OTHER persona to save resources
       _cachedControllers.forEach((key, c) {
-        if (key != targetAsset) {
+        if (!key.contains(_currentPersona)) {
           c.pause();
         }
       });
@@ -337,7 +365,20 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           debugPrint('⚠️ Audio playback encountered an error event.');
         });
 
-        audio.play().catchError((playError) {
+        audio.play().then((_) {
+          // The browser may auto-pause our muted videos when this new audio starts playing.
+          // Force all active persona videos to play immediately!
+          if (mounted) {
+            final states = [AvatarState.idle, AvatarState.thinking, AvatarState.talking];
+            for (final s in states) {
+              final asset = _assetFor(_currentPersona, s);
+              final c = _cachedControllers[asset];
+              if (c != null && !c.value.isPlaying) {
+                c.play();
+              }
+            }
+          }
+        }).catchError((playError) {
           if (_audioElement != audio) return;
           debugPrint('🔇 Autoplay warning caught or audio play failed: $playError. Falling back to Native TTS...');
           _speakNative(text);
@@ -393,6 +434,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             _isTtsInProgress = true;
             _currentSubtitleText = text;
           });
+          // The browser may auto-pause our muted videos when this new audio starts playing.
+          // Force all active persona videos to play immediately!
+          final states = [AvatarState.idle, AvatarState.thinking, AvatarState.talking];
+          for (final s in states) {
+            final asset = _assetFor(_currentPersona, s);
+            final c = _cachedControllers[asset];
+            if (c != null && !c.value.isPlaying) {
+              c.play();
+            }
+          }
         }
       });
 
@@ -568,12 +619,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         _textController.text = 'Listening...';
       });
 
-      const config = RecordConfig(
-        encoder: AudioEncoder.wav,
-        sampleRate: 44100,
-        bitRate: 128000,
-        numChannels: 1,
-      );
+      // Use completely default config for maximum compatibility on Pi 5 Chromium
+      const config = RecordConfig();
       await _audioRecorder.start(config, path: '');
       if (_isHandsFreeMode) {
         _startSilenceDetection();
@@ -598,13 +645,21 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       try {
         final audioBytes = await http.readBytes(Uri.parse(path));
+        debugPrint('🎙️ [ASR] Recorded audio bytes length: ${audioBytes.length}');
+        
+        if (audioBytes.length < 5000) {
+          _sendMessage('System Error: Recorded audio file is suspiciously small (${audioBytes.length} bytes). The browser microphone encoder failed.');
+          await _setAvatarState(AvatarState.idle);
+          return;
+        }
+
         final req = http.MultipartRequest(
             'POST', Uri.parse('$baseUrl/transcribe'));
         req.files.add(http.MultipartFile.fromBytes(
           'audio',
           audioBytes,
-          filename: 'audio.wav',
-          contentType: MediaType('audio', 'wav'),
+          filename: 'audio.webm', // Send as webm so OpenAI parses the header correctly
+          contentType: MediaType('audio', 'webm'),
         ));
 
         final res = await req.send();
@@ -1003,54 +1058,78 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ─────────────────────────────────────────────────────────────────────────
 
   Widget _buildAvatar() {
-    if (!_isVideoInitialized || _videoController == null) {
+    // Fetch the cached controllers for the active persona's three states
+    final idleAsset = _assetFor(_currentPersona, AvatarState.idle);
+    final thinkingAsset = _assetFor(_currentPersona, AvatarState.thinking);
+    final talkingAsset = _assetFor(_currentPersona, AvatarState.talking);
+
+    final idleController = _cachedControllers[idleAsset];
+    final thinkingController = _cachedControllers[thinkingAsset];
+    final talkingController = _cachedControllers[talkingAsset];
+
+    // Show indicator if the three videos are not fully loaded yet
+    if (idleController == null || !idleController.value.isInitialized ||
+        thinkingController == null || !thinkingController.value.isInitialized ||
+        talkingController == null || !talkingController.value.isInitialized) {
       return Container(
         color: Colors.white,
-        child:
-            const Center(child: CircularProgressIndicator(color: Colors.green)),
+        child: const Center(child: CircularProgressIndicator(color: Colors.green)),
       );
     }
 
-    final bool isTalking = _avatarState == AvatarState.talking;
-
-    if (isTalking) {
-      // Full-screen talking video
-      return Container(
-        color: Colors.white,
-        width: double.infinity,
-        height: double.infinity,
-        child: FittedBox(
-          fit: BoxFit.cover,
-          child: SizedBox(
-            width: _videoController!.value.size.width,
-            height: _videoController!.value.size.height,
-            child: VideoPlayer(_videoController!, key: ValueKey(_videoController)),
-          ),
-        ),
-      );
-    } else {
-      // Idle / thinking: 80% size for John, 100% size for Linda (increased by 20%), centered, white background
+    // Helper to compile individual video player viewport
+    Widget buildPlayer(VideoPlayerController controller, bool isActive) {
       final double factor = _currentPersona == 'linda' ? 1.0 : 0.8;
+      final bool isTalking = controller.dataSource.contains('talking');
+
+      Widget player = FittedBox(
+        fit: isTalking ? BoxFit.cover : BoxFit.contain,
+        child: SizedBox(
+          width: controller.value.size.width,
+          height: controller.value.size.height,
+          child: VideoPlayer(controller, key: ValueKey(controller)),
+        ),
+      );
+
+      if (!isTalking) {
+        player = FractionallySizedBox(
+          widthFactor: factor,
+          heightFactor: factor,
+          child: player,
+        );
+      }
+
       return Container(
+        key: ValueKey(controller.dataSource),
         color: Colors.white,
         width: double.infinity,
         height: double.infinity,
-        child: Center(
-          child: FractionallySizedBox(
-            widthFactor: factor,
-            heightFactor: factor,
-            child: FittedBox(
-              fit: BoxFit.contain,
-              child: SizedBox(
-                width: _videoController!.value.size.width,
-                height: _videoController!.value.size.height,
-                child: VideoPlayer(_videoController!, key: ValueKey(_videoController)),
-              ),
-            ),
-          ),
+        child: IgnorePointer(
+          ignoring: !isActive,
+          child: player,
         ),
       );
     }
+
+    Widget idlePlayer = buildPlayer(idleController, _avatarState == AvatarState.idle);
+    Widget thinkingPlayer = buildPlayer(thinkingController, _avatarState == AvatarState.thinking);
+    Widget talkingPlayer = buildPlayer(talkingController, _avatarState == AvatarState.talking);
+
+    List<Widget> stackChildren = [];
+    
+    // 1. Add inactive players to the bottom of the stack
+    if (_avatarState != AvatarState.idle) stackChildren.add(idlePlayer);
+    if (_avatarState != AvatarState.thinking) stackChildren.add(thinkingPlayer);
+    if (_avatarState != AvatarState.talking) stackChildren.add(talkingPlayer);
+    
+    // 2. Add active player to the top of the stack (rendered last = on top)
+    if (_avatarState == AvatarState.idle) stackChildren.add(idlePlayer);
+    if (_avatarState == AvatarState.thinking) stackChildren.add(thinkingPlayer);
+    if (_avatarState == AvatarState.talking) stackChildren.add(talkingPlayer);
+
+    return Stack(
+      children: stackChildren,
+    );
   }
 
   Widget _buildVisualizer() {
