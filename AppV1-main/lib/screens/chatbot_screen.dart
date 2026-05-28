@@ -42,6 +42,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   // ── Video ──
   VideoPlayerController? _videoController;
+  final Map<String, VideoPlayerController> _cachedControllers = {};
   bool _isVideoInitialized = false;
   AvatarState _avatarState = AvatarState.talking; // start on talking
   String _loadedVideoPersona = 'john'; // tracks which persona the current video belongs to
@@ -108,6 +109,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _vizController.dispose();
     _audioRecorder.dispose();
     _videoController?.dispose();
+    for (final controller in _cachedControllers.values) {
+      controller.dispose();
+    }
+    _cachedControllers.clear();
     _textController.dispose();
     _scrollController.dispose();
     _subtitleScrollController.dispose();
@@ -208,18 +213,27 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     final targetAsset = _assetFor(_currentPersona, state);
     debugPrint('🎬 [VIDEO] Loading $state for $_currentPersona -> $targetAsset');
-    final oldController = _videoController;
-    final newController = VideoPlayerController.asset(targetAsset);
 
     try {
-      await newController.initialize();
-      await newController.setVolume(0);
-      await newController.setLooping(true);
-      await newController.play();
+      VideoPlayerController controller;
+      if (_cachedControllers.containsKey(targetAsset)) {
+        controller = _cachedControllers[targetAsset]!;
+        debugPrint('🎬 [VIDEO] Retrieved from cache: $targetAsset');
+      } else {
+        debugPrint('🎬 [VIDEO] Cache miss, initializing: $targetAsset');
+        controller = VideoPlayerController.asset(targetAsset);
+        await controller.initialize();
+        await controller.setVolume(0);
+        await controller.setLooping(true);
+        _cachedControllers[targetAsset] = controller;
+      }
+
+      // Play the selected video
+      await controller.play();
 
       if (mounted) {
         setState(() {
-          _videoController = newController;
+          _videoController = controller;
           _avatarState = state;
           _loadedVideoPersona = _currentPersona;
           _isVideoInitialized = true;
@@ -227,14 +241,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       }
       debugPrint('🎬 [VIDEO] ✅ Now playing: $state for $_currentPersona');
 
-      // Dispose old controller after a short delay to avoid flicker
-      if (oldController != null) {
-        await Future.delayed(const Duration(milliseconds: 200));
-        oldController.dispose();
-      }
+      // Pause all other cached controllers to free up massive CPU/GPU resources on Pi 5!
+      _cachedControllers.forEach((key, c) {
+        if (key != targetAsset) {
+          c.pause();
+        }
+      });
     } catch (e) {
       debugPrint('🎬 [VIDEO] ❌ Error loading ($state): $e');
-      newController.dispose();
     } finally {
       _isSwitchingVideo = false;
       // If a state switch request arrived while we were loading, handle it now
@@ -597,11 +611,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         if (res.statusCode == 200) {
           final body = await res.stream.bytesToString();
           final data = json.decode(body);
-          if (data['success'] == true && data['text'] != null) {
+          if (data['success'] == true && data['text'] != null && (data['text'] as String).trim().isNotEmpty) {
             if (mounted) _textController.clear();
             _sendMessage(data['text'] as String);
           } else {
-            throw Exception('Empty transcription');
+            // Safe fallback: if transcription is empty, return to idle instead of hanging in thinking mode forever!
+            if (mounted) _textController.clear();
+            await _setAvatarState(AvatarState.idle);
+            debugPrint('🎙️ [ASR] Empty transcription returned. Resetting avatar to idle.');
           }
         } else {
           throw Exception('Transcription HTTP ${res.statusCode}');
@@ -1037,30 +1054,47 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Widget _buildVisualizer() {
+    final bool shouldAnimate = _isTtsInProgress || _avatarState == AvatarState.talking || _isListening;
+    
+    Widget buildBars(double animationValue) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(6, (i) {
+          final h = 6.0 +
+              18.0 *
+                  math
+                      .sin((animationValue * math.pi * 2) + i * 0.8)
+                      .abs();
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            width: 4,
+            height: h,
+            decoration: BoxDecoration(
+              color: Colors.greenAccent,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          );
+        }),
+      );
+    }
+
+    if (!shouldAnimate) {
+      // If we should not animate, stop the controller ticker and return a static list of bars
+      if (_vizController.isAnimating) {
+        _vizController.stop();
+      }
+      return buildBars(0.0); // Stationary visualizer
+    }
+
+    // Start the ticker if it was stopped
+    if (!_vizController.isAnimating) {
+      _vizController.repeat(reverse: true);
+    }
+
     return AnimatedBuilder(
       animation: _vizController,
-      builder: (_, __) {
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(6, (i) {
-            final h = 6.0 +
-                18.0 *
-                    math
-                        .sin((_vizController.value * math.pi * 2) + i * 0.8)
-                        .abs();
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              width: 4,
-              height: h,
-              decoration: BoxDecoration(
-                color: Colors.greenAccent,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            );
-          }),
-        );
-      },
+      builder: (_, __) => buildBars(_vizController.value),
     );
   }
 
