@@ -634,16 +634,21 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _unlockAudio();
 
     if (!_isListening) {
+      // Tell Python to release its mic before the browser opens its own
+      _pauseWakeWord();
+
       _addUiLog('[MIC] Requesting browser microphone permission');
       html.MediaStream? stream;
       try {
         stream = await html.window.navigator.mediaDevices?.getUserMedia({'audio': true});
       } catch (e) {
         _addUiLog('[MIC] Permission denied or error: $e');
+        _resumeWakeWord(); // Give mic back to Python if browser couldn't open it
         return;
       }
       if (stream == null) {
         _addUiLog('[MIC] Permission denied (stream null)');
+        _resumeWakeWord();
         return;
       }
       _addUiLog('[MIC] Permission granted');
@@ -693,7 +698,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       });
 
       _webMediaRecorder!.addEventListener('stop', (e) async {
-        _addUiLog('[MIC] MediaRecorder state: ${_webMediaRecorder?.state}');
+        _addUiLog('[FLUTTER] recording stopped');
         _addUiLog('[MIC] chunk count: ${_webAudioChunks.length}');
         
         final sizes = _webAudioChunks.map((b) => b.size).join(',');
@@ -703,6 +708,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           _addUiLog('[MIC] audio bytes are empty. Aborting.');
           if (mounted) setState(() => _textController.clear());
           await _setAvatarState(AvatarState.idle);
+          _resumeWakeWord();
           return;
         }
 
@@ -719,6 +725,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         if (audioBytes.length < 5000) {
           _sendMessage('System Error: Recorded audio file is suspiciously small (${audioBytes.length} bytes).');
           await _setAvatarState(AvatarState.idle);
+          _resumeWakeWord();
           return;
         }
 
@@ -761,10 +768,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             });
           }
           await _setAvatarState(AvatarState.idle);
+        } finally {
+          // Always restart Python wakeword detection after recording/upload finishes
+          _resumeWakeWord();
         }
       });
 
       _webMediaRecorder!.start(200); // Request data every 200ms
+      _addUiLog('[FLUTTER] recording started');
       _addUiLog('[MIC] Recording started');
       if (_isHandsFreeMode) {
         _startSilenceDetection();
@@ -919,8 +930,31 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     return '$protocol://$socketHost$wsPort/wakeword';
   }
 
+  /// Tells Python to release its mic (pause_wakeword) or reclaim it (resume_wakeword).
+  void _pauseWakeWord() {
+    if (_wakeWordSocket != null &&
+        _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+      _wakeWordSocket!.send(json.encode({'action': 'pause_wakeword'}));
+      _addUiLog('[FLUTTER] sent pause_wakeword');
+      debugPrint('⏸️ [WAKE] sent pause_wakeword to Python');
+    } else {
+      debugPrint('⚠️ [WAKE] pause_wakeword skipped – WS not open');
+    }
+  }
+
+  void _resumeWakeWord() {
+    if (_wakeWordSocket != null &&
+        _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+      _wakeWordSocket!.send(json.encode({'action': 'resume_wakeword'}));
+      _addUiLog('[FLUTTER] sent resume_wakeword');
+      debugPrint('▶️ [WAKE] sent resume_wakeword to Python');
+    } else {
+      debugPrint('⚠️ [WAKE] resume_wakeword skipped – WS not open');
+    }
+  }
+
   Future<void> _handleWakeWordEvent() async {
-    _addUiLog('[WAKE] event received');
+    _addUiLog('[FLUTTER] wake event received');
     
     if (_isTtsInProgress) {
       _addUiLog('[WAKE] blocked because: TTS is in progress');
