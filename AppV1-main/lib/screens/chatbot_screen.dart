@@ -82,6 +82,19 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ── Messages ──
   final List<ChatMessage> _messages = [];
 
+  // ── Mic Debug Logs ──
+  final List<String> _micDebugLogs = [];
+
+  void _addUiLog(String log) {
+    debugPrint(log);
+    if (mounted) {
+      setState(() {
+        _micDebugLogs.add(log);
+        if (_micDebugLogs.length > 15) _micDebugLogs.removeAt(0); // keep last 15
+      });
+    }
+  }
+
   // ── Visualizer animation ──
   late AnimationController _vizController;
 
@@ -608,16 +621,22 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ─────────────────────────────────────────────────────────────────────────
 
   Future<void> _listen() async {
-    debugPrint('🎙️ [DEBUG] Mic button pressed or _listen() called');
+    _addUiLog('[MIC] Button pressed');
     // Do not allow listening while chatbot is speaking
     if (_isTtsInProgress) {
-      debugPrint('🎙️ [DEBUG] Blocked _listen() because _isTtsInProgress is true.');
+      _addUiLog('[MIC] Blocked: TTS is in progress');
       return;
     }
     _unlockAudio();
 
     if (!_isListening) {
-      if (!await _audioRecorder.hasPermission()) return;
+      _addUiLog('[MIC] Requesting browser microphone permission');
+      final hasPermission = await _audioRecorder.hasPermission();
+      if (!hasPermission) {
+        _addUiLog('[MIC] Permission denied');
+        return;
+      }
+      _addUiLog('[MIC] Permission granted');
 
       setState(() {
         _isListening = true;
@@ -626,9 +645,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       // Use completely default config for maximum compatibility on Pi 5 Chromium
       const config = RecordConfig();
-      debugPrint('🎙️ [DEBUG] Starting audio recorder...');
       await _audioRecorder.start(config, path: '');
-      debugPrint('🎙️ [DEBUG] Recording started successfully.');
+      _addUiLog('[MIC] Recording started');
       if (_isHandsFreeMode) {
         _startSilenceDetection();
       }
@@ -642,12 +660,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       // Small pad so trailing syllables are captured
       await Future.delayed(const Duration(milliseconds: 400));
-      debugPrint('🎙️ [DEBUG] Stopping audio recorder...');
       final path = await _audioRecorder.stop();
-      debugPrint('🎙️ [DEBUG] Recording stopped. audio blob/file path: $path');
+      _addUiLog('[MIC] Recording stopped');
 
       if (path == null) {
-        debugPrint('🎙️ [DEBUG] audio path is null. Aborting.');
+        _addUiLog('[MIC] audio path is null. Aborting.');
         if (mounted) setState(() => _textController.clear());
         await _setAvatarState(AvatarState.idle);
         return;
@@ -655,7 +672,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       try {
         final audioBytes = await http.readBytes(Uri.parse(path));
-        debugPrint('🎙️ [DEBUG] Audio blob/file read successfully. audio file size: ${audioBytes.length} bytes');
+        _addUiLog('[MIC] Audio blob/file size: ${audioBytes.length} bytes');
         
         if (audioBytes.length < 5000) {
           _sendMessage('System Error: Recorded audio file is suspiciously small (${audioBytes.length} bytes). The browser microphone encoder failed.');
@@ -664,7 +681,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         }
 
         final uploadUrl = '$baseUrl/transcribe';
-        debugPrint('🎙️ [DEBUG] Upload URL: $uploadUrl');
+        _addUiLog('[MIC] Uploading to: $uploadUrl');
         final req = http.MultipartRequest('POST', Uri.parse(uploadUrl));
         req.files.add(http.MultipartFile.fromBytes(
           'audio',
@@ -673,12 +690,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           contentType: MediaType('audio', 'webm'),
         ));
 
-        debugPrint('🎙️ [DEBUG] HTTP POST started...');
         final res = await req.send();
-        debugPrint('🎙️ [DEBUG] HTTP status code: ${res.statusCode}');
+        _addUiLog('[MIC] Upload response status: ${res.statusCode}');
         if (res.statusCode == 200) {
           final body = await res.stream.bytesToString();
-          debugPrint('🎙️ [DEBUG] Response body: $body');
+          _addUiLog('[MIC] Upload response body: $body');
           final data = json.decode(body);
           if (data['success'] == true && data['text'] != null && (data['text'] as String).trim().isNotEmpty) {
             if (mounted) _textController.clear();
@@ -690,11 +706,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             debugPrint('🎙️ [ASR] Empty transcription returned. Resetting avatar to idle.');
           }
         } else {
-          debugPrint('🎙️ [DEBUG] Transcription HTTP Error: ${res.statusCode}');
+          _addUiLog('[MIC] Upload response error: HTTP ${res.statusCode}');
           throw Exception('Transcription HTTP ${res.statusCode}');
         }
       } catch (e) {
-        debugPrint('🎙️ [DEBUG] Transcription/Upload error: $e');
+        _addUiLog('[MIC] Upload response error: $e');
         if (mounted) {
           setState(() {
             _messages.add(ChatMessage(
@@ -1483,6 +1499,43 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         children: [
           // ── Avatar (full screen) ──────────────────────────
           Positioned.fill(child: _buildAvatar()),
+
+          // ── Debug Overlay ─────────────────────────────────
+          if (_micDebugLogs.isNotEmpty)
+            Positioned(
+              top: 80,
+              left: 20,
+              child: Container(
+                width: 350,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.8),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('🎙️ MIC DEBUG LOGS', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                        InkWell(
+                          onTap: () => setState(() => _micDebugLogs.clear()),
+                          child: const Icon(Icons.close, color: Colors.white54, size: 16),
+                        )
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ..._micDebugLogs.map((log) => Text(
+                          log,
+                          style: const TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'monospace'),
+                        )),
+                  ],
+                ),
+              ),
+            ),
 
           // ── Logo ──────────────────────────────────────────
           Positioned(
