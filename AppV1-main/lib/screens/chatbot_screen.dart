@@ -60,6 +60,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ── Hands-free / wake-word ──
   bool _isHandsFreeMode = false;
   html.WebSocket? _wakeWordSocket;
+  String _wakeWsStatus = 'disconnected'; // connected | connecting | disconnected | error
+  bool _wakeWsReconnecting = false;      // prevents overlapping reconnect attempts
 
   // ── VAD Silence Detection ──
   html.MediaStream? _vadStream;
@@ -932,27 +934,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   /// Tells Python to release its mic (pause_wakeword) or reclaim it (resume_wakeword).
   void _pauseWakeWord() {
-    if (_wakeWordSocket != null &&
-        _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-      _wakeWordSocket!.send(json.encode({'action': 'pause_wakeword'}));
-      _addUiLog('[FLUTTER] sent pause_wakeword');
-      debugPrint('⏸️ [WAKE] sent pause_wakeword to Python');
-    } else {
-      debugPrint('⚠️ [WAKE] pause_wakeword skipped – WS not open');
-    }
+    _addUiLog('[FLUTTER] sent pause_wakeword');
+    _sendWakeWordCommand({'action': 'pause_wakeword'});
   }
 
   void _resumeWakeWord() {
-    if (_wakeWordSocket != null &&
-        _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-      _addUiLog('[FLUTTER] sending resume_wakeword');
-      _wakeWordSocket!.send(json.encode({'action': 'resume_wakeword'}));
-      _addUiLog('[FLUTTER] sent resume_wakeword');
-      debugPrint('▶️ [WAKE] sent resume_wakeword to Python');
-    } else {
-      _addUiLog('[FLUTTER] resume_wakeword SKIPPED – WS not open');
-      debugPrint('⚠️ [WAKE] resume_wakeword skipped – WS not open');
-    }
+    _addUiLog('[FLUTTER] sending resume_wakeword');
+    _sendWakeWordCommand({'action': 'resume_wakeword'});
+    _addUiLog('[FLUTTER] sent resume_wakeword');
   }
 
   Future<void> _handleWakeWordEvent() async {
@@ -976,55 +965,104 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
   }
 
-  void _connectWakeWord() {
+  // ─── Wake Word WebSocket helpers ─────────────────────────────────────────
+
+  /// Send any action to Python via the WS proxy.
+  /// If the socket is closed/closing, reconnect first then send after open.
+  void _sendWakeWordCommand(Map<String, dynamic> payload) {
+    final msg = json.encode(payload);
+    if (_wakeWordSocket != null &&
+        _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+      _wakeWordSocket!.send(msg);
+    } else {
+      _addUiLog('[WAKE WS] not open – reconnecting then sending: ${payload["action"]}');
+      _connectWakeWord(onConnected: () {
+        if (_wakeWordSocket != null &&
+            _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+          _wakeWordSocket!.send(msg);
+          _addUiLog('[WAKE WS] sent after reconnect: ${payload["action"]}');
+        }
+      });
+    }
+  }
+
+  void _connectWakeWord({VoidCallback? onConnected}) {
+    // Don't open a second socket if one is already connecting or open
+    if (_wakeWordSocket != null) {
+      final rs = _wakeWordSocket!.readyState;
+      if (rs == html.WebSocket.OPEN || rs == html.WebSocket.CONNECTING) {
+        _addUiLog('[WAKE WS] already open/connecting – skipping duplicate connect');
+        if (rs == html.WebSocket.OPEN) onConnected?.call();
+        return;
+      }
+    }
+
+    if (mounted) setState(() => _wakeWsStatus = 'connecting');
+    _addUiLog('[WAKE WS] connecting...');
+    debugPrint('🔌 [WAKE WS] connecting to ${_wakeWordUrl}');
+
     try {
-      final wsUrl = _wakeWordUrl;
-      debugPrint('Connecting to wake-word WS at: $wsUrl');
-      _wakeWordSocket = html.WebSocket(wsUrl);
-      
-      _wakeWordSocket!.onOpen.listen((_) {
-        debugPrint('✅ Wake-word WS connected successfully');
-        _addUiLog('[WAKE] websocket connected');
-        _wakeWordSocket!.send(json.encode({
-          'action': 'set_persona',
-          'persona': _currentPersona
-        }));
-      });
+      _wakeWordSocket = html.WebSocket(_wakeWordUrl);
+    } catch (e) {
+      _addUiLog('[WAKE WS] error: $e');
+      if (mounted) setState(() => _wakeWsStatus = 'error');
+      return;
+    }
 
-      _wakeWordSocket!.onMessage.listen((event) async {
-        debugPrint('📥 Wake-word WS raw message: ${event.data}');
-        _addUiLog('[WAKE] message received: ${event.data}');
-        try {
-          final data = json.decode(event.data.toString());
-          if (data['event'] == 'WAKE_WORD_DETECTED') {
-            _addUiLog('[WAKE] event parsed: WAKE_WORD_DETECTED');
-            await _handleWakeWordEvent();
-          }
-        } catch (e) {
-          debugPrint('Error parsing wake word message: $e');
+    _wakeWordSocket!.onOpen.listen((_) {
+      if (mounted) setState(() => _wakeWsStatus = 'connected');
+      _wakeWsReconnecting = false;
+      _addUiLog('[WAKE WS] connected');
+      debugPrint('✅ [WAKE WS] connected');
+      // Sync persona
+      _wakeWordSocket!.send(json.encode({
+        'action': 'set_persona',
+        'persona': _currentPersona
+      }));
+      onConnected?.call();
+    });
+
+    _wakeWordSocket!.onMessage.listen((event) async {
+      debugPrint('📥 Wake-word WS raw message: ${event.data}');
+      _addUiLog('[WAKE] message received: ${event.data}');
+      try {
+        final data = json.decode(event.data.toString());
+        if (data['event'] == 'WAKE_WORD_DETECTED') {
+          _addUiLog('[WAKE] event parsed: WAKE_WORD_DETECTED');
+          await _handleWakeWordEvent();
         }
-      });
+      } catch (e) {
+        debugPrint('Error parsing wake word message: $e');
+      }
+    });
 
-      _wakeWordSocket!.onError.listen((html.Event errorEvent) {
-        debugPrint('❌ Wake-word WS error. Type: ${errorEvent.type}');
-      });
+    _wakeWordSocket!.onError.listen((html.Event errorEvent) {
+      if (mounted) setState(() => _wakeWsStatus = 'error');
+      _addUiLog('[WAKE WS] error: ${errorEvent.type}');
+      debugPrint('❌ [WAKE WS] error: ${errorEvent.type}');
+    });
 
-      _wakeWordSocket!.onClose.listen((html.Event event) {
-        if (event is html.CloseEvent) {
-          debugPrint('⚠️ Wake-word WS closed: Code=${event.code}, Reason=${event.reason}, Clean=${event.wasClean}');
-        } else {
-          debugPrint('⚠️ Wake-word WS closed. Event: $event');
-        }
-        // Auto-reconnect after 5 seconds
+    _wakeWordSocket!.onClose.listen((html.Event event) {
+      if (mounted) setState(() => _wakeWsStatus = 'disconnected');
+      String reason = '';
+      if (event is html.CloseEvent) {
+        reason = 'code=${event.code}, reason=${event.reason}, clean=${event.wasClean}';
+      }
+      _addUiLog('[WAKE WS] disconnected ($reason)');
+      debugPrint('⚠️ [WAKE WS] disconnected: $reason');
+
+      // Auto-reconnect – with guard to avoid multiple pending reconnects
+      if (mounted && !_wakeWsReconnecting) {
+        _wakeWsReconnecting = true;
+        _addUiLog('[WAKE WS] reconnecting in 5s...');
         Future.delayed(const Duration(seconds: 5), () {
-          if (mounted && (_wakeWordSocket == null || _wakeWordSocket!.readyState != html.WebSocket.OPEN)) {
+          if (mounted) {
+            _addUiLog('[WAKE WS] reconnecting...');
             _connectWakeWord();
           }
         });
-      });
-    } catch (e) {
-      debugPrint('Wake-word connect error: $e');
-    }
+      }
+    });
   }
 
   void _disconnectWakeWord() {
@@ -1633,7 +1671,18 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('🎙️ MIC DEBUG LOGS', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('🎙️ MIC DEBUG LOGS', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                            Text('WS: $_wakeWsStatus', style: TextStyle(
+                              color: _wakeWsStatus == 'connected' ? Colors.greenAccent :
+                                     _wakeWsStatus == 'connecting' ? Colors.orange :
+                                     Colors.redAccent,
+                              fontSize: 10,
+                            )),
+                          ],
+                        ),
                         InkWell(
                           onTap: () => setState(() => _micDebugLogs.clear()),
                           child: const Icon(Icons.close, color: Colors.white54, size: 16),
