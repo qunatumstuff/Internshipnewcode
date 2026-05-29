@@ -18,6 +18,9 @@ const { SSEClientTransport } = require("@modelcontextprotocol/sdk/client/sse.js"
 const { search } = require('duck-duck-scrape');
 const WebSocket = require('ws');
 const http = require('http');
+require('dotenv').config();
+
+const WAKEWORD_WS_URL = process.env.WAKEWORD_WS_URL || 'ws://localhost:8003';
 
 // ==========================================
 // CONFIGURATION
@@ -651,7 +654,7 @@ function cleanChatbotResponse(text) {
 function sendWakewordCommand(action) {
   return new Promise((resolve) => {
     try {
-      const ws = new WebSocket('ws://localhost:8003');
+      const ws = new WebSocket(WAKEWORD_WS_URL);
       ws.on('open', () => {
         ws.send(JSON.stringify({ action }));
         ws.close();
@@ -1131,7 +1134,7 @@ wss.on('connection', (clientWs) => {
   // Connect to the Python wake word server
   let pythonWs;
   try {
-    pythonWs = new WebSocket('ws://localhost:8003');
+    pythonWs = new WebSocket(WAKEWORD_WS_URL);
   } catch (e) {
     console.error('❌ [WS Proxy] Failed to create connection to Python wake word server:', e.message);
     clientWs.close();
