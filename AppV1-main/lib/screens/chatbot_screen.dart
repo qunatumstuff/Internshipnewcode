@@ -59,7 +59,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   // ── Hands-free / wake-word ──
   bool _isHandsFreeMode = false;
-  bool _isHandoffMode = false;
   html.WebSocket? _wakeWordSocket;
   String _wakeWsStatus = 'disconnected'; // connected | connecting | disconnected | error
   bool _wakeWsReconnecting = false;      // prevents overlapping reconnect attempts
@@ -920,7 +919,17 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ─────────────────────────────────────────────────────────────────────────
 
   void _toggleHandsFree() {
-    setState(() => _isHandsFreeMode = !_isHandsFreeMode);
+    setState(() {
+      _isHandsFreeMode = !_isHandsFreeMode;
+      _addUiLog('[HANDOFF] ${_isHandsFreeMode ? 'ON' : 'OFF'}');
+    });
+    if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+      if (_isHandsFreeMode) {
+        _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
+      } else {
+        _wakeWordSocket!.send(json.encode({'action': 'stop_wakeword'}));
+      }
+    }
   }
 
   String get _wakeWordUrl {
@@ -935,7 +944,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   /// Tells Python to release its mic (stop_wakeword) or reclaim it (start_wakeword).
   Future<void> _pauseWakeWord() async {
-    if (_isHandoffMode) {
+    if (_isHandsFreeMode) {
       if (_wakeWordSocket != null &&
           _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
         _wakeWordSocket!.send(json.encode({'action': 'stop_wakeword'}));
@@ -949,7 +958,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _resumeWakeWord() {
-    if (_isHandoffMode) {
+    if (_isHandsFreeMode) {
       if (_wakeWordSocket != null &&
           _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
         _addUiLog('[FLUTTER] restarting wakeword because handoff mode is ON');
@@ -958,20 +967,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       } else {
         _addUiLog('[FLUTTER] restart_wakeword SKIPPED – WS not open');
         debugPrint('⚠️ [WAKE] restart_wakeword skipped – WS not open');
-      }
-    }
-  }
-
-  void _toggleHandoffMode() {
-    setState(() {
-      _isHandoffMode = !_isHandoffMode;
-      _addUiLog('[HANDOFF] ${_isHandoffMode ? 'ON' : 'OFF'}');
-    });
-    if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-      if (_isHandoffMode) {
-        _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
-      } else {
-        _wakeWordSocket!.send(json.encode({'action': 'stop_wakeword'}));
       }
     }
   }
@@ -1608,7 +1603,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 _buildPresetQuestion("Pick up?", "How do I instruct the robotic arm to pick up a screwdriver?"),
                 _buildPresetQuestion("Payload?", "What are the payload limits of this robotic arm?"),
                 _buildPresetQuestion("Calibrate?", "Can you explain the calibration process for the arm?"),
-                _buildPillBtn(_isHandoffMode ? "Handoff: ON" : "Handoff: OFF", Icons.compare_arrows, _isHandoffMode ? Colors.green : Colors.grey[700]!, _toggleHandoffMode, allowAlways: true),
                 _buildPillBtn("Stop", Icons.stop, Colors.amber[700]!, _stopSpeaking, allowAlways: true),
                 _buildPillBtn("Clear", Icons.delete, Colors.red[600]!, _clearChat, allowAlways: true),
               ],
