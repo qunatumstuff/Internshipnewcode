@@ -61,11 +61,16 @@ def vosk_worker(loop):
                 if rec.AcceptWaveform(data):
                     res = json.loads(rec.Result())
                     text = res.get('text', '')
+                    if text:
+                        print(f"[PY VOSK RAW] RESULT: {res}")
                 else:
                     res = json.loads(rec.PartialResult())
                     text = res.get('partial', '')
+                    if text:
+                        print(f"[PY VOSK RAW] PARTIAL: {res}")
                 
                 if text != "" and text != "[unk]":
+                    print(f"[PY WAKE RECOGNIZED] text='{text}'")
                     is_correct_persona = False
                     current_persona_local = active_persona.lower()
                     
