@@ -83,8 +83,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   final List<ChatMessage> _messages = [];
 
   // ── Mic Recording Stream ──
-  List<int> _recordedAudioBytes = [];
-  StreamSubscription<Uint8List>? _audioStreamSubscription;
+  html.MediaRecorder? _webMediaRecorder;
+  List<html.Blob> _webAudioChunks = [];
 
   // ── Mic Debug Logs ──
   final List<String> _micDebugLogs = [];
@@ -635,9 +635,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     if (!_isListening) {
       _addUiLog('[MIC] Requesting browser microphone permission');
-      final hasPermission = await _audioRecorder.hasPermission();
-      if (!hasPermission) {
-        _addUiLog('[MIC] Permission denied');
+      html.MediaStream? stream;
+      try {
+        stream = await html.window.navigator.mediaDevices?.getUserMedia({'audio': true});
+      } catch (e) {
+        _addUiLog('[MIC] Permission denied or error: $e');
+        return;
+      }
+      if (stream == null) {
+        _addUiLog('[MIC] Permission denied (stream null)');
         return;
       }
       _addUiLog('[MIC] Permission granted');
@@ -647,13 +653,118 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         _textController.text = 'Listening...';
       });
 
-      // Use Opus which natively outputs as WebM on Chrome
-      const config = RecordConfig(encoder: AudioEncoder.opus);
-      _recordedAudioBytes = [];
-      final stream = await _audioRecorder.startStream(config);
-      _audioStreamSubscription = stream.listen((data) {
-        _recordedAudioBytes.addAll(data);
+      String mimeType = '';
+      if (html.MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        mimeType = 'audio/webm;codecs=opus';
+      } else if (html.MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/webm';
+      } else if (html.MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+        mimeType = 'audio/ogg;codecs=opus';
+      } else {
+        _addUiLog('[MIC] Warning: no standard webm/opus type supported. Using default.');
+      }
+      _addUiLog('[MIC] Selected MIME type: ${mimeType.isEmpty ? "default" : mimeType}');
+
+      _webMediaRecorder = mimeType.isNotEmpty 
+          ? html.MediaRecorder(stream, {'mimeType': mimeType})
+          : html.MediaRecorder(stream);
+
+      _webAudioChunks = [];
+
+      _webMediaRecorder!.addEventListener('start', (e) {
+        _addUiLog('[MIC] MediaRecorder state: ${_webMediaRecorder?.state}');
       });
+
+      _webMediaRecorder!.addEventListener('pause', (e) {
+        _addUiLog('[MIC] MediaRecorder state: ${_webMediaRecorder?.state}');
+      });
+
+      _webMediaRecorder!.addEventListener('dataavailable', (html.Event e) {
+        final blobEvent = e as html.BlobEvent;
+        final data = blobEvent.data;
+        if (data != null) {
+          _addUiLog('[MIC] ondataavailable: size=${data.size}, type=${data.type}');
+          if (data.size > 0) {
+            _webAudioChunks.add(data);
+          }
+        } else {
+          _addUiLog('[MIC] ondataavailable: null data');
+        }
+      });
+
+      _webMediaRecorder!.addEventListener('stop', (e) async {
+        _addUiLog('[MIC] MediaRecorder state: ${_webMediaRecorder?.state}');
+        _addUiLog('[MIC] chunk count: ${_webAudioChunks.length}');
+        
+        final sizes = _webAudioChunks.map((b) => b.size).join(',');
+        _addUiLog('[MIC] chunk sizes: $sizes');
+        
+        if (_webAudioChunks.isEmpty) {
+          _addUiLog('[MIC] audio bytes are empty. Aborting.');
+          if (mounted) setState(() => _textController.clear());
+          await _setAvatarState(AvatarState.idle);
+          return;
+        }
+
+        final blob = html.Blob(_webAudioChunks, mimeType.isEmpty ? 'audio/webm' : mimeType);
+        _addUiLog('[MIC] final blob size: ${blob.size}');
+
+        final reader = html.FileReader();
+        reader.readAsArrayBuffer(blob);
+        await reader.onLoadEnd.first; // wait for read to complete
+        final Uint8List audioBytes = reader.result as Uint8List;
+
+        _addUiLog('[MIC] Audio blob/file size: ${audioBytes.length} bytes');
+
+        if (audioBytes.length < 5000) {
+          _sendMessage('System Error: Recorded audio file is suspiciously small (${audioBytes.length} bytes).');
+          await _setAvatarState(AvatarState.idle);
+          return;
+        }
+
+        final uploadUrl = '$baseUrl/transcribe';
+        _addUiLog('[MIC] Uploading to: $uploadUrl');
+        final req = http.MultipartRequest('POST', Uri.parse(uploadUrl));
+        req.files.add(http.MultipartFile.fromBytes(
+          'audio',
+          audioBytes,
+          filename: 'audio.webm',
+          contentType: MediaType('audio', 'webm'),
+        ));
+
+        _addUiLog('[MIC] POST /transcribe started');
+        try {
+          final res = await req.send();
+          _addUiLog('[MIC] Upload response status: ${res.statusCode}');
+          if (res.statusCode == 200) {
+            final body = await res.stream.bytesToString();
+            _addUiLog('[MIC] Upload response body: $body');
+            final data = json.decode(body);
+            if (data['success'] == true && data['text'] != null && (data['text'] as String).trim().isNotEmpty) {
+              if (mounted) _textController.clear();
+              _sendMessage(data['text'] as String);
+            } else {
+              if (mounted) _textController.clear();
+              await _setAvatarState(AvatarState.idle);
+              debugPrint('🎙️ [ASR] Empty transcription returned.');
+            }
+          } else {
+            _addUiLog('[MIC] Upload response error: HTTP ${res.statusCode}');
+            throw Exception('Transcription HTTP ${res.statusCode}');
+          }
+        } catch (e) {
+          _addUiLog('[MIC] Upload response error: $e');
+          if (mounted) {
+            setState(() {
+              _messages.add(ChatMessage(text: 'System Error: Transcription failed.', isUser: false));
+              _textController.clear();
+            });
+          }
+          await _setAvatarState(AvatarState.idle);
+        }
+      });
+
+      _webMediaRecorder!.start(200); // Request data every 200ms
       _addUiLog('[MIC] Recording started');
       if (_isHandsFreeMode) {
         _startSilenceDetection();
@@ -668,68 +779,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       // Small pad so trailing syllables are captured
       await Future.delayed(const Duration(milliseconds: 400));
-      await _audioRecorder.stop();
-      _audioStreamSubscription?.cancel();
-      _audioStreamSubscription = null;
+      _webMediaRecorder?.stop();
       _addUiLog('[MIC] Recording stopped');
-
-      final audioBytes = Uint8List.fromList(_recordedAudioBytes);
-      _addUiLog('[MIC] Audio blob/file size: ${audioBytes.length} bytes');
-
-      if (audioBytes.isEmpty) {
-        _addUiLog('[MIC] audio bytes are empty. Aborting.');
-        if (mounted) setState(() => _textController.clear());
-        await _setAvatarState(AvatarState.idle);
-        return;
-      }
-
-      try {
-        if (audioBytes.length < 5000) {
-          _sendMessage('System Error: Recorded audio file is suspiciously small (${audioBytes.length} bytes). The browser microphone encoder failed.');
-          await _setAvatarState(AvatarState.idle);
-          return;
-        }
-
-        final uploadUrl = '$baseUrl/transcribe';
-        _addUiLog('[MIC] Uploading to: $uploadUrl');
-        final req = http.MultipartRequest('POST', Uri.parse(uploadUrl));
-        req.files.add(http.MultipartFile.fromBytes(
-          'audio',
-          audioBytes,
-          filename: 'audio.webm', // Send as webm so OpenAI parses the header correctly
-          contentType: MediaType('audio', 'webm'),
-        ));
-
-        final res = await req.send();
-        _addUiLog('[MIC] Upload response status: ${res.statusCode}');
-        if (res.statusCode == 200) {
-          final body = await res.stream.bytesToString();
-          _addUiLog('[MIC] Upload response body: $body');
-          final data = json.decode(body);
-          if (data['success'] == true && data['text'] != null && (data['text'] as String).trim().isNotEmpty) {
-            if (mounted) _textController.clear();
-            _sendMessage(data['text'] as String);
-          } else {
-            // Safe fallback: if transcription is empty, return to idle instead of hanging in thinking mode forever!
-            if (mounted) _textController.clear();
-            await _setAvatarState(AvatarState.idle);
-            debugPrint('🎙️ [ASR] Empty transcription returned. Resetting avatar to idle.');
-          }
-        } else {
-          _addUiLog('[MIC] Upload response error: HTTP ${res.statusCode}');
-          throw Exception('Transcription HTTP ${res.statusCode}');
-        }
-      } catch (e) {
-        _addUiLog('[MIC] Upload response error: $e');
-        if (mounted) {
-          setState(() {
-            _messages.add(ChatMessage(
-                text: 'System Error: Transcription failed.', isUser: false));
-            _textController.clear();
-          });
-        }
-        await _setAvatarState(AvatarState.idle);
-      }
     }
   }
 
