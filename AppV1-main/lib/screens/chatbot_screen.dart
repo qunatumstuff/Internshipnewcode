@@ -934,14 +934,27 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   /// Tells Python to release its mic (pause_wakeword) or reclaim it (resume_wakeword).
   void _pauseWakeWord() {
-    _addUiLog('[FLUTTER] sent pause_wakeword');
-    _sendWakeWordCommand({'action': 'pause_wakeword'});
+    if (_wakeWordSocket != null &&
+        _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+      _wakeWordSocket!.send(json.encode({'action': 'pause_wakeword'}));
+      _addUiLog('[FLUTTER] sent pause_wakeword');
+      debugPrint('⏸️ [WAKE] sent pause_wakeword to Python');
+    } else {
+      debugPrint('⚠️ [WAKE] pause_wakeword skipped – WS not open');
+    }
   }
 
   void _resumeWakeWord() {
-    _addUiLog('[FLUTTER] sending resume_wakeword');
-    _sendWakeWordCommand({'action': 'resume_wakeword'});
-    _addUiLog('[FLUTTER] sent resume_wakeword');
+    if (_wakeWordSocket != null &&
+        _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+      _addUiLog('[FLUTTER] sending resume_wakeword');
+      _wakeWordSocket!.send(json.encode({'action': 'resume_wakeword'}));
+      _addUiLog('[FLUTTER] sent resume_wakeword');
+      debugPrint('▶️ [WAKE] sent resume_wakeword to Python');
+    } else {
+      _addUiLog('[FLUTTER] resume_wakeword SKIPPED – WS not open');
+      debugPrint('⚠️ [WAKE] resume_wakeword skipped – WS not open');
+    }
   }
 
   Future<void> _handleWakeWordEvent() async {

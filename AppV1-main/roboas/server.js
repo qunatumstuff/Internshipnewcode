@@ -655,14 +655,31 @@ function sendWakewordCommand(action) {
   return new Promise((resolve) => {
     try {
       const ws = new WebSocket(WAKEWORD_WS_URL);
+      let isResolved = false;
+
+      const timeoutId = setTimeout(() => {
+        if (!isResolved) {
+          isResolved = true;
+          ws.terminate(); // forcefully close
+          resolve(false);
+        }
+      }, 1000); // 1-second timeout
+
       ws.on('open', () => {
-        ws.send(JSON.stringify({ action }));
-        ws.close();
-        resolve(true);
+        if (!isResolved) {
+          isResolved = true;
+          clearTimeout(timeoutId);
+          ws.send(JSON.stringify({ action }));
+          ws.close();
+          resolve(true);
+        }
       });
       ws.on('error', (err) => {
-        // Suppress connection errors if server is not fully spawned yet
-        resolve(false);
+        if (!isResolved) {
+          isResolved = true;
+          clearTimeout(timeoutId);
+          resolve(false);
+        }
       });
     } catch (e) {
       resolve(false);
