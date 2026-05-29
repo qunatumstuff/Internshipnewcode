@@ -44559,7 +44559,7 @@ A.bJ().$1("\u25b6\ufe0f [WAKE] sent start_wakeword to Python")}else{q.br("[FLUTT
 A.bJ().$1("\u26a0\ufe0f [WAKE] restart_wakeword skipped \u2013 WS not open")}}},
 t1(){var s=0,r=A.E(t.H),q=this
 var $async$t1=A.A(function(a,b){if(a===1)return A.B(b,r)
-for(;;)switch(s){case 0:q.br("[FLUTTER] wake event received")
+for(;;)switch(s){case 0:q.br("[FLUTTER] calling manual mic function")
 s=q.f?2:4
 break
 case 2:q.br("[WAKE] blocked because: TTS is in progress")
@@ -44575,9 +44575,8 @@ break
 case 8:q.br("[WAKE] blocked because: interaction is blocked")
 s=9
 break
-case 10:q.br("[FLUTTER] wake detected, starting browser recording")
+case 10:q.br("[MIC] recording started")
 if(q.c!=null)q.a6(new A.akt(q))
-q.br("[WAKE] mic flow started")
 s=11
 return A.v(q.iw(),$async$t1)
 case 11:case 9:case 6:case 3:return A.C(null,r)}})
@@ -45256,7 +45255,7 @@ q=3
 n=B.af.ea(0,J.ej(new A.CQ([],[]).GV(a.data,!0)))
 s=J.d(J.bo(n,"event"),"WAKE_WORD_DETECTED")?6:7
 break
-case 6:l.br("[WAKE] event parsed: WAKE_WORD_DETECTED")
+case 6:l.br("[FLUTTER] received WAKE_WORD_DETECTED")
 s=8
 return A.v(l.t1(),$async$$1)
 case 8:case 7:q=1

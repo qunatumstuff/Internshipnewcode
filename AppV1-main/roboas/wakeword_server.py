@@ -64,7 +64,7 @@ async def broadcast_wakeword(text, persona):
     for r in results:
         if isinstance(r, Exception):
             print(f"[PY WAKE] send error: {r}")
-    print("[PY WAKE] event sent to Flutter")
+    print("[PY] sent WAKE_WORD_DETECTED")
 
 
 # ─────────────────────────────────────────────────────────

@@ -972,7 +972,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Future<void> _handleWakeWordEvent() async {
-    _addUiLog('[FLUTTER] wake event received');
+    _addUiLog('[FLUTTER] calling manual mic function');
     
     if (_isTtsInProgress) {
       _addUiLog('[WAKE] blocked because: TTS is in progress');
@@ -981,13 +981,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     } else if (_isInteractionBlocked) {
       _addUiLog('[WAKE] blocked because: interaction is blocked');
     } else {
-      _addUiLog('[FLUTTER] wake detected, starting browser recording');
+      _addUiLog('[MIC] recording started');
       if (mounted) {
         setState(() {
           _isHandsFreeMode = true; // Auto-enable hands-free mode
         });
       }
-      _addUiLog('[WAKE] mic flow started');
       await _listen(); // start recording
     }
   }
@@ -1055,7 +1054,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       try {
         final data = json.decode(event.data.toString());
         if (data['event'] == 'WAKE_WORD_DETECTED') {
-          _addUiLog('[WAKE] event parsed: WAKE_WORD_DETECTED');
+          _addUiLog('[FLUTTER] received WAKE_WORD_DETECTED');
           await _handleWakeWordEvent();
         }
       } catch (e) {
