@@ -95,7 +95,7 @@ def vosk_worker(loop):
                 callback=audio_callback,
                 device="hw:2,0"
             ):
-                print("[PY WAKE] listening resumed – waiting for wake word...")
+                print("[PY] wakeword listening started")
 
                 while not mic_stop_event.is_set():
                     text = ''  # reset each iteration to prevent stale value
@@ -125,10 +125,10 @@ def vosk_worker(loop):
 
                         if is_correct:
                             if is_muted:
-                                print(f"[PY WAKE] detected but MUTED (TTS active): {text}")
+                                print(f"[PY] wakeword detected but MUTED (TTS active): {text}")
                                 rec.Reset()
                             else:
-                                print(f"[PY WAKE] detected: {text}")
+                                print(f"[PY] wakeword detected")
 
                                 # ── YIELD THE MIC ──────────────────────
                                 mic_stop_event.set()   # signal: stop mic
@@ -150,7 +150,7 @@ def vosk_worker(loop):
         except Exception as e:
             print(f"[PY WAKE] mic stream error: {e}", file=sys.stderr)
 
-        print("[PY WAKE] mic stream closed – waiting for restart signal...")
+        print("[PY] mic released")
 
 
 # ─────────────────────────────────────────────────────────
@@ -189,21 +189,19 @@ async def handle_client(websocket):
                         is_muted = False
                         print("[PY WAKE] UNMUTED (TTS finished)")
 
-                    elif action == "pause_wakeword":
+                    elif action in ("pause_wakeword", "stop_wakeword"):
                         # Flutter is about to open the browser mic – release ours
-                        print("[PY WAKE] received pause_wakeword from Flutter – releasing mic")
+                        print(f"[PY WAKE] received {action} from Flutter – releasing mic")
                         mic_stop_event.set()
                         while not audio_queue.empty():
                             try:
                                 audio_queue.get_nowait()
                             except queue.Empty:
                                 break
-                        print("[PY WAKE] mic stream closed")
 
-                    elif action in ("resume_wakeword", "restart_wakeword"):
+                    elif action in ("resume_wakeword", "restart_wakeword", "start_wakeword"):
                         # Flutter finished recording – give mic back to Python
                         print(f"[PY WAKE] received {action} from Flutter")
-                        print("[PY WAKE] reopening mic stream...")
                         mic_stop_event.clear()
                         mic_start_event.set()
                         # Actual confirmation log is printed by vosk_worker when it opens the stream
