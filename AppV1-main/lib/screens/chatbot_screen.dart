@@ -82,6 +82,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ── Messages ──
   final List<ChatMessage> _messages = [];
 
+  // ── Mic Recording Stream ──
+  List<int> _recordedAudioBytes = [];
+  StreamSubscription<Uint8List>? _audioStreamSubscription;
+
   // ── Mic Debug Logs ──
   final List<String> _micDebugLogs = [];
 
@@ -643,9 +647,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         _textController.text = 'Listening...';
       });
 
-      // Use completely default config for maximum compatibility on Pi 5 Chromium
-      const config = RecordConfig();
-      await _audioRecorder.start(config, path: '');
+      // Use Opus which natively outputs as WebM on Chrome
+      const config = RecordConfig(encoder: AudioEncoder.opus);
+      _recordedAudioBytes = [];
+      final stream = await _audioRecorder.startStream(config);
+      _audioStreamSubscription = stream.listen((data) {
+        _recordedAudioBytes.addAll(data);
+      });
       _addUiLog('[MIC] Recording started');
       if (_isHandsFreeMode) {
         _startSilenceDetection();
@@ -660,20 +668,22 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       // Small pad so trailing syllables are captured
       await Future.delayed(const Duration(milliseconds: 400));
-      final path = await _audioRecorder.stop();
+      await _audioRecorder.stop();
+      _audioStreamSubscription?.cancel();
+      _audioStreamSubscription = null;
       _addUiLog('[MIC] Recording stopped');
 
-      if (path == null) {
-        _addUiLog('[MIC] audio path is null. Aborting.');
+      final audioBytes = Uint8List.fromList(_recordedAudioBytes);
+      _addUiLog('[MIC] Audio blob/file size: ${audioBytes.length} bytes');
+
+      if (audioBytes.isEmpty) {
+        _addUiLog('[MIC] audio bytes are empty. Aborting.');
         if (mounted) setState(() => _textController.clear());
         await _setAvatarState(AvatarState.idle);
         return;
       }
 
       try {
-        final audioBytes = await http.readBytes(Uri.parse(path));
-        _addUiLog('[MIC] Audio blob/file size: ${audioBytes.length} bytes');
-        
         if (audioBytes.length < 5000) {
           _sendMessage('System Error: Recorded audio file is suspiciously small (${audioBytes.length} bytes). The browser microphone encoder failed.');
           await _setAvatarState(AvatarState.idle);
