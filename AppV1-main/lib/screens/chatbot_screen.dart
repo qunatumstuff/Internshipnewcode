@@ -612,14 +612,18 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _unlockAudio();
 
     if (!_isListening) {
+      if (!await _audioRecorder.hasPermission()) return;
+
       setState(() {
         _isListening = true;
-        _textController.text = 'Listening (Python)...';
+        _textController.text = 'Listening...';
       });
-      
-      // Tell Python to start recording
-      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-        _wakeWordSocket!.send(json.encode({'action': 'start_recording'}));
+
+      // Use completely default config for maximum compatibility on Pi 5 Chromium
+      const config = RecordConfig();
+      await _audioRecorder.start(config, path: '');
+      if (_isHandsFreeMode) {
+        _startSilenceDetection();
       }
     } else {
       setState(() {
@@ -627,21 +631,183 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         _textController.text = 'Transcribing...';
       });
       await _setAvatarState(AvatarState.thinking);
-      // Tell Python to stop recording
-      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-        _wakeWordSocket!.send(json.encode({'action': 'stop_recording'}));
+      _stopSilenceDetection();
+
+      // Small pad so trailing syllables are captured
+      await Future.delayed(const Duration(milliseconds: 400));
+      final path = await _audioRecorder.stop();
+
+      if (path == null) {
+        if (mounted) setState(() => _textController.clear());
+        await _setAvatarState(AvatarState.idle);
+        return;
+      }
+
+      try {
+        final audioBytes = await http.readBytes(Uri.parse(path));
+        debugPrint('🎙️ [ASR] Recorded audio bytes length: ${audioBytes.length}');
+        
+        if (audioBytes.length < 5000) {
+          _sendMessage('System Error: Recorded audio file is suspiciously small (${audioBytes.length} bytes). The browser microphone encoder failed.');
+          await _setAvatarState(AvatarState.idle);
+          return;
+        }
+
+        final req = http.MultipartRequest(
+            'POST', Uri.parse('$baseUrl/transcribe'));
+        req.files.add(http.MultipartFile.fromBytes(
+          'audio',
+          audioBytes,
+          filename: 'audio.webm', // Send as webm so OpenAI parses the header correctly
+          contentType: MediaType('audio', 'webm'),
+        ));
+
+        final res = await req.send();
+        if (res.statusCode == 200) {
+          final body = await res.stream.bytesToString();
+          final data = json.decode(body);
+          if (data['success'] == true && data['text'] != null && (data['text'] as String).trim().isNotEmpty) {
+            if (mounted) _textController.clear();
+            _sendMessage(data['text'] as String);
+          } else {
+            // Safe fallback: if transcription is empty, return to idle instead of hanging in thinking mode forever!
+            if (mounted) _textController.clear();
+            await _setAvatarState(AvatarState.idle);
+            debugPrint('🎙️ [ASR] Empty transcription returned. Resetting avatar to idle.');
+          }
+        } else {
+          throw Exception('Transcription HTTP ${res.statusCode}');
+        }
+      } catch (e) {
+        debugPrint('Transcription error: $e');
+        if (mounted) {
+          setState(() {
+            _messages.add(ChatMessage(
+                text: 'System Error: Transcription failed.', isUser: false));
+            _textController.clear();
+          });
+        }
+        await _setAvatarState(AvatarState.idle);
       }
     }
   }
 
   void _startSilenceDetection() async {
-    // Intentionally empty. Python handles VAD and timeout.
+    try {
+      final mediaDevices = html.window.navigator.mediaDevices;
+      if (mediaDevices == null) {
+        debugPrint('⚠️ VAD: mediaDevices is null');
+        return;
+      }
+      final stream = await mediaDevices.getUserMedia({'audio': true});
+      _vadStream = stream;
+
+      final audioCtx = wa.AudioContext();
+      _vadAudioContext = audioCtx;
+      
+      final analyser = audioCtx.createAnalyser();
+      _vadAnalyser = analyser;
+      analyser.fftSize = 256;
+
+      final source = audioCtx.createMediaStreamSource(stream);
+      source.connectNode(analyser);
+
+      final bufferLength = analyser.frequencyBinCount ?? 0;
+      final dataArray = Float32List(bufferLength);
+
+      bool hasSpoken = false;
+      int silenceTicks = 0;
+      int maxTicks = 100; // 10 seconds max timeout (100 * 100ms)
+      int elapsedTicks = 0;
+
+      const silenceThreshold = 0.008; 
+      const speechThreshold = 0.02;
+
+      _vadTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) async {
+        if (!mounted || !_isListening) {
+          _stopSilenceDetection();
+          return;
+        }
+
+        elapsedTicks++;
+        if (elapsedTicks >= maxTicks) {
+          debugPrint('⏱️ VAD: Max recording duration reached (10s). Auto-stopping...');
+          _stopSilenceDetection();
+          if (_isListening) {
+            await _listen();
+          }
+          return;
+        }
+
+        analyser.getFloatTimeDomainData(dataArray);
+
+        double sum = 0;
+        for (int i = 0; i < bufferLength; i++) {
+          sum += dataArray[i] * dataArray[i];
+        }
+        double rms = math.sqrt(sum / bufferLength);
+
+        if (rms > speechThreshold) {
+          if (!hasSpoken) {
+            hasSpoken = true;
+            debugPrint('🗣️ VAD: Speech detected (RMS: ${rms.toStringAsFixed(4)})');
+          }
+          silenceTicks = 0;
+        } else if (rms < silenceThreshold) {
+          if (hasSpoken) {
+            silenceTicks++;
+            if (silenceTicks >= 15) { // 1.5 seconds of silence
+              debugPrint('🤫 VAD: Silence detected after speech (1.5s). Auto-stopping...');
+              _stopSilenceDetection();
+              if (_isListening) {
+                await _listen();
+              }
+            }
+          } else {
+            if (elapsedTicks >= 40) { // 4 seconds of initial silence
+              debugPrint('⏱️ VAD: No speech detected for 4s. Auto-stopping...');
+              _stopSilenceDetection();
+              if (_isListening) {
+                await _listen();
+              }
+            }
+          }
+        } else {
+          silenceTicks = 0;
+        }
+      });
+
+    } catch (e) {
+      debugPrint('⚠️ VAD Initialization failed: $e');
+      _vadTimer = Timer(const Duration(seconds: 5), () async {
+        if (mounted && _isListening) {
+          debugPrint('⏱️ VAD Fallback: Auto-stopping after 5s...');
+          await _listen();
+        }
+      });
+    }
   }
 
   void _stopSilenceDetection() {
-    // Intentionally empty.
-  }
+    _vadTimer?.cancel();
+    _vadTimer = null;
+    
+    try {
+      final tracks = _vadStream?.getTracks();
+      if (tracks != null) {
+        for (var track in tracks) {
+          track.stop();
+        }
+      }
+    } catch (_) {}
+    _vadStream = null;
 
+    try {
+      _vadAudioContext?.close();
+    } catch (_) {}
+    _vadAudioContext = null;
+    _vadAnalyser = null;
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   //  Hands-free / wake-word
@@ -652,7 +818,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   String get _wakeWordUrl {
-    return 'ws://127.0.0.1:8003';
+    final host = html.window.location.hostname ?? '';
+    final socketHost = host.isEmpty ? 'localhost' : host;
+    final port = html.window.location.port;
+    final wsPort = (port != null && port.isNotEmpty) ? ':$port' : '';
+    // Use the same protocol scheme - wss for https, ws for http
+    final protocol = html.window.location.protocol == 'https:' ? 'wss' : 'ws';
+    return '$protocol://$socketHost$wsPort/wakeword';
   }
 
   void _connectWakeWord() {
@@ -667,40 +839,21 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           'action': 'set_persona',
           'persona': _currentPersona
         }));
-        _wakeWordSocket!.send(json.encode({
-          'action': 'set_base_url',
-          'url': baseUrl
-        }));
       });
 
       _wakeWordSocket!.onMessage.listen((event) async {
         debugPrint('📥 Wake-word WS raw message: ${event.data}');
         try {
           final data = json.decode(event.data.toString());
-          final actionEvent = data['event'];
-          
-          if (actionEvent == 'STATE_CHANGE') {
-            final state = data['state'];
-            if (state == 'RECORDING' && !_isListening) {
-              if (mounted) setState(() {
-                _isListening = true;
-                _textController.text = 'Listening (Python)...';
-              });
-            } else if (state == 'TRANSCRIBING') {
-              if (mounted) setState(() {
-                _isListening = false;
-                _textController.text = 'Transcribing...';
-              });
-              await _setAvatarState(AvatarState.thinking);
-            }
-          } else if (actionEvent == 'STT_RESULT') {
-            final text = data['text'];
-            if (text != null && text.toString().trim().isNotEmpty) {
-              if (mounted) _textController.clear();
-              _sendMessage(text.toString());
-            } else {
-              if (mounted) _textController.clear();
-              await _setAvatarState(AvatarState.idle);
+          if (data['event'] == 'WAKE_WORD_DETECTED') {
+            debugPrint("🎯 [WAKE WORD DETECTED]");
+            if (!_isTtsInProgress && !_isListening) {
+              if (mounted) {
+                setState(() {
+                  _isHandsFreeMode = true; // Auto-enable hands-free mode
+                });
+              }
+              await _listen(); // start recording
             }
           }
         } catch (e) {
