@@ -93,7 +93,7 @@ def vosk_worker(loop):
                 dtype='int16',
                 channels=1,
                 callback=audio_callback,
-                device=None          # use default (first available) device
+                device="hw:2,0"
             ):
                 print("[PY WAKE] mic stream reopened – listening for wake word...")
 
