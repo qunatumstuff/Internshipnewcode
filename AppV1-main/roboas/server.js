@@ -420,7 +420,14 @@ app.get('/pdf-status', (req, res) => {
 
 // Transcribe Audio (Whisper STT - Optimized for Option B: Prompt + Regex + LLM)
 app.post('/transcribe', upload.single('audio'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ success: false, message: 'No audio file uploaded.' });
+  console.log(`\n\n=== 🎙️ [POST /transcribe] Endpoint Hit! ===`);
+  if (!req.file) {
+    console.log(`❌ [POST /transcribe] Error: No audio file uploaded.`);
+    return res.status(400).json({ success: false, message: 'No audio file uploaded.' });
+  }
+  
+  console.log(`✅ [POST /transcribe] Uploaded file size: ${req.file.size} bytes`);
+  console.log(`✅ [POST /transcribe] Uploaded MIME type: ${req.file.mimetype}`);
 
   try {
     // TIER 1: Optimized Context Prompt (Natural flow)

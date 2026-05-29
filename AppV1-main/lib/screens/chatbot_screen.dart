@@ -608,8 +608,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ─────────────────────────────────────────────────────────────────────────
 
   Future<void> _listen() async {
+    debugPrint('🎙️ [DEBUG] Mic button pressed or _listen() called');
     // Do not allow listening while chatbot is speaking
-    if (_isTtsInProgress) return;
+    if (_isTtsInProgress) {
+      debugPrint('🎙️ [DEBUG] Blocked _listen() because _isTtsInProgress is true.');
+      return;
+    }
     _unlockAudio();
 
     if (!_isListening) {
@@ -622,7 +626,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       // Use completely default config for maximum compatibility on Pi 5 Chromium
       const config = RecordConfig();
+      debugPrint('🎙️ [DEBUG] Starting audio recorder...');
       await _audioRecorder.start(config, path: '');
+      debugPrint('🎙️ [DEBUG] Recording started successfully.');
       if (_isHandsFreeMode) {
         _startSilenceDetection();
       }
@@ -636,9 +642,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       // Small pad so trailing syllables are captured
       await Future.delayed(const Duration(milliseconds: 400));
+      debugPrint('🎙️ [DEBUG] Stopping audio recorder...');
       final path = await _audioRecorder.stop();
+      debugPrint('🎙️ [DEBUG] Recording stopped. audio blob/file path: $path');
 
       if (path == null) {
+        debugPrint('🎙️ [DEBUG] audio path is null. Aborting.');
         if (mounted) setState(() => _textController.clear());
         await _setAvatarState(AvatarState.idle);
         return;
@@ -646,7 +655,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       try {
         final audioBytes = await http.readBytes(Uri.parse(path));
-        debugPrint('🎙️ [ASR] Recorded audio bytes length: ${audioBytes.length}');
+        debugPrint('🎙️ [DEBUG] Audio blob/file read successfully. audio file size: ${audioBytes.length} bytes');
         
         if (audioBytes.length < 5000) {
           _sendMessage('System Error: Recorded audio file is suspiciously small (${audioBytes.length} bytes). The browser microphone encoder failed.');
@@ -654,8 +663,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           return;
         }
 
-        final req = http.MultipartRequest(
-            'POST', Uri.parse('$baseUrl/transcribe'));
+        final uploadUrl = '$baseUrl/transcribe';
+        debugPrint('🎙️ [DEBUG] Upload URL: $uploadUrl');
+        final req = http.MultipartRequest('POST', Uri.parse(uploadUrl));
         req.files.add(http.MultipartFile.fromBytes(
           'audio',
           audioBytes,
@@ -663,9 +673,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           contentType: MediaType('audio', 'webm'),
         ));
 
+        debugPrint('🎙️ [DEBUG] HTTP POST started...');
         final res = await req.send();
+        debugPrint('🎙️ [DEBUG] HTTP status code: ${res.statusCode}');
         if (res.statusCode == 200) {
           final body = await res.stream.bytesToString();
+          debugPrint('🎙️ [DEBUG] Response body: $body');
           final data = json.decode(body);
           if (data['success'] == true && data['text'] != null && (data['text'] as String).trim().isNotEmpty) {
             if (mounted) _textController.clear();
@@ -677,10 +690,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             debugPrint('🎙️ [ASR] Empty transcription returned. Resetting avatar to idle.');
           }
         } else {
+          debugPrint('🎙️ [DEBUG] Transcription HTTP Error: ${res.statusCode}');
           throw Exception('Transcription HTTP ${res.statusCode}');
         }
       } catch (e) {
-        debugPrint('Transcription error: $e');
+        debugPrint('🎙️ [DEBUG] Transcription/Upload error: $e');
         if (mounted) {
           setState(() {
             _messages.add(ChatMessage(
