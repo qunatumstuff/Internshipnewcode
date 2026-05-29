@@ -91,7 +91,7 @@ function startWakeWordServer() {
     console.error("❌ Failed to start Wake Word Server:", err.message);
   }
 }
-startWakeWordServer();
+// startWakeWordServer(); // TEMPORARILY DISABLED FOR MANUAL MIC TESTING
 
 // === Vision MCP Server Client (Remote on Laptop B) ===
 let visionMcpClient = null;
