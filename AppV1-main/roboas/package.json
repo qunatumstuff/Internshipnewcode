@@ -12,6 +12,7 @@
     "@langchain/openai": "^0.0.13",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "duck-duck-scrape": "^2.2.7",
     "express": "^4.21.2",
     "langchain": "^0.0.206",
