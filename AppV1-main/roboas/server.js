@@ -1149,6 +1149,7 @@ wss.on('connection', (clientWs) => {
   console.log('🔗 [WS Proxy] Flutter client connected to /wakeword proxy');
 
   // Connect to the Python wake word server
+  console.log(`[NODE] connecting to Python wakeword at ${WAKEWORD_WS_URL}`);
   let pythonWs;
   try {
     pythonWs = new WebSocket(WAKEWORD_WS_URL);
@@ -1159,7 +1160,15 @@ wss.on('connection', (clientWs) => {
   }
 
   pythonWs.on('open', () => {
-    console.log('✅ [WS Proxy] Connected to Python wake word server on port 8003');
+    console.log('[NODE] Python wakeword connected');
+  });
+
+  pythonWs.on('close', () => {
+    console.log('[NODE] Python wakeword disconnected');
+  });
+
+  pythonWs.on('error', (err) => {
+    console.error(`❌ [WS Proxy] Python WS error: ${err.message}`);
   });
 
   // Relay messages from Python → Flutter client
@@ -1195,7 +1204,7 @@ wss.on('connection', (clientWs) => {
       pythonWs.send(msg);
       console.log(`[NODE] forwarded to Python: ${msg}`);
     } else {
-      console.warn(`[NODE] cannot forward to Python (state=${pythonWs.readyState}): ${msg}`);
+      console.warn(`[NODE] cannot forward to Python because not connected`);
     }
   });
 
