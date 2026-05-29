@@ -927,6 +927,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       
       _wakeWordSocket!.onOpen.listen((_) {
         debugPrint('✅ Wake-word WS connected successfully');
+        _addUiLog('[WAKE] websocket connected');
         _wakeWordSocket!.send(json.encode({
           'action': 'set_persona',
           'persona': _currentPersona
@@ -935,9 +936,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       _wakeWordSocket!.onMessage.listen((event) async {
         debugPrint('📥 Wake-word WS raw message: ${event.data}');
+        _addUiLog('[WAKE] message received: ${event.data}');
         try {
           final data = json.decode(event.data.toString());
           if (data['event'] == 'WAKE_WORD_DETECTED') {
+            _addUiLog('[WAKE] event parsed: WAKE_WORD_DETECTED');
             _addUiLog('[WAKE] event received');
             
             if (_isTtsInProgress) {

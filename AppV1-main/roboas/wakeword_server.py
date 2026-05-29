@@ -42,6 +42,7 @@ async def broadcast_wakeword(text, persona):
     })
     # Gather all send operations
     await asyncio.gather(*[client.send(event_msg) for client in connected_clients], return_exceptions=True)
+    print(f"[PY WAKE] broadcast sent")
 
 def vosk_worker(loop):
     global active_persona
@@ -78,6 +79,7 @@ def vosk_worker(loop):
                             print(f"*** WAKE WORD DETECTED but MUTED (TTS active): {text} ***")
                             rec.Reset()
                         else:
+                            print(f"[PY WAKE] detected {text}")
                             print(f"*** WAKE WORD DETECTED: {text} (Persona: {current_persona_local}) ***")
                             # Schedule broadcast on the main event loop
                             asyncio.run_coroutine_threadsafe(
