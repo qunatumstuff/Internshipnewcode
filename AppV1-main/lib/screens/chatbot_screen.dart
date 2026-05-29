@@ -938,13 +938,22 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         try {
           final data = json.decode(event.data.toString());
           if (data['event'] == 'WAKE_WORD_DETECTED') {
-            debugPrint("🎯 [WAKE WORD DETECTED]");
-            if (!_isTtsInProgress && !_isListening) {
+            _addUiLog('[WAKE] event received');
+            
+            if (_isTtsInProgress) {
+              _addUiLog('[WAKE] blocked because: TTS is in progress');
+            } else if (_isListening) {
+              _addUiLog('[WAKE] blocked because: already listening');
+            } else if (_isInteractionBlocked) {
+              _addUiLog('[WAKE] blocked because: interaction is blocked');
+            } else {
+              _addUiLog('[WAKE] triggering manual mic flow');
               if (mounted) {
                 setState(() {
                   _isHandsFreeMode = true; // Auto-enable hands-free mode
                 });
               }
+              _addUiLog('[WAKE] mic flow started');
               await _listen(); // start recording
             }
           }
