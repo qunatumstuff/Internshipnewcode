@@ -1165,16 +1165,22 @@ wss.on('connection', (clientWs) => {
   // Relay messages from Python → Flutter client
   pythonWs.on('message', (data) => {
     const msg = data.toString();
-    if (msg.includes('WAKE_WORD_DETECTED')) {
-      console.log(`[NODE] received WAKE_WORD_DETECTED from Python`);
+    let eventName = 'unknown';
+    try {
+      const parsed = JSON.parse(msg);
+      if (parsed.event) eventName = parsed.event;
+    } catch (e) {}
+
+    if (eventName !== 'unknown') {
+      console.log(`[NODE] received ${eventName} from Python`);
     } else {
       console.log(`[WS PROXY] received from Python: ${msg}`);
     }
     
     if (clientWs.readyState === WebSocket.OPEN) {
       clientWs.send(msg);
-      if (msg.includes('WAKE_WORD_DETECTED')) {
-        console.log(`[NODE] forwarded WAKE_WORD_DETECTED to Flutter`);
+      if (eventName !== 'unknown') {
+        console.log(`[NODE] forwarded ${eventName} to Flutter`);
       } else {
         console.log(`[WS PROXY] forwarded to Flutter: ${msg}`);
       }

@@ -45,18 +45,18 @@ def audio_callback(indata, frames, time, status):
 
 
 # ─────────────────────────────────────────────────────────
-# Broadcast wake word to all Flutter clients
+# Broadcast events to all Flutter clients
 # ─────────────────────────────────────────────────────────
-async def broadcast_wakeword(text, persona):
+async def broadcast_event(event_name, payload=None):
     if not connected_clients:
-        print(f"[PY WAKE] heard '{text}' but no Flutter clients connected.")
+        print(f"[PY WAKE] heard '{event_name}' but no Flutter clients connected.")
         return
 
-    event_msg = json.dumps({
-        "event": "WAKE_WORD_DETECTED",
-        "model": text,
-        "persona": persona
-    })
+    msg_dict = {"event": event_name}
+    if payload:
+        msg_dict.update(payload)
+
+    event_msg = json.dumps(msg_dict)
     results = await asyncio.gather(
         *[client.send(event_msg) for client in connected_clients],
         return_exceptions=True
@@ -64,7 +64,7 @@ async def broadcast_wakeword(text, persona):
     for r in results:
         if isinstance(r, Exception):
             print(f"[PY WAKE] send error: {r}")
-    print("[PY] sent WAKE_WORD_DETECTED")
+    print(f"[PY] sent {event_name}")
 
 
 # ─────────────────────────────────────────────────────────
@@ -96,6 +96,10 @@ def vosk_worker(loop):
                 device="hw:2,0"
             ):
                 print("[PY] wakeword listening started")
+                asyncio.run_coroutine_threadsafe(
+                    broadcast_event("WAKEWORD_STARTED"),
+                    loop
+                )
 
                 while not mic_stop_event.is_set():
                     text = ''  # reset each iteration to prevent stale value
@@ -142,7 +146,7 @@ def vosk_worker(loop):
 
                                 # Broadcast AFTER setting stop so the with-block exits
                                 asyncio.run_coroutine_threadsafe(
-                                    broadcast_wakeword(text, current_persona_local),
+                                    broadcast_event("WAKE_WORD_DETECTED", {"model": text, "persona": current_persona_local}),
                                     loop
                                 )
                                 rec.Reset()
@@ -151,6 +155,10 @@ def vosk_worker(loop):
             print(f"[PY WAKE] mic stream error: {e}", file=sys.stderr)
 
         print("[PY] mic released")
+        asyncio.run_coroutine_threadsafe(
+            broadcast_event("WAKEWORD_STOPPED"),
+            loop
+        )
 
 
 # ─────────────────────────────────────────────────────────

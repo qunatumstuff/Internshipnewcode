@@ -24,6 +24,14 @@ class ChatMessage {
 
 // ─── Widget ───────────────────────────────────────────────────────────────────
 
+enum HandsOffState {
+  handsOffOff,
+  wakewordListening,
+  userRecording,
+  transcribing,
+  johnSpeaking
+}
+
 class ChatbotScreen extends StatefulWidget {
   const ChatbotScreen({super.key});
 
@@ -58,7 +66,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   bool _isMenuVisible = false;
 
   // ── Hands-free / wake-word ──
-  bool _isHandsFreeMode = false;
+  HandsOffState _currentState = HandsOffState.handsOffOff;
   html.WebSocket? _wakeWordSocket;
   String _wakeWsStatus = 'disconnected'; // connected | connecting | disconnected | error
   bool _wakeWsReconnecting = false;      // prevents overlapping reconnect attempts
@@ -334,6 +342,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   Future<void> _speak(String text) async {
     if (text.isEmpty) return;
+    
+    if (_currentState != HandsOffState.handsOffOff) {
+      _changeState(HandsOffState.johnSpeaking);
+    }
+    
     _setWakeWordMute(true); // Mute wake word while speaking
     if (mounted) {
       setState(() {
@@ -377,6 +390,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             });
           }
           await _setAvatarState(AvatarState.idle);
+
+          if (_currentState == HandsOffState.johnSpeaking) {
+            _changeState(HandsOffState.wakewordListening);
+            if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+              _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
+            }
+          }
         });
 
         audio.onError.listen((_) {
@@ -477,6 +497,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           });
         }
         await _setAvatarState(AvatarState.idle);
+        if (_currentState == HandsOffState.johnSpeaking) {
+          _changeState(HandsOffState.wakewordListening);
+          if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+            _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
+          }
+        }
       });
 
       utterance.onError.listen((e) async {
@@ -489,6 +515,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           });
         }
         await _setAvatarState(AvatarState.idle);
+        if (_currentState == HandsOffState.johnSpeaking) {
+          _changeState(HandsOffState.wakewordListening);
+          if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+            _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
+          }
+        }
       });
 
       synth.speak(utterance);
@@ -512,6 +544,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       });
     }
     await _setAvatarState(AvatarState.idle);
+
+    if (_currentState == HandsOffState.johnSpeaking) {
+      _changeState(HandsOffState.wakewordListening);
+      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+        _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
+      }
+    }
   }
 
   Future<void> _emergencyStop() async {
@@ -532,12 +571,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _stopSilenceDetection();
 
     // Reset wake word socket if connected
-    if (_isHandsFreeMode) {
-      _disconnectWakeWord();
-      _isHandsFreeMode = false;
-    }
-
-    // Set avatar to idle
+    if (_currentState != HandsOffState.handsOffOff) {
+      _changeState(HandsOffState.handsOffOff);
+      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+        _wakeWordSocket!.send(json.encode({'action': 'stop_wakeword'}));
+      }
+    }// Set avatar to idle
     await _setAvatarState(AvatarState.idle);
 
     if (mounted) {
@@ -636,8 +675,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _unlockAudio();
 
     if (!_isListening) {
-      // Tell Python to release its mic before the browser opens its own
-      await _pauseWakeWord();
+      if (_currentState == HandsOffState.wakewordListening) {
+        if (_wakeWordSocket != null &&
+            _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+          _wakeWordSocket!.send(json.encode({'action': 'stop_wakeword'}));
+          _addUiLog('[FLUTTER] sent stop_wakeword (manual interrupt)');
+          await Future.delayed(const Duration(milliseconds: 150));
+        }
+        _changeState(HandsOffState.userRecording);
+      }
 
       _addUiLog('[MIC] Requesting browser microphone permission');
       html.MediaStream? stream;
@@ -645,12 +691,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         stream = await html.window.navigator.mediaDevices?.getUserMedia({'audio': true});
       } catch (e) {
         _addUiLog('[MIC] Permission denied or error: $e');
-        _resumeWakeWord(); // Give mic back to Python if browser couldn't open it
+        _abortAndRestartWakeWord();
         return;
       }
       if (stream == null) {
         _addUiLog('[MIC] Permission denied (stream null)');
-        _resumeWakeWord();
+        _abortAndRestartWakeWord();
         return;
       }
       _addUiLog('[MIC] Permission granted');
@@ -706,11 +752,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         final sizes = _webAudioChunks.map((b) => b.size).join(',');
         _addUiLog('[MIC] chunk sizes: $sizes');
         
+        if (_currentState == HandsOffState.userRecording) {
+          _changeState(HandsOffState.transcribing);
+        }
+
         if (_webAudioChunks.isEmpty) {
           _addUiLog('[MIC] audio bytes are empty. Aborting.');
           if (mounted) setState(() => _textController.clear());
           await _setAvatarState(AvatarState.idle);
-          _resumeWakeWord();
+          _abortAndRestartWakeWord();
           return;
         }
 
@@ -727,7 +777,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         if (audioBytes.length < 5000) {
           _sendMessage('System Error: Recorded audio file is suspiciously small (${audioBytes.length} bytes).');
           await _setAvatarState(AvatarState.idle);
-          _resumeWakeWord();
+          _abortAndRestartWakeWord(); // we send a text message so it won't call _speak directly if empty, wait no, _sendMessage might hit an error and call _speak, but if it successfully sends, the LLM will reply and call _speak.
+          // Wait, if audio is too small, we send it as a SYSTEM text message. Then _sendMessage calls the LLM, which calls _speak.
+          // So we should NOT abort here, because _speak WILL be called.
           return;
         }
 
@@ -770,16 +822,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             });
           }
           await _setAvatarState(AvatarState.idle);
-        } finally {
-          // Always restart Python wakeword detection after recording/upload finishes
-          _resumeWakeWord();
+          _abortAndRestartWakeWord();
         }
       });
 
       _webMediaRecorder!.start(200); // Request data every 200ms
       _addUiLog('[FLUTTER] recording started');
       _addUiLog('[MIC] Recording started');
-      if (_isHandsFreeMode) {
+      if (_currentState != HandsOffState.handsOffOff) {
         _startSilenceDetection();
       }
     } else {
@@ -918,15 +968,33 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   //  Hands-free / wake-word
   // ─────────────────────────────────────────────────────────────────────────
 
-  void _toggleHandsFree() {
-    setState(() {
-      _isHandsFreeMode = !_isHandsFreeMode;
-      _addUiLog('[HANDOFF] ${_isHandsFreeMode ? 'ON' : 'OFF'}');
-    });
-    if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-      if (_isHandsFreeMode) {
+  void _changeState(HandsOffState newState) {
+    if (mounted) {
+      setState(() {
+        _currentState = newState;
+      });
+      _addUiLog('[STATE] changed to ${newState.name}');
+    }
+  }
+
+  void _abortAndRestartWakeWord() {
+    if (_currentState == HandsOffState.userRecording || _currentState == HandsOffState.transcribing) {
+      _changeState(HandsOffState.wakewordListening);
+      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
         _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
-      } else {
+      }
+    }
+  }
+
+  void _toggleHandsFree() {
+    if (_currentState == HandsOffState.handsOffOff) {
+      _changeState(HandsOffState.wakewordListening);
+      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+        _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
+      }
+    } else {
+      _changeState(HandsOffState.handsOffOff);
+      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
         _wakeWordSocket!.send(json.encode({'action': 'stop_wakeword'}));
       }
     }
@@ -942,35 +1010,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     return '$protocol://$socketHost$wsPort/wakeword';
   }
 
-  /// Tells Python to release its mic (stop_wakeword) or reclaim it (start_wakeword).
-  Future<void> _pauseWakeWord() async {
-    if (_isHandsFreeMode) {
-      if (_wakeWordSocket != null &&
-          _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-        _wakeWordSocket!.send(json.encode({'action': 'stop_wakeword'}));
-        _addUiLog('[FLUTTER] sent stop_wakeword');
-        debugPrint('⏸️ [WAKE] sent stop_wakeword to Python');
-        await Future.delayed(const Duration(milliseconds: 150));
-      } else {
-        debugPrint('⚠️ [WAKE] stop_wakeword skipped – WS not open');
-      }
-    }
-  }
-
-  void _resumeWakeWord() {
-    if (_isHandsFreeMode) {
-      if (_wakeWordSocket != null &&
-          _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-        _addUiLog('[FLUTTER] restarting wakeword because handoff mode is ON');
-        _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
-        debugPrint('▶️ [WAKE] sent start_wakeword to Python');
-      } else {
-        _addUiLog('[FLUTTER] restart_wakeword SKIPPED – WS not open');
-        debugPrint('⚠️ [WAKE] restart_wakeword skipped – WS not open');
-      }
-    }
-  }
-
   Future<void> _handleWakeWordEvent() async {
     _addUiLog('[FLUTTER] calling manual mic function');
     
@@ -982,10 +1021,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _addUiLog('[WAKE] blocked because: interaction is blocked');
     } else {
       _addUiLog('[MIC] recording started');
-      if (mounted) {
-        setState(() {
-          _isHandsFreeMode = true; // Auto-enable hands-free mode
-        });
+      if (_currentState != HandsOffState.handsOffOff) {
+        _changeState(HandsOffState.userRecording);
       }
       await _listen(); // start recording
     }
@@ -1053,7 +1090,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _addUiLog('[WAKE] message received: ${event.data}');
       try {
         final data = json.decode(event.data.toString());
-        if (data['event'] == 'WAKE_WORD_DETECTED') {
+        if (data['event'] == 'WAKEWORD_STARTED') {
+          _addUiLog('[FLUTTER] received WAKEWORD_STARTED');
+          if (_currentState != HandsOffState.handsOffOff) {
+            _changeState(HandsOffState.wakewordListening);
+          }
+        } else if (data['event'] == 'WAKEWORD_STOPPED') {
+          _addUiLog('[FLUTTER] received WAKEWORD_STOPPED');
+        } else if (data['event'] == 'WAKE_WORD_DETECTED') {
           _addUiLog('[FLUTTER] received WAKE_WORD_DETECTED');
           await _handleWakeWordEvent();
         }
@@ -1635,7 +1679,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               // Headphone (hands-free toggle) - green when active (LEFT of mic)
               _circleBtn(
                 Icons.headphones,
-                _isHandsFreeMode ? Colors.green : Colors.grey[600]!,
+                _currentState != HandsOffState.handsOffOff ? Colors.green : Colors.grey[600]!,
                 _toggleHandsFree,
                 radius: 18,
               ),
