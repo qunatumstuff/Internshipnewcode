@@ -135,8 +135,8 @@ def vosk_worker(loop):
     try:
         # OPEN THE MICROPHONE ONCE AND NEVER CLOSE IT!
         with sd.RawInputStream(samplerate=16000, blocksize=4000, dtype='int16',
-                               channels=1, callback=audio_callback, device='plughw:2,0'):
-            print("Microphone continuous stream opened successfully on plughw:2,0!")
+                               channels=1, callback=audio_callback, device=1):
+            print("Microphone continuous stream opened successfully on device 1!")
             
             while True:
                 data = audio_queue.get()
