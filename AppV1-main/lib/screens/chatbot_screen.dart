@@ -119,7 +119,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       vsync: this,
       duration: const Duration(milliseconds: 500),
     )..repeat(reverse: true);
-    // _connectWakeWord(); // TEMPORARILY DISABLED: Testing manual mic button only
+    _connectWakeWord();
     _initializeAll();
   }
 
