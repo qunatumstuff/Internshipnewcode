@@ -118,6 +118,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _subtitleScrollController.dispose();
     _audioElement?.pause();
     _audioElement = null;
+    debugPrint('⚠️ [DEBUG] Calling _wakeWordSocket?.close() from dispose()');
     _wakeWordSocket?.close();
     super.dispose();
   }
@@ -861,12 +862,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         }
       });
 
-      _wakeWordSocket!.onError.listen((_) {
-        debugPrint('❌ Wake-word WS error');
+      _wakeWordSocket!.onError.listen((html.Event errorEvent) {
+        debugPrint('❌ Wake-word WS error. Type: ${errorEvent.type}');
       });
 
-      _wakeWordSocket!.onClose.listen((_) {
-        debugPrint('⚠️ Wake-word WS closed');
+      _wakeWordSocket!.onClose.listen((html.Event event) {
+        if (event is html.CloseEvent) {
+          debugPrint('⚠️ Wake-word WS closed: Code=${event.code}, Reason=${event.reason}, Clean=${event.wasClean}');
+        } else {
+          debugPrint('⚠️ Wake-word WS closed. Event: $event');
+        }
         // Auto-reconnect after 5 seconds
         Future.delayed(const Duration(seconds: 5), () {
           if (mounted && (_wakeWordSocket == null || _wakeWordSocket!.readyState != html.WebSocket.OPEN)) {
@@ -880,6 +885,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _disconnectWakeWord() {
+    debugPrint('⚠️ [DEBUG] Calling _wakeWordSocket?.close() from _disconnectWakeWord()');
     _wakeWordSocket?.close();
     _wakeWordSocket = null;
   }
