@@ -53,7 +53,7 @@ def vosk_worker(loop):
     try:
         # 16000 Hz, mono, int16 PCM
         with sd.RawInputStream(samplerate=16000, blocksize=4000, dtype='int16',
-                               channels=1, callback=audio_callback):
+                               channels=1, callback=audio_callback, device=1):
             print("Microphone listening stream opened successfully! Listening for wake word...")
             while True:
                 data = audio_queue.get()
