@@ -83,7 +83,7 @@ def vosk_worker(loop):
         mic_start_event.clear()
         mic_stop_event.clear()
 
-        print("[PY WAKE] mic stream opening...")
+        print("[PY WAKE] reopening mic stream...")
         rec = vosk.KaldiRecognizer(model, 16000, grammar)
 
         try:
@@ -95,9 +95,10 @@ def vosk_worker(loop):
                 callback=audio_callback,
                 device="hw:2,0"
             ):
-                print("[PY WAKE] mic stream reopened – listening for wake word...")
+                print("[PY WAKE] listening resumed – waiting for wake word...")
 
                 while not mic_stop_event.is_set():
+                    text = ''  # reset each iteration to prevent stale value
                     try:
                         data = audio_queue.get(timeout=0.5)
                     except queue.Empty:
@@ -202,9 +203,10 @@ async def handle_client(websocket):
                     elif action in ("resume_wakeword", "restart_wakeword"):
                         # Flutter finished recording – give mic back to Python
                         print(f"[PY WAKE] received {action} from Flutter")
+                        print("[PY WAKE] reopening mic stream...")
                         mic_stop_event.clear()
                         mic_start_event.set()
-                        print("[PY WAKE] mic stream reopened")
+                        # Actual confirmation log is printed by vosk_worker when it opens the stream
 
                 except Exception as e:
                     print(f"[PY WAKE] Error parsing message: {e}")

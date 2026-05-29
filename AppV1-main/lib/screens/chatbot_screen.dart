@@ -945,10 +945,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   void _resumeWakeWord() {
     if (_wakeWordSocket != null &&
         _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
+      _addUiLog('[FLUTTER] sending resume_wakeword');
       _wakeWordSocket!.send(json.encode({'action': 'resume_wakeword'}));
       _addUiLog('[FLUTTER] sent resume_wakeword');
       debugPrint('▶️ [WAKE] sent resume_wakeword to Python');
     } else {
+      _addUiLog('[FLUTTER] resume_wakeword SKIPPED – WS not open');
       debugPrint('⚠️ [WAKE] resume_wakeword skipped – WS not open');
     }
   }

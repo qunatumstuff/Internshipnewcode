@@ -1154,8 +1154,13 @@ wss.on('connection', (clientWs) => {
 
   // Relay messages from Flutter client → Python
   clientWs.on('message', (data) => {
+    const msg = data.toString();
+    console.log(`[NODE] received from Flutter: ${msg}`);
     if (pythonWs.readyState === WebSocket.OPEN) {
-      pythonWs.send(data.toString());
+      pythonWs.send(msg);
+      console.log(`[NODE] forwarded to Python: ${msg}`);
+    } else {
+      console.warn(`[NODE] cannot forward to Python (state=${pythonWs.readyState}): ${msg}`);
     }
   });
 
