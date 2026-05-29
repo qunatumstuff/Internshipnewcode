@@ -1,6 +1,6 @@
 [
   {
-    "timestamp": "2026-05-29T04:47:04.867Z",
+    "timestamp": "2026-05-29T04:55:54.105Z",
     "userQuestion": "System Command",
     "toolName": "switch_avatar",
     "args": {
@@ -9,7 +9,7 @@
     "result": "switched to john"
   },
   {
-    "timestamp": "2026-05-29T04:47:04.874Z",
+    "timestamp": "2026-05-29T04:55:54.120Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -18,43 +18,7 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-05-29T04:47:04.879Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "idle"
-    },
-    "result": "updated to 🤗"
-  },
-  {
-    "timestamp": "2026-05-29T04:47:23.613Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-05-29T04:47:36.169Z",
-    "userQuestion": "System Command",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "john"
-    },
-    "result": "switched to john"
-  },
-  {
-    "timestamp": "2026-05-29T04:47:36.178Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-05-29T04:47:36.185Z",
+    "timestamp": "2026-05-29T04:55:54.133Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {

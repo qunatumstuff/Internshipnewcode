@@ -919,6 +919,27 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     return '$protocol://$socketHost$wsPort/wakeword';
   }
 
+  Future<void> _handleWakeWordEvent() async {
+    _addUiLog('[WAKE] event received');
+    
+    if (_isTtsInProgress) {
+      _addUiLog('[WAKE] blocked because: TTS is in progress');
+    } else if (_isListening) {
+      _addUiLog('[WAKE] blocked because: already listening');
+    } else if (_isInteractionBlocked) {
+      _addUiLog('[WAKE] blocked because: interaction is blocked');
+    } else {
+      _addUiLog('[WAKE] triggering manual mic flow');
+      if (mounted) {
+        setState(() {
+          _isHandsFreeMode = true; // Auto-enable hands-free mode
+        });
+      }
+      _addUiLog('[WAKE] mic flow started');
+      await _listen(); // start recording
+    }
+  }
+
   void _connectWakeWord() {
     try {
       final wsUrl = _wakeWordUrl;
@@ -941,24 +962,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           final data = json.decode(event.data.toString());
           if (data['event'] == 'WAKE_WORD_DETECTED') {
             _addUiLog('[WAKE] event parsed: WAKE_WORD_DETECTED');
-            _addUiLog('[WAKE] event received');
-            
-            if (_isTtsInProgress) {
-              _addUiLog('[WAKE] blocked because: TTS is in progress');
-            } else if (_isListening) {
-              _addUiLog('[WAKE] blocked because: already listening');
-            } else if (_isInteractionBlocked) {
-              _addUiLog('[WAKE] blocked because: interaction is blocked');
-            } else {
-              _addUiLog('[WAKE] triggering manual mic flow');
-              if (mounted) {
-                setState(() {
-                  _isHandsFreeMode = true; // Auto-enable hands-free mode
-                });
-              }
-              _addUiLog('[WAKE] mic flow started');
-              await _listen(); // start recording
-            }
+            await _handleWakeWordEvent();
           }
         } catch (e) {
           debugPrint('Error parsing wake word message: $e');
@@ -1599,6 +1603,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                           child: const Icon(Icons.close, color: Colors.white54, size: 16),
                         )
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      onPressed: () => _handleWakeWordEvent(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        minimumSize: const Size.fromHeight(36),
+                      ),
+                      child: const Text('Simulate Wake Word', style: TextStyle(color: Colors.white)),
                     ),
                     const SizedBox(height: 8),
                     ..._micDebugLogs.map((log) => Text(
