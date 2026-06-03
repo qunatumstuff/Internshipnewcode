@@ -26,7 +26,7 @@ const WAKEWORD_WS_URL = process.env.WAKEWORD_WS_URL || 'ws://localhost:8003';
 // CONFIGURATION
 // ==========================================
 // Laptop B (Robot/Vision Laptop) IP Address
-const LAPTOP_B_IP = "172.22.11.140"; // Wi-Fi IP for Laptop B
+const LAPTOP_B_IP = "192.168.2.99"; // Ethernet IP for Laptop B
 // === Tool Call Activity Log ===
 const toolCallLog = [];
 const TOOL_LOG_FILE = path.join(__dirname, 'gpt_tool_log.json');
@@ -578,7 +578,7 @@ app.post('/ask-question', async (req, res) => {
 
 function parseTextToolCall(text) {
   if (!text) return null;
-  const toolNames = ["search_web", "switch_avatar", "locate_object"];
+  const toolNames = ["search_web", "switch_avatar", "locate_object", "get_camera_snapshot", "analyse_surroundings"];
   let matchedTool = null;
   
   for (const name of toolNames) {
@@ -608,6 +608,12 @@ function parseTextToolCall(text) {
       } else if (matchedTool === "switch_avatar") {
         const personaMatch = text.match(/"persona"\s*:\s*"([^"]+)"/);
         if (personaMatch) return { toolName: matchedTool, args: { persona: personaMatch[1] } };
+      } else if (matchedTool === "get_camera_snapshot") {
+        const questionMatch = text.match(/"question"\s*:\s*"([^"]+)"/);
+        if (questionMatch) return { toolName: matchedTool, args: { question: questionMatch[1] } };
+      } else if (matchedTool === "analyse_surroundings") {
+        const promptMatch = text.match(/"prompt"\s*:\s*"([^"]+)"/);
+        if (promptMatch) return { toolName: matchedTool, args: { prompt: promptMatch[1] } };
       }
     }
   }
@@ -617,6 +623,12 @@ function parseTextToolCall(text) {
     if (queryMatch) {
       return { toolName: matchedTool, args: { query: queryMatch[1] } };
     }
+  } else if (matchedTool === "get_camera_snapshot") {
+    const questionMatch = text.match(/"question"\s*:\s*"([^"]+)"/) || text.match(/question\s*=\s*([^&\n\r]+)/);
+    return { toolName: matchedTool, args: { question: questionMatch ? questionMatch[1] : undefined } };
+  } else if (matchedTool === "analyse_surroundings") {
+    const promptMatch = text.match(/"prompt"\s*:\s*"([^"]+)"/) || text.match(/prompt\s*=\s*([^&\n\r]+)/);
+    return { toolName: matchedTool, args: { prompt: promptMatch ? promptMatch[1] : undefined } };
   }
   
   return null;
@@ -637,6 +649,7 @@ function cleanChatbotResponse(text) {
   cleaned = cleaned.replace(/\{[^{}]*"query"[^{}]*\}/gi, '');
   cleaned = cleaned.replace(/\{[^{}]*"target_name"[^{}]*\}/gi, '');
   cleaned = cleaned.replace(/\{[^{}]*"persona"[^{}]*\}/gi, '');
+  cleaned = cleaned.replace(/\{[^{}]*"question"[^{}]*\}/gi, '');
   cleaned = cleaned.replace(/\{[^{}]*:[^{}]*\}/gi, '');
   cleaned = cleaned.replace(/```(json)?\s*[\s\S]*?```/gi, '');
 
@@ -665,6 +678,27 @@ app.post('/ask-gpt', async (req, res) => {
   await sendWakewordCommand('mute');
 
   try {
+    let visualContext = "";
+    const lowerQuestion = question.toLowerCase();
+    const isVisualQuery = lowerQuestion.includes("what") || lowerQuestion.includes("how");
+
+    if (visionMcpClient && isVisualQuery) {
+      try {
+        console.log(`[Vision] Prompt contains question keywords. Capturing camera snapshot & asking Qwen: "${question}"`);
+        const snapshotRes = await visionMcpClient.callTool({
+          name: "get_camera_snapshot",
+          arguments: { question: question }
+        });
+        if (snapshotRes && snapshotRes.content && snapshotRes.content[0]) {
+          const answer = snapshotRes.content[0].text;
+          visualContext = `\n\nVISUAL CONTEXT (from D435i camera snapshot analysed by Qwen-VL):\n${answer}`;
+          console.log(`[Vision] Snapshot visual context retrieved: ${answer}`);
+        }
+      } catch (e) {
+        console.error("Failed to fetch camera snapshot visual context:", e.message);
+      }
+    }
+
     let contextStr = "";
     if (vectorStore) {
       const relevantDocs = await vectorStore.similaritySearch(question, 2);
@@ -691,7 +725,7 @@ CRITICAL DUCKDUCKGO / INTERNET ACCESS RULES:
 CRITICAL OUTPUT CLEANLINESS:
 - Do NOT output raw coordinates (e.g. x, y, z values), technical tool arguments, or structured JSON/dictionary info. Keep your responses purely conversational, natural, and concise. Speak about actions in plain English, not data info.
 
-IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr
+IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualContext
       },
       ...chatHistory,
       { role: "user", content: question }
@@ -745,6 +779,38 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr
                 query: { type: "string", description: "The search query to look up on the web." } 
               },
               required: ["query"]
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "get_camera_snapshot",
+            description: "Captures a snapshot from the D435i camera to inspect the environment/workspace. Optionally provide a question for the vision model (Qwen-VL) to analyze the image.",
+            parameters: {
+              type: "object",
+              properties: { 
+                question: { 
+                  type: "string", 
+                  description: "Optional question to ask the vision language model about the captured snapshot (e.g., 'what objects are visible?')." 
+                } 
+              }
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "analyse_surroundings",
+            description: "Queries the vision MCP to analyze the workspace surroundings using Qwen-VL and describes the layout and objects present.",
+            parameters: {
+              type: "object",
+              properties: { 
+                prompt: { 
+                  type: "string", 
+                  description: "Custom analysis instruction prompt for the model. Defaults to describing objects and layout." 
+                } 
+              }
             }
           }
         }
@@ -867,6 +933,52 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr
               toolResultText = `Search failed: ${err.message}. Wikipedia fallback also failed: ${wikiErr.message}`;
               logToolCall(question, "search_web", args, `Failed: DDG and Wiki both failed.`);
             }
+          }
+        }
+        else if (toolCall.name === "get_camera_snapshot") {
+          logToolCall(question, "get_camera_snapshot", args, "Calling Remote Vision MCP...");
+          sendProgress("Capturing camera snapshot...");
+          if (visionMcpClient) {
+            try {
+              const res = await visionMcpClient.callTool({ name: "get_camera_snapshot", arguments: args });
+              toolResultText = res.content[0].text;
+              logToolCall(question, "get_camera_snapshot", args, "Success");
+              sendProgress("Snapshot retrieved successfully.");
+              await new Promise(resolve => setTimeout(resolve, 1500));
+            } catch (e) {
+              toolResultText = `Error calling Vision MCP: ${e.message}`;
+              sendProgress(`Error: ${e.message}`);
+              logToolCall(question, "get_camera_snapshot", args, `Failed: ${e.message}`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          } else {
+            toolResultText = "Error: Vision MCP is not connected.";
+            sendProgress("Error: Remote Vision MCP is not connected.");
+            logToolCall(question, "get_camera_snapshot", args, "Failed: Not Connected");
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+        else if (toolCall.name === "analyse_surroundings") {
+          logToolCall(question, "analyse_surroundings", args, "Calling Remote Vision MCP...");
+          sendProgress("Analyzing surroundings...");
+          if (visionMcpClient) {
+            try {
+              const res = await visionMcpClient.callTool({ name: "analyse_surroundings", arguments: args });
+              toolResultText = res.content[0].text;
+              logToolCall(question, "analyse_surroundings", args, "Success");
+              sendProgress("Analysis complete.");
+              await new Promise(resolve => setTimeout(resolve, 1500));
+            } catch (e) {
+              toolResultText = `Error calling Vision MCP: ${e.message}`;
+              sendProgress(`Error: ${e.message}`);
+              logToolCall(question, "analyse_surroundings", args, `Failed: ${e.message}`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          } else {
+            toolResultText = "Error: Vision MCP is not connected.";
+            sendProgress("Error: Remote Vision MCP is not connected.");
+            logToolCall(question, "analyse_surroundings", args, "Failed: Not Connected");
+            await new Promise(resolve => setTimeout(resolve, 2000));
           }
         }
 

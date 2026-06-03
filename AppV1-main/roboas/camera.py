@@ -9,6 +9,7 @@ import threading
 import base64
 import time
 import inference
+import vision
 
 # -----------------------------------------------------------------------------
 # 1. Global State Variables (Shared between Vision Thread and MCP Server)
@@ -28,11 +29,13 @@ segment=YOLO("best11.pt")
 # -----------------------------------------------------------------------------
 
 
+
 @mcp.tool()
 def get_camera_snapshot() -> str:
     """
     Capture a current RGB frame from the D435i camera.
     Returns the image as a Base64 encoded string for the VLM (System 2) to analyze.
+    If a question is provided, asks the question to Qwen and returns the text response.
     """
     global current_rgb_frame
     if current_rgb_frame is None:
@@ -41,16 +44,23 @@ def get_camera_snapshot() -> str:
     # Encode frame to JPEG, then to Base64
     _, buffer = cv2.imencode('.jpg', current_rgb_frame)
     base64_str = base64.b64encode(buffer).decode('utf-8')
+    
     return f"data:image/jpeg;base64,{base64_str}"
 
 
 @mcp.tool()
-def set_tracking_target(target_name: str) -> str:
+def set_tracking_target(target_name: str,result) -> str:
     """
     Set the object class for System 1 (YOLO) to track.
     System 2 calls this after reasoning. Example target_name: "bottle"
     """
     global current_target_class
+    result=vision.analyse_surroundings("FInd out whats on the table")
+    for item in vision.OBJECT_CATALOGUE.keys():
+        if item.lower() in result.lower():
+            target_name=item
+            break
+
     current_target_class = target_name
     return f"Success: Module B is now tracking '{target_name}' at 30Hz."
 
@@ -72,6 +82,8 @@ def rotationMatrixToEulerAngles(R):
 # -----------------------------------------------------------------------------
 # 3. Vision Loop (Runs in a separate background thread)
 # -----------------------------------------------------------------------------
+
+
 def vision_loop():
     global current_rgb_frame, current_target_class, latest_3d_coords, last_click, spatial_coords
 
@@ -142,6 +154,7 @@ def vision_loop():
                                 largest_contour = max(contours, key=cv2.contourArea)
                                 x, y, w, h = cv2.boundingRect(largest_contour)
                                 cv2.putText(color_image,f"{cls_name} {conf:.2f}",(x, y - 10),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0),2)
+                                
             for result in results:
                 if result.obb is None:
                     continue
