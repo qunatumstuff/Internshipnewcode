@@ -73,7 +73,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   // ── Python Audio Server mode ──
   // Set to true to use Python mic. Set to false to fallback to browser mic.
-  static const bool USE_PYTHON_AUDIO = true;
+  static const bool USE_PYTHON_AUDIO = false;
   bool _audioServerConnected = false;
 
   // ── VAD Silence Detection ──
@@ -1047,8 +1047,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _toggleHandsFree() {
-    if (USE_PYTHON_AUDIO && !_audioServerConnected) {
-      _showStatusSnackBar('Hands Off requires Python Audio Server to be connected!', isError: true);
+    if (!_audioServerConnected) {
+      _showStatusSnackBar('Hands Off requires Wakeword Server to be connected!', isError: true);
       return;
     }
     if (_currentState == HandsOffState.handsOffOff) {
@@ -1162,7 +1162,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             setState(() {
               _audioServerConnected = true;
             });
-            _showStatusSnackBar('Audio Server Connected');
+            _showStatusSnackBar('Wakeword Server Connected');
           }
         } else if (eventName == 'PERSONA_SYNC') {
           final String persona = data['persona'] ?? '';
@@ -1647,10 +1647,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              if (USE_PYTHON_AUDIO) ...[
+              if (true) ...[
                 const SizedBox(height: 2),
                 Text(
-                  _audioServerConnected ? '🟢 Audio Server Connected' : '🔴 Audio Server Disconnected',
+                  _audioServerConnected ? '🟢 Wakeword Server Connected' : '🔴 Wakeword Server Disconnected',
                   style: TextStyle(
                     color: _audioServerConnected ? Colors.greenAccent : Colors.redAccent,
                     fontSize: 10,
@@ -1806,12 +1806,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             ),
           ),
           const SizedBox(height: 8),
-          if (USE_PYTHON_AUDIO) ...[
+          if (true) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 Text(
-                  _audioServerConnected ? '🟢 Audio Server Connected' : '🔴 Audio Server Disconnected',
+                  _audioServerConnected ? '🟢 Wakeword Server Connected' : '🔴 Wakeword Server Disconnected',
                   style: TextStyle(
                     color: _audioServerConnected ? Colors.greenAccent : Colors.redAccent,
                     fontSize: 10,
