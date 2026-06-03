@@ -158,17 +158,17 @@
     <p>Verify microphone access, ONNX Runtime loading, and wake-word detection in the browser.</p>
     
     <div id="statusBadge" class="status-badge">Ready to Start</div>
-    <br>
+    <div id="loadedModelsDisplay" style="font-size: 13px; color: #888; margin-top: 10px; margin-bottom: 20px; font-weight: 500;">Active models: None loaded</div>
     
     <!-- Wakeword Model Selection UI -->
     <div class="keyword-selector" style="margin: 20px auto; text-align: left; background: rgba(255,255,255,0.03); padding: 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); max-width: 400px; box-sizing: border-box;">
       <div style="font-weight: bold; margin-bottom: 12px; color: #fff; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Select Wakewords to Load:</div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px;">
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #aaa; transition: color 0.2s;">
-          <input type="checkbox" id="kw_john" value="john" style="cursor: pointer;"> john.onnx
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #00e676; font-weight: 500;">
+          <input type="checkbox" id="kw_john" value="john" checked style="cursor: pointer;"> john.onnx
         </label>
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #aaa; transition: color 0.2s;">
-          <input type="checkbox" id="kw_linda" value="linda" style="cursor: pointer;"> linda.onnx
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #00e676; font-weight: 500;">
+          <input type="checkbox" id="kw_linda" value="linda" checked style="cursor: pointer;"> linda.onnx
         </label>
         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #00e676; font-weight: 500;">
           <input type="checkbox" id="kw_jarvis" value="hey_jarvis" checked style="cursor: pointer;"> hey_jarvis.onnx
@@ -267,6 +267,8 @@
         log('Loading ONNX models (melspectrogram, embedding_model, keyword models)...', 'info');
         await engine.load();
         log('✅ ONNX Models loaded successfully.', 'info');
+        document.getElementById('loadedModelsDisplay').innerText = `Active models: ${checkedKeywords.join(', ')}`;
+        document.getElementById('loadedModelsDisplay').style.color = '#00e676';
       } catch (err) {
         log(`❌ Failed to load ONNX models: ${err.message}`, 'error');
         statusBadge.innerText = 'Model Load Error';
@@ -281,13 +283,19 @@
       });
 
       engine.on('detect', ({ keyword, score }) => {
-        log(`🎯 DETECTED WAKEWORD: "${keyword}" with score ${score.toFixed(4)}!`, 'detection');
+        if (keyword === 'john') {
+          log(`[OWW] John detected (score: ${score.toFixed(4)})`, 'detection');
+        } else if (keyword === 'linda') {
+          log(`[OWW] Linda detected (score: ${score.toFixed(4)})`, 'detection');
+        } else {
+          log(`🎯 DETECTED WAKEWORD: "${keyword}" with score ${score.toFixed(4)}!`, 'detection');
+        }
         
         // Blink status badge to show visual response
         statusBadge.innerText = `Detected: ${keyword.toUpperCase()}`;
         statusBadge.className = 'status-badge connected';
         setTimeout(() => {
-          if (statusBadge.innerText.startsWith('DETECTED')) {
+          if (statusBadge.innerText.startsWith('Detected:')) {
             statusBadge.innerText = 'Listening...';
           }
         }, 3000);
@@ -297,7 +305,7 @@
       try {
         log('Starting microphone audio capture loop...', 'info');
         await engine.start();
-        log('🔊 WakeWordEngine started. Listening for "Hey Jarvis" or "Alexa"...', 'info');
+        log(`🔊 WakeWordEngine started. Listening for custom models (${checkedKeywords.join(', ')})...`, 'info');
         statusBadge.innerText = 'Listening...';
         statusBadge.className = 'status-badge connected';
       } catch (err) {
