@@ -38,9 +38,10 @@ Write-Host '7. Deploying to Node server directory...'
 if (!(Test-Path 'roboas\Public')) {
     New-Item -ItemType Directory -Force -Path 'roboas\Public' | Out-Null
 } else {
-    Remove-Item -Recurse -Force roboas\Public\*
+    # Exclude models and ort subdirectories to preserve downloaded runtimes and custom wakewords
+    Get-ChildItem -Path roboas\Public -Exclude models, ort | Remove-Item -Recurse -Force
 }
-Copy-Item -Recurse build\web\* roboas\Public\
+Copy-Item -Recurse -Force build\web\* roboas\Public\
 
 Write-Host '8. Starting Node Server...'
 Set-Location 'roboas'

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:html' as html;
+import 'dart:js' as js;
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:web_audio' as wa;
@@ -29,7 +30,8 @@ enum HandsOffState {
   wakewordListening,
   userRecording,
   transcribing,
-  johnSpeaking
+  johnSpeaking,
+  restarting
 }
 
 class ChatbotScreen extends StatefulWidget {
@@ -70,6 +72,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   html.WebSocket? _wakeWordSocket;
   String _wakeWsStatus = 'disconnected'; // connected | connecting | disconnected | error
   bool _wakeWsReconnecting = false;      // prevents overlapping reconnect attempts
+  bool _isManualRestarting = false;
 
   // ── Python Audio Server mode ──
   // Set to true to use Python mic. Set to false to fallback to browser mic.
@@ -89,6 +92,22 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _isTtsInProgress ||
       _avatarState == AvatarState.thinking ||
       (_messages.isNotEmpty && _messages.last.text == '__THINKING__');
+
+  String get _visibleStateText {
+    switch (_currentState) {
+      case HandsOffState.handsOffOff:
+        return 'Paused';
+      case HandsOffState.wakewordListening:
+        return 'Listening';
+      case HandsOffState.userRecording:
+      case HandsOffState.transcribing:
+        return 'Recording';
+      case HandsOffState.johnSpeaking:
+        return 'Speaking';
+      case HandsOffState.restarting:
+        return 'Restarting';
+    }
+  }
 
   // ── Emojis ──
   String _answeringEmoji = '🤖';
@@ -352,12 +371,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   /// Send a mute/unmute command to the wake word server so it doesn't
   /// trigger on the robot's own voice.
   void _setWakeWordMute(bool muted) {
-    if (_wakeWordSocket != null &&
-        _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-      _wakeWordSocket!.send(json.encode({
-        'action': muted ? 'mute' : 'unmute',
-      }));
-      debugPrint('🔇 Wake-word mute=${muted}');
+    if (muted) {
+      _addUiLog('[OWW] stopping engine listening (muted=true)');
+      js.context.callMethod('stopWakeWordListening');
+    } else {
+      // Do not automatically restart it after TTS completes.
+      // Transition state to handsOffOff (Paused) so the user has to manually restart.
+      _addUiLog('[OWW] auto-restart after TTS disabled');
+      if (_currentState != HandsOffState.handsOffOff) {
+        _changeState(HandsOffState.handsOffOff);
+      }
     }
   }
 
@@ -403,7 +426,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         audio.onEnded.listen((_) async {
           if (_audioElement != audio) return; // Ignore events from old audio sessions
           html.Url.revokeObjectUrl(blobUrl);
-          _setWakeWordMute(false); // Re-enable wake word
+          _setWakeWordMute(false); // Re-enable wake word / restart engine
           if (mounted) {
             setState(() {
               _isTtsInProgress = false;
@@ -413,7 +436,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           await _setAvatarState(AvatarState.idle);
 
           if (_currentState == HandsOffState.johnSpeaking) {
-            _changeState(HandsOffState.wakewordListening);
             if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
               _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
             }
@@ -519,7 +541,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         }
         await _setAvatarState(AvatarState.idle);
         if (_currentState == HandsOffState.johnSpeaking) {
-          _changeState(HandsOffState.wakewordListening);
           if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
             _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
           }
@@ -537,7 +558,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         }
         await _setAvatarState(AvatarState.idle);
         if (_currentState == HandsOffState.johnSpeaking) {
-          _changeState(HandsOffState.wakewordListening);
           if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
             _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
           }
@@ -566,8 +586,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
     await _setAvatarState(AvatarState.idle);
 
+    _setWakeWordMute(false); // Re-enable wake word / restart engine
+
     if (_currentState == HandsOffState.johnSpeaking) {
-      _changeState(HandsOffState.wakewordListening);
       if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
         _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
       }
@@ -718,11 +739,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         stream = await html.window.navigator.mediaDevices?.getUserMedia({'audio': true});
       } catch (e) {
         _addUiLog('[MIC] Permission denied or error: $e');
+        _showStatusSnackBar('Mic issue. Try again.', isError: true);
         _abortAndRestartWakeWord();
         return;
       }
       if (stream == null) {
         _addUiLog('[MIC] Permission denied (stream null)');
+        _showStatusSnackBar('Mic issue. Try again.', isError: true);
         _abortAndRestartWakeWord();
         return;
       }
@@ -802,11 +825,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         _addUiLog('[MIC] Audio blob/file size: ${audioBytes.length} bytes');
 
         if (audioBytes.length < 5000) {
-          _sendMessage('System Error: Recorded audio file is suspiciously small (${audioBytes.length} bytes).');
+          _addUiLog('[MIC] Audio bytes too small: ${audioBytes.length}');
+          setState(() {
+            _messages.add(ChatMessage(text: 'Recording was too short. Try again.', isUser: false));
+          });
           await _setAvatarState(AvatarState.idle);
-          _abortAndRestartWakeWord(); // we send a text message so it won't call _speak directly if empty, wait no, _sendMessage might hit an error and call _speak, but if it successfully sends, the LLM will reply and call _speak.
-          // Wait, if audio is too small, we send it as a SYSTEM text message. Then _sendMessage calls the LLM, which calls _speak.
-          // So we should NOT abort here, because _speak WILL be called.
+          _abortAndRestartWakeWord();
           return;
         }
 
@@ -834,7 +858,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             } else {
               if (mounted) _textController.clear();
               await _setAvatarState(AvatarState.idle);
-              debugPrint('🎙️ [ASR] Empty transcription returned.');
+              debugPrint('🎙️ [ASR] Empty/unsuccessful transcription returned.');
+              _abortAndRestartWakeWord();
             }
           } else {
             _addUiLog('[MIC] Upload response error: HTTP ${res.statusCode}');
@@ -844,7 +869,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           _addUiLog('[MIC] Upload response error: $e');
           if (mounted) {
             setState(() {
-              _messages.add(ChatMessage(text: 'System Error: Transcription failed.', isUser: false));
+              _messages.add(ChatMessage(text: 'Something went wrong. Please try again.', isUser: false));
               _textController.clear();
             });
           }
@@ -1038,29 +1063,30 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _abortAndRestartWakeWord() {
-    if (_currentState == HandsOffState.userRecording || _currentState == HandsOffState.transcribing) {
-      _changeState(HandsOffState.wakewordListening);
-      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-        _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
-      }
-    }
+    _addUiLog('[OWW] auto-restart on abort disabled');
+    _changeState(HandsOffState.handsOffOff);
+  }
+
+  void _manualRestartWakeWord() {
+    _isManualRestarting = true;
+    _changeState(HandsOffState.restarting);
+    _addUiLog('[OWW] manual restart initiated');
+    js.context.callMethod('restartWakeWordEngine');
   }
 
   void _toggleHandsFree() {
     if (!_audioServerConnected) {
-      _showStatusSnackBar('Hands Off requires Wakeword Server to be connected!', isError: true);
+      _showStatusSnackBar('Hands Off requires Wakeword Engine to be ready!', isError: true);
       return;
     }
     if (_currentState == HandsOffState.handsOffOff) {
-      _changeState(HandsOffState.wakewordListening);
-      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-        _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
-      }
+      _changeState(HandsOffState.restarting);
+      _addUiLog('[OWW] Hands Off ON: starting engine listening');
+      js.context.callMethod('startWakeWordListening');
     } else {
       _changeState(HandsOffState.handsOffOff);
-      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-        _wakeWordSocket!.send(json.encode({'action': 'stop_wakeword'}));
-      }
+      _addUiLog('[OWW] Hands Off OFF: stopping engine listening');
+      js.context.callMethod('stopWakeWordListening');
     }
   }
 
@@ -1079,10 +1105,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     
     if (_isTtsInProgress) {
       _addUiLog('[WAKE] blocked because: TTS is in progress');
+      _showStatusSnackBar('Wakeword heard, but recording did not start.', isError: true);
     } else if (_isListening) {
       _addUiLog('[WAKE] blocked because: already listening');
+      _showStatusSnackBar('Wakeword heard, but recording did not start.', isError: true);
     } else if (_isInteractionBlocked) {
       _addUiLog('[WAKE] blocked because: interaction is blocked');
+      _showStatusSnackBar('Wakeword heard, but recording did not start.', isError: true);
     } else {
       _addUiLog('[MIC] recording started');
       if (_currentState != HandsOffState.handsOffOff) {
@@ -1114,169 +1143,142 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _connectWakeWord({VoidCallback? onConnected}) {
-    // Don't open a second socket if one is already connecting or open
-    if (_wakeWordSocket != null) {
-      final rs = _wakeWordSocket!.readyState;
-      if (rs == html.WebSocket.OPEN || rs == html.WebSocket.CONNECTING) {
-        _addUiLog('[WAKE WS] already open/connecting – skipping duplicate connect');
-        if (rs == html.WebSocket.OPEN) onConnected?.call();
-        return;
-      }
-    }
+    _initBrowserWakeWord();
+  }
 
+  void _initBrowserWakeWord() {
     if (mounted) setState(() => _wakeWsStatus = 'connecting');
-    _addUiLog('[WAKE WS] connecting...');
-    debugPrint('🔌 [WAKE WS] connecting to ${_wakeWordUrl}');
-
+    _addUiLog('[OWW] Initializing client-side openWakeWord engine...');
+    debugPrint('🔌 [OWW] Initializing client-side openWakeWord engine...');
+    
     try {
-      _wakeWordSocket = html.WebSocket(_wakeWordUrl);
-    } catch (e) {
-      _addUiLog('[WAKE WS] error: $e');
-      if (mounted) setState(() => _wakeWsStatus = 'error');
-      return;
-    }
-
-    _wakeWordSocket!.onOpen.listen((_) {
-      if (mounted) setState(() => _wakeWsStatus = 'connected');
-      _wakeWsReconnecting = false;
-      _addUiLog('[WAKE WS] connected');
-      debugPrint('✅ [WAKE WS] connected');
-      // Sync persona
-      _wakeWordSocket!.send(json.encode({
-        'action': 'set_persona',
-        'persona': _currentPersona
-      }));
-      onConnected?.call();
-    });
-
-    _wakeWordSocket!.onMessage.listen((event) async {
-      debugPrint('📥 Wake-word WS raw message: ${event.data}');
-      _addUiLog('[WAKE] message received: ${event.data}');
-      try {
-        final data = json.decode(event.data.toString());
-        final String eventName = data['event'] ?? '';
-        
-        if (eventName == 'AUDIO_SERVER_READY') {
-          _addUiLog('[FLUTTER] received AUDIO_SERVER_READY');
+      js.context.callMethod('initWakeWordEngine', [
+        js.allowInterop((score) {
+          _addUiLog('[OWW] John detected (score: $score)');
+          _handleWakeWordDetected('john');
+        }),
+        js.allowInterop((score) {
+          _addUiLog('[OWW] Linda detected (score: $score)');
+          _handleWakeWordDetected('linda');
+        }),
+        js.allowInterop(() {
+          _addUiLog('[OWW] client-side openWakeWord engine is ready.');
           if (mounted) {
             setState(() {
               _audioServerConnected = true;
+              _wakeWsStatus = 'connected';
             });
-            _showStatusSnackBar('Wakeword Server Connected');
+            _showStatusSnackBar('Client-side openWakeWord Ready');
           }
-        } else if (eventName == 'PERSONA_SYNC') {
-          final String persona = data['persona'] ?? '';
-          _addUiLog('[FLUTTER] received PERSONA_SYNC: $persona');
-          if (persona.isNotEmpty && persona != _currentPersona) {
-            setState(() {
-              _currentPersona = persona;
-            });
-            _loadVideo(_avatarState, force: true);
-          }
-        } else if (eventName == 'WAKEWORD_STARTED') {
-          _addUiLog('[FLUTTER] received WAKEWORD_STARTED');
-          if (_currentState != HandsOffState.handsOffOff) {
-            _changeState(HandsOffState.wakewordListening);
-          }
-        } else if (eventName == 'WAKEWORD_STOPPED') {
-          _addUiLog('[FLUTTER] received WAKEWORD_STOPPED');
-        } else if (eventName == 'WAKE_WORD_DETECTED') {
-          _addUiLog('[FLUTTER] received WAKE_WORD_DETECTED');
-          if (USE_PYTHON_AUDIO) {
-            if (_currentState != HandsOffState.handsOffOff) {
-              _changeState(HandsOffState.userRecording);
-            }
-            setState(() {
-              _isListening = true;
-              _textController.text = 'Listening...';
-            });
-          } else {
-            await _handleWakeWordEvent();
-          }
-        } else if (eventName == 'RECORDING_STARTED') {
-          _addUiLog('[FLUTTER] received RECORDING_STARTED');
-          setState(() {
-            _isListening = true;
-            _textController.text = 'Listening...';
-          });
-          if (_currentState != HandsOffState.handsOffOff) {
-            _changeState(HandsOffState.userRecording);
-          }
-        } else if (eventName == 'RECORDING_STOPPED') {
-          _addUiLog('[FLUTTER] received RECORDING_STOPPED');
-          setState(() {
-            _isListening = false;
-            _textController.text = 'Transcribing...';
-          });
-        } else if (eventName == 'TRANSCRIBING') {
-          _addUiLog('[FLUTTER] received TRANSCRIBING');
-          if (_currentState != HandsOffState.handsOffOff) {
-            _changeState(HandsOffState.transcribing);
-          }
-          setState(() {
-            _isListening = false;
-            _textController.text = 'Transcribing...';
-          });
-          await _setAvatarState(AvatarState.thinking);
-        } else if (eventName == 'STT_RESULT') {
-          final String text = data['text'] ?? '';
-          _addUiLog('[FLUTTER] received STT_RESULT: "$text"');
-          setState(() {
-            _isListening = false;
-            _textController.clear();
-          });
-          if (text.trim().isNotEmpty) {
-            _sendMessage(text);
-          }
-        } else if (eventName == 'STT_ERROR') {
-          final String err = data['error'] ?? 'Unknown transcription error';
-          _addUiLog('[FLUTTER] received STT_ERROR: $err');
-          setState(() {
-            _isListening = false;
-            _textController.clear();
-          });
-          _showStatusSnackBar('Audio Error: $err', isError: true);
-          await _setAvatarState(AvatarState.idle);
-          _abortAndRestartWakeWord();
-        }
-      } catch (e) {
-        debugPrint('Error parsing wake word message: $e');
-      }
-    });
-
-    _wakeWordSocket!.onError.listen((html.Event errorEvent) {
+        }),
+        js.allowInterop((eventName) {
+          _handleOwwEvent(eventName);
+        })
+      ]);
+    } catch (e) {
+      _addUiLog('[OWW] Failed to call initWakeWordEngine: $e');
       if (mounted) setState(() => _wakeWsStatus = 'error');
-      _addUiLog('[WAKE WS] error: ${errorEvent.type}');
-      debugPrint('❌ [WAKE WS] error: ${errorEvent.type}');
-    });
+    }
+  }
 
-    _wakeWordSocket!.onClose.listen((html.Event event) {
-      if (mounted) setState(() => _wakeWsStatus = 'disconnected');
-      String reason = '';
-      if (event is html.CloseEvent) {
-        reason = 'code=${event.code}, reason=${event.reason}, clean=${event.wasClean}';
+  void _handleOwwEvent(String eventName) {
+    if (eventName.startsWith('status_update:')) {
+      final parts = eventName.substring('status_update:'.length).split(',');
+      String rms = '0.0000';
+      String john = '0.00';
+      String linda = '0.00';
+      for (var part in parts) {
+        final kv = part.split('=');
+        if (kv.length == 2) {
+          if (kv[0] == 'rms') rms = kv[1];
+          if (kv[0] == 'john') john = kv[1];
+          if (kv[0] == 'linda') linda = kv[1];
+        }
       }
-      _addUiLog('[WAKE WS] disconnected ($reason)');
-      debugPrint('⚠️ [WAKE WS] disconnected: $reason');
+      _addUiLog('[OWW] audio active (RMS: $rms, John: $john, Linda: $linda)');
+      return;
+    }
 
-      // Auto-reconnect – with guard to avoid multiple pending reconnects
-      if (mounted && !_wakeWsReconnecting) {
-        _wakeWsReconnecting = true;
-        _addUiLog('[WAKE WS] reconnecting in 5s...');
-        Future.delayed(const Duration(seconds: 5), () {
-          if (mounted) {
-            _addUiLog('[WAKE WS] reconnecting...');
-            _connectWakeWord();
+    switch (eventName) {
+      case 'started':
+        _addUiLog('[OWW] started');
+        break;
+      case 'stopped':
+        _addUiLog('[OWW] stopped');
+        break;
+      case 'restarting':
+        _addUiLog('[OWW] restarting');
+        _changeState(HandsOffState.restarting);
+        break;
+      case 'restarted':
+        _addUiLog('[OWW] restarted');
+        break;
+      case 'active_listening_confirmed':
+        if (_currentState == HandsOffState.restarting) {
+          _changeState(HandsOffState.wakewordListening);
+          if (_isManualRestarting) {
+            _addUiLog('[OWW] manual restart complete');
+            _isManualRestarting = false;
           }
+        }
+        break;
+      case 'audio_active':
+        _addUiLog('[OWW] audio active');
+        break;
+      case 'no_audio_detected':
+        _addUiLog('[OWW] no audio detected, restarting');
+        _showStatusSnackBar('Wakeword restarted.');
+        break;
+      case 'mic_issue':
+        _addUiLog('[OWW] mic issue');
+        _showStatusSnackBar('Mic issue. Try again.', isError: true);
+        break;
+    }
+  }
+
+  Future<void> _handleWakeWordDetected(String keyword) async {
+    _addUiLog('[FLUTTER] wake word detected client-side: $keyword');
+    if (_isTtsInProgress || _isListening || _isInteractionBlocked) {
+      _addUiLog('[WAKE] blocked: tts=$_isTtsInProgress, listen=$_isListening, blocked=$_isInteractionBlocked');
+      _showStatusSnackBar('Wakeword heard, but recording did not start.', isError: true);
+      return;
+    }
+
+    // 1. Pause/stop openWakeWord engine so it doesn't listen to user speech or TTS output
+    js.context.callMethod('stopWakeWordListening');
+
+    // 2. Switch persona if it's different
+    if (_currentPersona != keyword) {
+      _addUiLog('[FLUTTER] switching persona silently to $keyword');
+      if (mounted) {
+        setState(() {
+          _currentPersona = keyword;
         });
       }
-    });
+      await _loadVideo(AvatarState.idle, force: true);
+      
+      // Notify backend about persona switch
+      try {
+        await http.post(
+          Uri.parse('$baseUrl/switch-persona'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'persona': keyword}),
+        );
+      } catch (e) {
+        _addUiLog('[FLUTTER] failed to notify backend of switch: $e');
+      }
+    }
+
+    // Add a 800ms delay to allow the browser to release the microphone device completely
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    // 3. Trigger manual mic recording flow
+    await _handleWakeWordEvent();
   }
 
   void _disconnectWakeWord() {
-    debugPrint('⚠️ [DEBUG] Calling _wakeWordSocket?.close() from _disconnectWakeWord()');
-    _wakeWordSocket?.close();
-    _wakeWordSocket = null;
+    _addUiLog('[OWW] shutting down client-side openWakeWord listening');
+    js.context.callMethod('stopWakeWordListening');
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1650,7 +1652,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               if (true) ...[
                 const SizedBox(height: 2),
                 Text(
-                  _audioServerConnected ? '🟢 Wakeword Server Connected' : '🔴 Wakeword Server Disconnected',
+                  _audioServerConnected ? '🟢 Wakeword Engine Ready' : '🔴 Wakeword Engine Loading...',
                   style: TextStyle(
                     color: _audioServerConnected ? Colors.greenAccent : Colors.redAccent,
                     fontSize: 10,
@@ -1811,7 +1813,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 Text(
-                  _audioServerConnected ? '🟢 Wakeword Server Connected' : '🔴 Wakeword Server Disconnected',
+                  _audioServerConnected ? '🟢 Wakeword: $_visibleStateText' : '🔴 Wakeword Engine Loading...',
                   style: TextStyle(
                     color: _audioServerConnected ? Colors.greenAccent : Colors.redAccent,
                     fontSize: 10,
@@ -1937,6 +1939,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         minimumSize: const Size.fromHeight(36),
                       ),
                       child: const Text('Simulate Wake Word', style: TextStyle(color: Colors.white)),
+                    ),
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      onPressed: _manualRestartWakeWord,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green[700],
+                        minimumSize: const Size.fromHeight(36),
+                      ),
+                      child: const Text('Restart Wakeword', style: TextStyle(color: Colors.white)),
                     ),
                     const SizedBox(height: 8),
                     ..._micDebugLogs.map((log) => Text(

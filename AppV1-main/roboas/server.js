@@ -652,39 +652,8 @@ function cleanChatbotResponse(text) {
 }
 
 function sendWakewordCommand(action) {
-  return new Promise((resolve) => {
-    try {
-      const ws = new WebSocket(WAKEWORD_WS_URL);
-      let isResolved = false;
-
-      const timeoutId = setTimeout(() => {
-        if (!isResolved) {
-          isResolved = true;
-          ws.terminate(); // forcefully close
-          resolve(false);
-        }
-      }, 1000); // 1-second timeout
-
-      ws.on('open', () => {
-        if (!isResolved) {
-          isResolved = true;
-          clearTimeout(timeoutId);
-          ws.send(JSON.stringify({ action }));
-          ws.close();
-          resolve(true);
-        }
-      });
-      ws.on('error', (err) => {
-        if (!isResolved) {
-          isResolved = true;
-          clearTimeout(timeoutId);
-          resolve(false);
-        }
-      });
-    } catch (e) {
-      resolve(false);
-    }
-  });
+  // Client-side openWakeWord-JS handles engine control. No-op on backend.
+  return Promise.resolve(true);
 }
 
 // === GPT-Powered Chat (Voice + Tools) ===
@@ -1143,93 +1112,12 @@ app.get('/', (req, res) => {
 
 // Start server with WebSocket proxy for wake word
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server, path: '/wakeword' });
-
-wss.on('connection', (clientWs) => {
-  console.log('🔗 [WS Proxy] Flutter client connected to /wakeword proxy');
-
-  // Connect to the Python wake word server
-  console.log(`[NODE] connecting to Python wakeword at ${WAKEWORD_WS_URL}`);
-  let pythonWs;
-  try {
-    pythonWs = new WebSocket(WAKEWORD_WS_URL);
-  } catch (e) {
-    console.error('❌ [WS Proxy] Failed to create connection to Python wake word server:', e.message);
-    clientWs.close();
-    return;
-  }
-
-  pythonWs.on('open', () => {
-    console.log('[NODE] Python wakeword connected');
-  });
-
-  pythonWs.on('close', () => {
-    console.log('[NODE] Python wakeword disconnected');
-  });
-
-  pythonWs.on('error', (err) => {
-    console.error(`❌ [WS Proxy] Python WS error: ${err.message}`);
-  });
-
-  // Relay messages from Python → Flutter client
-  pythonWs.on('message', (data) => {
-    const msg = data.toString();
-    let eventName = 'unknown';
-    try {
-      const parsed = JSON.parse(msg);
-      if (parsed.event) eventName = parsed.event;
-    } catch (e) {}
-
-    if (eventName !== 'unknown') {
-      console.log(`[NODE] received ${eventName} from Python`);
-    } else {
-      console.log(`[WS PROXY] received from Python: ${msg}`);
-    }
-    
-    if (clientWs.readyState === WebSocket.OPEN) {
-      clientWs.send(msg);
-      if (eventName !== 'unknown') {
-        console.log(`[NODE] forwarded ${eventName} to Flutter`);
-      } else {
-        console.log(`[WS PROXY] forwarded to Flutter: ${msg}`);
-      }
-    }
-  });
-
-  // Relay messages from Flutter client → Python
-  clientWs.on('message', (data) => {
-    const msg = data.toString();
-    console.log(`[NODE] received from Flutter: ${msg}`);
-    if (pythonWs.readyState === WebSocket.OPEN) {
-      pythonWs.send(msg);
-      console.log(`[NODE] forwarded to Python: ${msg}`);
-    } else {
-      console.warn(`[NODE] cannot forward to Python because not connected`);
-    }
-  });
-
-  pythonWs.on('error', (err) => {
-    console.error('❌ [WS Proxy] Python WS error:', err.message);
-  });
-
-  pythonWs.on('close', () => {
-    console.log('⚠️ [WS Proxy] Python WS closed');
-    if (clientWs.readyState === WebSocket.OPEN) clientWs.close();
-  });
-
-  clientWs.on('close', () => {
-    console.log('⚠️ [WS Proxy] Flutter client disconnected');
-    if (pythonWs.readyState === WebSocket.OPEN) pythonWs.close();
-  });
-
-  clientWs.on('error', (err) => {
-    console.error('❌ [WS Proxy] Client WS error:', err.message);
-  });
-});
+// WebSocket proxy for Python wake word is disabled in browser-based OWW flow.
+// const wss = new WebSocket.Server({ server, path: '/wakeword' });
 
 server.listen(port, async () => {
   console.log(`🚀 Server running at http://localhost:${port}`);
-  console.log(`🔊 Wake word WebSocket proxy available at ws://localhost:${port}/wakeword`);
+  console.log(`🔊 Client-side openWakeWord engine active (Vosk WS proxy disabled)`);
   clearPdfOnStartup(); // Always start fresh — no PDF memory between sessions
   
   // Auto-load the LARA datasheet from resources so the robot has product knowledge

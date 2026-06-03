@@ -47,6 +47,215 @@
   </script>
 </head>
 <body>
+  <!-- Load ONNX Runtime Web directly in the browser -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
+
+  <!-- JS wrapper modules for Flutter Dart calls -->
+  <script type="module">
+    import { WakeWordEngine } from './WakeWordEngine.js';
+
+    let engine = null;
+    let isListening = false;
+    let lastActiveTime = Date.now();
+    let watchdogTimer = null;
+    let lastAudioActiveLogged = 0;
+
+    let onDetectJohnCallback = null;
+    let onDetectLindaCallback = null;
+    let onReadyCallback = null;
+    let onEventCallback = null;
+
+    window.initWakeWordEngine = async function(onDetectJohn, onDetectLinda, onReady, onEvent) {
+      console.log("[JS] Registering openWakeWord engine interops...");
+      onDetectJohnCallback = onDetectJohn;
+      onDetectLindaCallback = onDetectLinda;
+      onReadyCallback = onReady;
+      onEventCallback = onEvent;
+
+      return await setupEngine();
+    };
+
+    async function setupEngine() {
+      if (onEventCallback) onEventCallback('restarting');
+      console.log("[JS] Initializing openWakeWord engine for John and Linda...");
+      try {
+        ort.env.wasm.wasmPaths = '/ort/';
+
+        engine = new WakeWordEngine({
+          baseAssetUrl: '/models',
+          keywords: ['john', 'linda'],
+          detectionThreshold: 0.45,
+          cooldownMs: 2500,
+          ortWasmPath: '/ort/',
+          debug: true
+        });
+
+        await engine.load();
+        console.log("[JS] WakeWordEngine loaded successfully.");
+        if (onReadyCallback) onReadyCallback();
+        if (onEventCallback) onEventCallback('restarted');
+
+        engine.on('detect', ({ keyword, score }) => {
+          console.log(`[JS] Detected: ${keyword} (${score})`);
+          if (keyword === 'john') {
+            if (onDetectJohnCallback) onDetectJohnCallback(score);
+          } else if (keyword === 'linda') {
+            if (onDetectLindaCallback) onDetectLindaCallback(score);
+          }
+        });
+
+        let framesCount = 0;
+        let lastScoreRmsLogged = 0;
+
+        // Intercept chunk processing to track activity/watchdog
+        const originalProcessChunk = engine._processChunk;
+        engine._processChunk = async function(chunk, options) {
+          lastActiveTime = Date.now();
+          framesCount++;
+          if (framesCount === 5) {
+            if (onEventCallback) onEventCallback('active_listening_confirmed');
+          }
+
+          // Calculate RMS and fetch active keyword scores
+          const now = Date.now();
+          if (now - lastScoreRmsLogged > 4000) {
+            lastScoreRmsLogged = now;
+            let sumSquares = 0;
+            for (let i = 0; i < chunk.length; i++) {
+              sumSquares += chunk[i] * chunk[i];
+            }
+            let rms = Math.sqrt(sumSquares / chunk.length);
+
+            let johnScore = 0;
+            let lindaScore = 0;
+            if (engine && engine._keywordModels) {
+              if (engine._keywordModels.john && engine._keywordModels.john.scores) {
+                const s = engine._keywordModels.john.scores;
+                johnScore = s[s.length - 1] || 0;
+              }
+              if (engine._keywordModels.linda && engine._keywordModels.linda.scores) {
+                const s = engine._keywordModels.linda.scores;
+                lindaScore = s[s.length - 1] || 0;
+              }
+            }
+            if (onEventCallback) {
+              onEventCallback(`status_update:rms=${rms.toFixed(4)},john=${johnScore.toFixed(2)},linda=${lindaScore.toFixed(2)}`);
+            }
+          }
+
+          triggerAudioActive();
+          return originalProcessChunk.call(engine, chunk, options);
+        };
+
+        return true;
+      } catch (err) {
+        console.error("[JS] Failed to initialize WakeWordEngine:", err);
+        return false;
+      }
+    }
+
+    function triggerAudioActive() {
+      const now = Date.now();
+      if (now - lastAudioActiveLogged > 5000) {
+        lastAudioActiveLogged = now;
+        if (onEventCallback) onEventCallback('audio_active');
+      }
+    }
+
+    function startWatchdog() {
+      stopWatchdog();
+      lastActiveTime = Date.now();
+      watchdogTimer = setInterval(async () => {
+        if (!isListening) return;
+        const idleTime = Date.now() - lastActiveTime;
+        if (idleTime > 4000) { // 4 seconds threshold
+          console.warn(`[JS] Watchdog: No audio activity for ${idleTime}ms. Restarting engine...`);
+          if (onEventCallback) onEventCallback('no_audio_detected');
+          await window.restartWakeWordEngine();
+        }
+      }, 1000);
+    }
+
+    function stopWatchdog() {
+      if (watchdogTimer) {
+        clearInterval(watchdogTimer);
+        watchdogTimer = null;
+      }
+    }
+
+    window.startWakeWordListening = async function() {
+      if (!engine) {
+        console.error("[JS] Engine not initialized.");
+        return false;
+      }
+      if (isListening) return true;
+      try {
+        console.log("[JS] Starting WakeWordEngine mic capture...");
+        await engine.start();
+        isListening = true;
+        lastActiveTime = Date.now();
+        startWatchdog();
+        if (onEventCallback) onEventCallback('started');
+        return true;
+      } catch (err) {
+        console.error("[JS] Failed to start engine:", err);
+        if (onEventCallback) onEventCallback('mic_issue');
+        return false;
+      }
+    };
+
+    window.stopWakeWordListening = async function() {
+      if (!engine || !isListening) return true;
+      try {
+        console.log("[JS] Stopping WakeWordEngine mic capture...");
+        stopWatchdog();
+        if (engine && engine._mediaStream) {
+          engine._mediaStream.getTracks().forEach(t => t.stop());
+        }
+        await engine.stop();
+        isListening = false;
+        if (onEventCallback) onEventCallback('stopped');
+        return true;
+      } catch (err) {
+        console.error("[JS] Failed to stop engine:", err);
+        return false;
+      }
+    };
+
+    window.restartWakeWordEngine = async function() {
+      console.log("[JS] Fully restarting openWakeWord engine...");
+      try {
+        if (engine) {
+          if (engine._mediaStream) {
+            engine._mediaStream.getTracks().forEach(t => t.stop());
+          }
+          await engine.stop();
+        }
+      } catch (e) {
+        console.error("[JS] Error stopping engine during restart:", e);
+      }
+      isListening = false;
+      stopWatchdog();
+
+      const success = await setupEngine();
+      if (success) {
+        try {
+          console.log("[JS] Starting WakeWordEngine mic capture after restart...");
+          await engine.start();
+          isListening = true;
+          startWatchdog();
+          if (onEventCallback) onEventCallback('started');
+          return true;
+        } catch (err) {
+          console.error("[JS] Failed to start engine after restart:", err);
+          if (onEventCallback) onEventCallback('mic_issue');
+          return false;
+        }
+      }
+      return false;
+    };
+  </script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
