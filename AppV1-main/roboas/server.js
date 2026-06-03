@@ -26,7 +26,7 @@ const WAKEWORD_WS_URL = process.env.WAKEWORD_WS_URL || 'ws://localhost:8003';
 // CONFIGURATION
 // ==========================================
 // Laptop B (Robot/Vision Laptop) IP Address
-const LAPTOP_B_IP = "192.168.2.99"; // Ethernet IP for Laptop B
+const LAPTOP_B_IP = "192.168.2.11"; // Ethernet IP for Laptop B
 // === Tool Call Activity Log ===
 const toolCallLog = [];
 const TOOL_LOG_FILE = path.join(__dirname, 'gpt_tool_log.json');

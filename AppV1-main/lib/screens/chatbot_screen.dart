@@ -88,6 +88,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   double _lindaThresh = 0.35;
   final TextEditingController _johnThreshController = TextEditingController(text: '0.35');
   final TextEditingController _lindaThreshController = TextEditingController(text: '0.35');
+  bool _showDebugPanel = true;
+
 
   // ── Python Audio Server mode ──
   // Set to true to use Python mic. Set to false to fallback to browser mic.
@@ -1091,6 +1093,28 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     js.context.callMethod('restartWakeWordEngine');
   }
 
+  void _startWakeWord() {
+    _changeState(HandsOffState.wakewordListening);
+    js.context.callMethod('startWakeWordListening');
+    _addUiLog('[FLUTTER] Start Wakeword clicked');
+  }
+
+  void _stopWakeWord() {
+    _changeState(HandsOffState.handsOffOff);
+    js.context.callMethod('stopWakeWordListening');
+    _addUiLog('[FLUTTER] Stop Wakeword clicked');
+  }
+
+  void _testJohnCallback() {
+    _addUiLog('[OWW] John detected (score: 0.9900)');
+    _handleWakeWordDetected('john');
+  }
+
+  void _testLindaCallback() {
+    _addUiLog('[OWW] Linda detected (score: 0.9900)');
+    _handleWakeWordDetected('linda');
+  }
+
   void _toggleHandsFree() {
     if (!_audioServerConnected) {
       _showStatusSnackBar('Hands Off requires Wakeword Engine to be ready!', isError: true);
@@ -1186,13 +1210,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     try {
       js.context.callMethod('initWakeWordEngine', [
         js.allowInterop((score, [modelName]) {
-          final name = modelName ?? 'john';
-          _addUiLog('[OWW] $name detected (score: $score)');
+          _addUiLog('[OWW] John detected (score: $score)');
           _handleWakeWordDetected('john');
         }),
         js.allowInterop((score, [modelName]) {
-          final name = modelName ?? 'linda';
-          _addUiLog('[OWW] $name detected (score: $score)');
+          _addUiLog('[OWW] Linda detected (score: $score)');
           _handleWakeWordDetected('linda');
         }),
         js.allowInterop(() {
@@ -1887,18 +1909,22 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           ),
           const SizedBox(height: 8),
           if (true) ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Text(
-                  _audioServerConnected ? '🟢 Wakeword: $_visibleStateText' : '🔴 Wakeword Engine Loading...',
-                  style: TextStyle(
-                    color: _audioServerConnected ? Colors.greenAccent : Colors.redAccent,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
+            GestureDetector(
+              onTap: () => setState(() => _showDebugPanel = !_showDebugPanel),
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    _audioServerConnected ? '🟢 Wakeword: $_visibleStateText' : '🔴 Wakeword Engine Loading...',
+                    style: TextStyle(
+                      color: _audioServerConnected ? Colors.greenAccent : Colors.redAccent,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             const SizedBox(height: 4),
           ],
@@ -1972,7 +1998,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           Positioned.fill(child: _buildAvatar()),
 
           // ── Debug Overlay ─────────────────────────────────
-          if (_micDebugLogs.isNotEmpty)
+          if (_showDebugPanel)
             Positioned(
               top: 80,
               left: 20,
@@ -1980,7 +2006,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 width: 350,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.8),
+                  color: Colors.black.withOpacity(0.83),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.green),
                 ),
@@ -1994,17 +2020,23 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('🎙️ MIC DEBUG LOGS', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
-                            Text('WS: $_wakeWsStatus', style: TextStyle(
+                            const Text('🎙️ WAKEWORD DEBUG PANEL', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                            const SizedBox(height: 2),
+                            Text('WS Connection: $_wakeWsStatus', style: TextStyle(
                               color: _wakeWsStatus == 'connected' ? Colors.greenAccent :
                                      _wakeWsStatus == 'connecting' ? Colors.orange :
                                      Colors.redAccent,
                               fontSize: 10,
                             )),
+                            const SizedBox(height: 4),
+                            const Text('Loaded Models:\n• john.onnx\n• linda.onnx', style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                            )),
                           ],
                         ),
                         InkWell(
-                          onTap: () => setState(() => _micDebugLogs.clear()),
+                          onTap: () => setState(() => _showDebugPanel = false),
                           child: const Icon(Icons.close, color: Colors.white54, size: 16),
                         )
                       ],
@@ -2073,37 +2105,100 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         children: [
                           Text('RMS: ${_lastRms.toStringAsFixed(4)}', style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontFamily: 'monospace')),
                           const SizedBox(height: 4),
-                          Text('John: ${_lastJohnScore.toStringAsFixed(2)}  (Peak: ${_lastJohnPeak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace')),
+                          Text('John score: ${_lastJohnScore.toStringAsFixed(2)}  (Peak: ${_lastJohnPeak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace')),
                           Text('John V2: ${_lastJohnV2Score.toStringAsFixed(2)} (Peak: ${_lastJohnV2Peak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace')),
                           const SizedBox(height: 4),
-                          Text('Linda: ${_lastLindaScore.toStringAsFixed(2)}  (Peak: ${_lastLindaPeak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace')),
+                          Text('Linda score: ${_lastLindaScore.toStringAsFixed(2)}  (Peak: ${_lastLindaPeak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace')),
                           Text('Linda V2: ${_lastLindaV2Score.toStringAsFixed(2)} (Peak: ${_lastLindaV2Peak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace')),
+                          const SizedBox(height: 4),
+                          Text('Current threshold: John: ${_johnThresh.toStringAsFixed(2)}, Linda: ${_lindaThresh.toStringAsFixed(2)}', style: const TextStyle(color: Colors.orangeAccent, fontSize: 10, fontFamily: 'monospace')),
                         ],
                       ),
                     ),
                     const SizedBox(height: 8),
-                    ElevatedButton(
-                      onPressed: () => _handleWakeWordEvent(),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blueAccent,
-                        minimumSize: const Size.fromHeight(36),
-                      ),
-                      child: const Text('Simulate Wake Word', style: TextStyle(color: Colors.white)),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ElevatedButton(
+                          onPressed: _startWakeWord,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green[700],
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text('Start Wakeword', style: TextStyle(color: Colors.white, fontSize: 10)),
+                        ),
+                        ElevatedButton(
+                          onPressed: _stopWakeWord,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red[700],
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text('Stop Wakeword', style: TextStyle(color: Colors.white, fontSize: 10)),
+                        ),
+                        ElevatedButton(
+                          onPressed: _manualRestartWakeWord,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue[700],
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text('Restart Wakeword', style: TextStyle(color: Colors.white, fontSize: 10)),
+                        ),
+                        ElevatedButton(
+                          onPressed: _testJohnCallback,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.purple[700],
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text('Test John Callback', style: TextStyle(color: Colors.white, fontSize: 10)),
+                        ),
+                        ElevatedButton(
+                          onPressed: _testLindaCallback,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.indigo[700],
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text('Test Linda Callback', style: TextStyle(color: Colors.white, fontSize: 10)),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => setState(() => _micDebugLogs.clear()),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey[800],
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text('Clear Logs', style: TextStyle(color: Colors.white, fontSize: 10)),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    ElevatedButton(
-                      onPressed: _manualRestartWakeWord,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green[700],
-                        minimumSize: const Size.fromHeight(36),
+                    if (_micDebugLogs.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text('LOGS:', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 10)),
+                      const SizedBox(height: 4),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 150),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: _micDebugLogs.map((log) => Text(
+                              log,
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace'),
+                            )).toList(),
+                          ),
+                        ),
                       ),
-                      child: const Text('Restart Wakeword', style: TextStyle(color: Colors.white)),
-                    ),
-                    const SizedBox(height: 8),
-                    ..._micDebugLogs.map((log) => Text(
-                          log,
-                          style: const TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'monospace'),
-                        )),
+                    ],
                   ],
                 ),
               ),
