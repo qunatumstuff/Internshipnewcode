@@ -1,5 +1,6 @@
 import os
 import shutil
+import urllib.request
 import openwakeword
 import openwakeword.utils
 
@@ -12,33 +13,42 @@ package_dir = os.path.dirname(openwakeword.__file__)
 models_src_dir = os.path.join(package_dir, "resources", "models")
 print(f"[PY] openwakeword package models path: {models_src_dir}")
 
-# 3. Create target directory
+# 3. Create target models directory
 dest_dir = os.path.join(os.path.dirname(__file__), "Public", "models")
 os.makedirs(dest_dir, exist_ok=True)
 print(f"[PY] Destination models path: {dest_dir}")
 
 # 4. Copy the required model files
-# We need: melspectrogram.onnx, embedding_model.onnx, and at least one keyword model (e.g. hey_jarvis.onnx or alexa.onnx)
-# Note: the files inside openwakeword python package might be named melspectrogram.onnx, embedding_model.onnx, hey_jarvis.onnx
 for filename in os.listdir(models_src_dir):
     if filename.endswith(".onnx"):
         src_file = os.path.join(models_src_dir, filename)
         dest_file = os.path.join(dest_dir, filename)
-        # Check if we should copy it (we copy melspectrogram, embedding_model, silero_vad and default keywords)
         print(f"[PY] Copying {filename} to destination...")
         shutil.copy2(src_file, dest_file)
 
-# Let's also check if silero_vad.onnx was downloaded or where it is
-# If we need silero_vad, it is often in the package parent folder or cache
-# Let's search inside the package directory for any other onnx files
-for root, dirs, files in os.walk(package_dir):
-    for f in files:
-        if f.endswith(".onnx"):
-            src_f = os.path.join(root, f)
-            dest_f = os.path.join(dest_dir, f)
-            if not os.path.exists(dest_f):
-                print(f"[PY] Found extra model in package: {f}. Copying...")
-                shutil.copy2(src_f, dest_f)
+# 5. Create target ORT WASM directory
+ort_dir = os.path.join(os.path.dirname(__file__), "Public", "ort")
+os.makedirs(ort_dir, exist_ok=True)
+print(f"[PY] Destination ORT path: {ort_dir}")
 
-print("[PY] Copying finished. Directory contents:")
-print(os.listdir(dest_dir))
+# 6. Download matching onnxruntime-web WASM files from CDN for local hosting
+ort_version = "1.18.0"
+wasm_files = {
+    "ort-wasm-simd.wasm": f"https://cdn.jsdelivr.net/npm/onnxruntime-web@{ort_version}/dist/ort-wasm-simd.wasm",
+    "ort-wasm.wasm": f"https://cdn.jsdelivr.net/npm/onnxruntime-web@{ort_version}/dist/ort-wasm.wasm",
+    "ort-wasm-simd-threaded.wasm": f"https://cdn.jsdelivr.net/npm/onnxruntime-web@{ort_version}/dist/ort-wasm-simd-threaded.wasm",
+    "ort-wasm-threaded.wasm": f"https://cdn.jsdelivr.net/npm/onnxruntime-web@{ort_version}/dist/ort-wasm-threaded.wasm"
+}
+
+for filename, url in wasm_files.items():
+    dest_path = os.path.join(ort_dir, filename)
+    print(f"[PY] Downloading {filename} from {url}...")
+    try:
+        urllib.request.urlretrieve(url, dest_path)
+        print(f"[PY] Saved {filename} to {dest_path}")
+    except Exception as e:
+        print(f"[PY] Error downloading {filename}: {e}")
+
+print("[PY] All files downloaded successfully.")
+print("Models folder:", os.listdir(dest_dir))
+print("ORT folder:", os.listdir(ort_dir))

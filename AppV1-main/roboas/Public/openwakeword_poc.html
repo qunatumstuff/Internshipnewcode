@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>openWakeWord-JS Proof of Concept</title>
+  <!-- Load ONNX Runtime Web directly in the browser -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
   <style>
     :root {
       --bg-color: #0d0e15;
@@ -157,6 +159,26 @@
     
     <div id="statusBadge" class="status-badge">Ready to Start</div>
     <br>
+    
+    <!-- Wakeword Model Selection UI -->
+    <div class="keyword-selector" style="margin: 20px auto; text-align: left; background: rgba(255,255,255,0.03); padding: 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); max-width: 400px; box-sizing: border-box;">
+      <div style="font-weight: bold; margin-bottom: 12px; color: #fff; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Select Wakewords to Load:</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #aaa; transition: color 0.2s;">
+          <input type="checkbox" id="kw_john" value="john" style="cursor: pointer;"> john.onnx
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #aaa; transition: color 0.2s;">
+          <input type="checkbox" id="kw_linda" value="linda" style="cursor: pointer;"> linda.onnx
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #00e676; font-weight: 500;">
+          <input type="checkbox" id="kw_jarvis" value="hey_jarvis" checked style="cursor: pointer;"> hey_jarvis.onnx
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #00e676; font-weight: 500;">
+          <input type="checkbox" id="kw_alexa" value="alexa" checked style="cursor: pointer;"> alexa.onnx
+        </label>
+      </div>
+    </div>
+    
     <button id="startBtn" class="btn">Start Audio & Engine</button>
     
     <div id="logPanel" class="log-panel">
@@ -165,8 +187,8 @@
   </div>
 
   <script type="module">
-    // Load the library from esm.sh CDN
-    import WakeWordEngine from 'https://esm.sh/openwakeword-wasm-browser';
+    // Load the local browser-compatible WakeWordEngine module
+    import { WakeWordEngine } from './WakeWordEngine.js';
 
     const startBtn = document.getElementById('startBtn');
     const statusBadge = document.getElementById('statusBadge');
@@ -208,11 +230,36 @@
       const baseAssetUrl = '/models'; 
       log(`Setting baseAssetUrl to: ${baseAssetUrl}`, 'info');
 
+      // Configure WASM paths
+      if (window.ort) {
+        window.ort.env.wasm.wasmPaths = '/ort/';
+        log('Set ort.env.wasm.wasmPaths to /ort/', 'info');
+      }
+
+      // Resolve checked keywords from UI checkboxes
+      const checkedKeywords = [];
+      if (document.getElementById('kw_john').checked) checkedKeywords.push('john');
+      if (document.getElementById('kw_linda').checked) checkedKeywords.push('linda');
+      if (document.getElementById('kw_jarvis').checked) checkedKeywords.push('hey_jarvis');
+      if (document.getElementById('kw_alexa').checked) checkedKeywords.push('alexa');
+
+      if (checkedKeywords.length === 0) {
+        log('❌ Please select at least one wakeword to load.', 'error');
+        statusBadge.innerText = 'Select Wakeword';
+        statusBadge.className = 'status-badge error';
+        startBtn.disabled = false;
+        return;
+      }
+
+      log(`Loading engine with keywords: ${checkedKeywords.join(', ')}`, 'info');
+
       const engine = new WakeWordEngine({
         baseAssetUrl: baseAssetUrl,
-        keywords: ['hey_jarvis', 'alexa'],
+        keywords: checkedKeywords,
         detectionThreshold: 0.45,
-        cooldownMs: 2500
+        cooldownMs: 2500,
+        ortWasmPath: '/ort/',
+        debug: true
       });
 
       // 3. Load ONNX Models (melspectrogram.onnx, embedding_model.onnx, etc.)
