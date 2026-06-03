@@ -86,6 +86,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   double _lastLindaV2Peak = 0.0;
   double _johnThresh = 0.35;
   double _lindaThresh = 0.35;
+  double _lastCps = 0.0;
+  String _lastCtx = 'none';
+  String _lastTrack = 'none';
+  bool _lastTrackEnabled = false;
   final TextEditingController _johnThreshController = TextEditingController(text: '0.35');
   final TextEditingController _lindaThreshController = TextEditingController(text: '0.35');
   bool _showDebugPanel = true;
@@ -390,15 +394,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   /// Send a mute/unmute command to the wake word server so it doesn't
   /// trigger on the robot's own voice.
   void _setWakeWordMute(bool muted) {
-    if (muted) {
-      _addUiLog('[OWW] stopping engine listening (muted=true)');
-      js.context.callMethod('stopWakeWordListening');
-    } else {
-      // Do not automatically restart it after TTS completes.
-      // Transition state to handsOffOff (Paused) so the user has to manually restart.
-      _addUiLog('[OWW] auto-restart after TTS disabled');
+    _addUiLog('[OWW] setWakeWordMuted: $muted');
+    try {
+      js.context.callMethod('setWakeWordMuted', [muted]);
+    } catch (e) {
+      _addUiLog('[OWW] failed to setWakeWordMuted: $e');
+    }
+    if (!muted) {
       if (_currentState != HandsOffState.handsOffOff) {
-        _changeState(HandsOffState.handsOffOff);
+        _changeState(HandsOffState.wakewordListening);
       }
     }
   }
@@ -742,13 +746,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     // ── Browser fallback mode (below) ──
 
     if (!_isListening) {
+      _setWakeWordMute(true);
       if (_currentState == HandsOffState.wakewordListening) {
-        if (_wakeWordSocket != null &&
-            _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-          _wakeWordSocket!.send(json.encode({'action': 'stop_wakeword'}));
-          _addUiLog('[FLUTTER] sent stop_wakeword (manual interrupt)');
-          await Future.delayed(const Duration(milliseconds: 150));
-        }
         _changeState(HandsOffState.userRecording);
       }
 
@@ -1082,8 +1081,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _abortAndRestartWakeWord() {
-    _addUiLog('[OWW] auto-restart on abort disabled');
-    _changeState(HandsOffState.handsOffOff);
+    _addUiLog('[OWW] auto-restart on abort');
+    _setWakeWordMute(false);
   }
 
   void _manualRestartWakeWord() {
@@ -1254,6 +1253,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       String threshJohn = '0.35';
       String threshLinda = '0.35';
       String callback = 'false';
+      String cps = '0.0';
+      String ctx = 'none';
+      String track = 'none';
+      String trackEnabled = 'false';
       for (var part in parts) {
         final kv = part.split('=');
         if (kv.length == 2) {
@@ -1270,6 +1273,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           if (kv[0] == 'thresh_john') threshJohn = kv[1];
           if (kv[0] == 'thresh_linda') threshLinda = kv[1];
           if (kv[0] == 'callback') callback = kv[1];
+          if (kv[0] == 'cps') cps = kv[1];
+          if (kv[0] == 'ctx') ctx = kv[1];
+          if (kv[0] == 'track') track = kv[1];
+          if (kv[0] == 'track_enabled') trackEnabled = kv[1];
         }
       }
       if (mounted) {
@@ -1283,6 +1290,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           _lastLindaPeak = double.tryParse(lindaPeak) ?? 0.0;
           _lastLindaV2Score = double.tryParse(lindaV2) ?? 0.0;
           _lastLindaV2Peak = double.tryParse(lindaV2Peak) ?? 0.0;
+          _lastCps = double.tryParse(cps) ?? 0.0;
+          _lastCtx = ctx;
+          _lastTrack = track;
+          _lastTrackEnabled = trackEnabled == 'true';
         });
       }
       _addUiLog('[OWW] active (RMS: $rms, models: $models, TJ: $threshJohn, TL: $threshLinda)');
@@ -1344,8 +1355,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       return;
     }
 
-    // 1. Pause/stop openWakeWord engine so it doesn't listen to user speech or TTS output
-    js.context.callMethod('stopWakeWordListening');
+    // 1. Mute openWakeWord detection callbacks
+    _setWakeWordMute(true);
 
     // 2. Switch persona if it's different
     if (_currentPersona != keyword) {
@@ -2103,7 +2114,27 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('RMS: ${_lastRms.toStringAsFixed(4)}', style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontFamily: 'monospace')),
+                          Text('RMS: ${_lastRms.toStringAsFixed(4)}  Chunks/Sec: ${_lastCps.toStringAsFixed(1)}', style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontFamily: 'monospace')),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Text('Level VU: ', style: TextStyle(color: Colors.white70, fontSize: 9)),
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(2),
+                                  child: LinearProgressIndicator(
+                                    value: (_lastRms * 12).clamp(0.0, 1.0),
+                                    backgroundColor: Colors.white10,
+                                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
+                                    minHeight: 4,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text('AudioContext: $_lastCtx', style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace')),
+                          Text('Track Status: $_lastTrack (${_lastTrackEnabled ? "enabled" : "disabled"})', style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace')),
                           const SizedBox(height: 4),
                           Text('John score: ${_lastJohnScore.toStringAsFixed(2)}  (Peak: ${_lastJohnPeak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace')),
                           Text('John V2: ${_lastJohnV2Score.toStringAsFixed(2)} (Peak: ${_lastJohnV2Peak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace')),

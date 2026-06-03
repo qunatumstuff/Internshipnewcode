@@ -65,6 +65,13 @@
       console.log(`[JS] Thresholds updated: John=${window.johnThreshold}, Linda=${window.lindaThreshold}`);
     };
 
+    window.wakewordDetectionMuted = false;
+
+    window.setWakeWordMuted = function(muted) {
+      window.wakewordDetectionMuted = !!muted;
+      console.log(`[JS] WakeWord detection muted: ${window.wakewordDetectionMuted}`);
+    };
+
     let engine = null;
     let isListening = false;
     let lastActiveTime = Date.now();
@@ -120,11 +127,25 @@
 
         let framesCount = 0;
         let lastScoreRmsLogged = 0;
+        let chunkCount = 0;
+        let lastChunkCountTime = Date.now();
+        let chunksPerSecond = 0;
+        window.lastNonZeroRmsTime = Date.now();
 
         // Intercept chunk processing to track activity/watchdog
         const originalProcessChunk = engine._processChunk;
         engine._processChunk = async function(chunk, options) {
           lastActiveTime = Date.now();
+          let isRmsZero = true;
+          for (let i = 0; i < chunk.length; i++) {
+            if (chunk[i] !== 0) {
+              isRmsZero = false;
+              break;
+            }
+          }
+          if (!isRmsZero) {
+            window.lastNonZeroRmsTime = Date.now();
+          }
           framesCount++;
           if (framesCount === 5) {
             if (onEventCallback) onEventCallback('active_listening_confirmed');
@@ -180,14 +201,14 @@
 
           // Check John Manual Threshold
           if (johnScore >= johnThresh) {
-            if (speechActive && !window.johnCooldownActive) {
+            if (speechActive && !window.johnCooldownActive && !window.wakewordDetectionMuted) {
               window.johnCooldownActive = true;
               console.log(`[OWW] John detected (score: ${johnScore.toFixed(4)})`);
               if (onDetectJohnCallback) onDetectJohnCallback(johnScore, 'john');
               setTimeout(() => { window.johnCooldownActive = false; }, 2500);
             }
           } else if (johnScore >= (johnThresh - 0.10) && johnScore > 0.01) {
-            if (speechActive && !window.johnNearMissCooldown) {
+            if (speechActive && !window.johnNearMissCooldown && !window.wakewordDetectionMuted) {
               window.johnNearMissCooldown = true;
               console.log(`[OWW] John near miss: score ${johnScore.toFixed(2)}`);
               if (onEventCallback) {
@@ -199,14 +220,14 @@
 
           // Check John V2 Manual Threshold
           if (johnV2Score >= johnThresh) {
-            if (speechActive && !window.johnCooldownActive) {
+            if (speechActive && !window.johnCooldownActive && !window.wakewordDetectionMuted) {
               window.johnCooldownActive = true;
               console.log(`[OWW] John_v2 detected (score: ${johnV2Score.toFixed(4)})`);
               if (onDetectJohnCallback) onDetectJohnCallback(johnV2Score, 'john_v2');
               setTimeout(() => { window.johnCooldownActive = false; }, 2500);
             }
           } else if (johnV2Score >= (johnThresh - 0.10) && johnV2Score > 0.01) {
-            if (speechActive && !window.johnV2NearMissCooldown) {
+            if (speechActive && !window.johnV2NearMissCooldown && !window.wakewordDetectionMuted) {
               window.johnV2NearMissCooldown = true;
               console.log(`[OWW] John_v2 near miss: score ${johnV2Score.toFixed(2)}`);
               if (onEventCallback) {
@@ -218,14 +239,14 @@
 
           // Check Linda Manual Threshold
           if (lindaScore >= lindaThresh) {
-            if (speechActive && !window.lindaCooldownActive) {
+            if (speechActive && !window.lindaCooldownActive && !window.wakewordDetectionMuted) {
               window.lindaCooldownActive = true;
               console.log(`[OWW] Linda detected (score: ${lindaScore.toFixed(4)})`);
               if (onDetectLindaCallback) onDetectLindaCallback(lindaScore, 'linda');
               setTimeout(() => { window.lindaCooldownActive = false; }, 2500);
             }
           } else if (lindaScore >= (lindaThresh - 0.10) && lindaScore > 0.01) {
-            if (speechActive && !window.lindaNearMissCooldown) {
+            if (speechActive && !window.lindaNearMissCooldown && !window.wakewordDetectionMuted) {
               window.lindaNearMissCooldown = true;
               console.log(`[OWW] Linda near miss: score ${lindaScore.toFixed(2)}`);
               if (onEventCallback) {
@@ -237,14 +258,14 @@
 
           // Check Linda V2 Manual Threshold
           if (lindaV2Score >= lindaThresh) {
-            if (speechActive && !window.lindaCooldownActive) {
+            if (speechActive && !window.lindaCooldownActive && !window.wakewordDetectionMuted) {
               window.lindaCooldownActive = true;
               console.log(`[OWW] Linda_v2 detected (score: ${lindaV2Score.toFixed(4)})`);
               if (onDetectLindaCallback) onDetectLindaCallback(lindaV2Score, 'linda_v2');
               setTimeout(() => { window.lindaCooldownActive = false; }, 2500);
             }
           } else if (lindaV2Score >= (lindaThresh - 0.10) && lindaV2Score > 0.01) {
-            if (speechActive && !window.lindaV2NearMissCooldown) {
+            if (speechActive && !window.lindaV2NearMissCooldown && !window.wakewordDetectionMuted) {
               window.lindaV2NearMissCooldown = true;
               console.log(`[OWW] Linda_v2 near miss: score ${lindaV2Score.toFixed(2)}`);
               if (onEventCallback) {
@@ -254,8 +275,16 @@
             }
           }
 
-          // Emit diagnostic status update every 2 seconds
-          if (now - lastScoreRmsLogged > 2000) {
+          chunkCount++;
+          const elapsed = now - lastChunkCountTime;
+          if (elapsed >= 1000) {
+            chunksPerSecond = (chunkCount * 1000) / elapsed;
+            chunkCount = 0;
+            lastChunkCountTime = now;
+          }
+
+          // Emit diagnostic status update every 150ms for live VU meter reactivity
+          if (now - lastScoreRmsLogged > 150) {
             lastScoreRmsLogged = now;
             let sumSquares = 0;
             for (let i = 0; i < chunk.length; i++) {
@@ -267,8 +296,18 @@
             if (engine && engine._keywordModels) {
               loadedModels = Object.keys(engine._keywordModels);
             }
+            const ctxState = (engine && engine._audioContext) ? engine._audioContext.state : 'none';
+            let trackState = 'none';
+            let trackEnabled = 'none';
+            if (engine && engine._mediaStream) {
+              const tracks = engine._mediaStream.getTracks();
+              if (tracks.length > 0) {
+                trackState = tracks[0].readyState;
+                trackEnabled = tracks[0].enabled ? 'true' : 'false';
+              }
+            }
             if (onEventCallback) {
-              onEventCallback(`status_update:rms=${rms.toFixed(4)},john=${johnScore.toFixed(2)},john_peak=${johnPeak.toFixed(2)},john_v2=${johnV2Score.toFixed(2)},john_v2_peak=${johnV2Peak.toFixed(2)},linda=${lindaScore.toFixed(2)},linda_peak=${lindaPeak.toFixed(2)},linda_v2=${lindaV2Score.toFixed(2)},linda_v2_peak=${lindaV2Peak.toFixed(2)},models=${loadedModels.join('+')},thresh_john=${johnThresh.toFixed(2)},thresh_linda=${lindaThresh.toFixed(2)},callback=${detectCallbackAttached}`);
+              onEventCallback(`status_update:rms=${rms.toFixed(4)},john=${johnScore.toFixed(2)},john_peak=${johnPeak.toFixed(2)},john_v2=${johnV2Score.toFixed(2)},john_v2_peak=${johnV2Peak.toFixed(2)},linda=${lindaScore.toFixed(2)},linda_peak=${lindaPeak.toFixed(2)},linda_v2=${lindaV2Score.toFixed(2)},linda_v2_peak=${lindaV2Peak.toFixed(2)},models=${loadedModels.join('+')},thresh_john=${johnThresh.toFixed(2)},thresh_linda=${lindaThresh.toFixed(2)},callback=${detectCallbackAttached},cps=${chunksPerSecond.toFixed(1)},ctx=${ctxState},track=${trackState},track_enabled=${trackEnabled}`);
             }
           }
 
@@ -294,11 +333,13 @@
     function startWatchdog() {
       stopWatchdog();
       lastActiveTime = Date.now();
+      window.lastNonZeroRmsTime = Date.now();
       watchdogTimer = setInterval(async () => {
         if (!isListening) return;
         const idleTime = Date.now() - lastActiveTime;
-        if (idleTime > 4000) { // 4 seconds threshold
-          console.warn(`[JS] Watchdog: No audio activity for ${idleTime}ms. Restarting engine...`);
+        const zeroRmsTime = Date.now() - (window.lastNonZeroRmsTime || Date.now());
+        if (idleTime > 4000 || zeroRmsTime > 5000) {
+          console.warn(`[JS] Watchdog trigger: idleTime=${idleTime}ms, zeroRmsTime=${zeroRmsTime}ms. Restarting engine...`);
           if (onEventCallback) onEventCallback('no_audio_detected');
           await window.restartWakeWordEngine();
         }
