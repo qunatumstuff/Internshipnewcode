@@ -71,6 +71,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   String _wakeWsStatus = 'disconnected'; // connected | connecting | disconnected | error
   bool _wakeWsReconnecting = false;      // prevents overlapping reconnect attempts
 
+  // ── Python Audio Server mode ──
+  // Set to true to use Python mic. Set to false to fallback to browser mic.
+  static const bool USE_PYTHON_AUDIO = true;
+  bool _audioServerConnected = false;
+
   // ── VAD Silence Detection ──
   html.MediaStream? _vadStream;
   wa.AudioContext? _vadAudioContext;
@@ -108,6 +113,22 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       });
     }
   }
+
+  void _showStatusSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: isError ? Colors.red[800] : Colors.green[800],
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
 
   // ── Visualizer animation ──
   late AnimationController _vizController;
@@ -674,6 +695,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
     _unlockAudio();
 
+    // ── Python Audio Server mode ──
+    if (USE_PYTHON_AUDIO) {
+      return _listenViaPython();
+    }
+    // ── Browser fallback mode (below) ──
+
     if (!_isListening) {
       if (_currentState == HandsOffState.wakewordListening) {
         if (_wakeWordSocket != null &&
@@ -847,6 +874,39 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Python Audio Server recording (USE_PYTHON_AUDIO = true)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  Future<void> _listenViaPython() async {
+    if (!_isListening) {
+      // ── START recording via Python ──
+      _addUiLog('[FLUTTER] record_now requested');
+      
+      if (_currentState == HandsOffState.wakewordListening) {
+        _changeState(HandsOffState.userRecording);
+      }
+
+      setState(() {
+        _isListening = true;
+        _textController.text = 'Listening...';
+      });
+
+      _sendWakeWordCommand({'action': 'record_now'});
+    } else {
+      // ── STOP recording via Python ──
+      _addUiLog('[FLUTTER] stop_recording requested');
+
+      setState(() {
+        _isListening = false;
+        _textController.text = 'Transcribing...';
+      });
+      await _setAvatarState(AvatarState.thinking);
+
+      _sendWakeWordCommand({'action': 'stop_recording'});
+    }
+  }
+
   void _startSilenceDetection() async {
     try {
       final mediaDevices = html.window.navigator.mediaDevices;
@@ -987,6 +1047,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _toggleHandsFree() {
+    if (USE_PYTHON_AUDIO && !_audioServerConnected) {
+      _showStatusSnackBar('Hands Off requires Python Audio Server to be connected!', isError: true);
+      return;
+    }
     if (_currentState == HandsOffState.handsOffOff) {
       _changeState(HandsOffState.wakewordListening);
       if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
@@ -1090,16 +1154,90 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _addUiLog('[WAKE] message received: ${event.data}');
       try {
         final data = json.decode(event.data.toString());
-        if (data['event'] == 'WAKEWORD_STARTED') {
+        final String eventName = data['event'] ?? '';
+        
+        if (eventName == 'AUDIO_SERVER_READY') {
+          _addUiLog('[FLUTTER] received AUDIO_SERVER_READY');
+          if (mounted) {
+            setState(() {
+              _audioServerConnected = true;
+            });
+            _showStatusSnackBar('Audio Server Connected');
+          }
+        } else if (eventName == 'PERSONA_SYNC') {
+          final String persona = data['persona'] ?? '';
+          _addUiLog('[FLUTTER] received PERSONA_SYNC: $persona');
+          if (persona.isNotEmpty && persona != _currentPersona) {
+            setState(() {
+              _currentPersona = persona;
+            });
+            _loadVideo(_avatarState, force: true);
+          }
+        } else if (eventName == 'WAKEWORD_STARTED') {
           _addUiLog('[FLUTTER] received WAKEWORD_STARTED');
           if (_currentState != HandsOffState.handsOffOff) {
             _changeState(HandsOffState.wakewordListening);
           }
-        } else if (data['event'] == 'WAKEWORD_STOPPED') {
+        } else if (eventName == 'WAKEWORD_STOPPED') {
           _addUiLog('[FLUTTER] received WAKEWORD_STOPPED');
-        } else if (data['event'] == 'WAKE_WORD_DETECTED') {
+        } else if (eventName == 'WAKE_WORD_DETECTED') {
           _addUiLog('[FLUTTER] received WAKE_WORD_DETECTED');
-          await _handleWakeWordEvent();
+          if (USE_PYTHON_AUDIO) {
+            if (_currentState != HandsOffState.handsOffOff) {
+              _changeState(HandsOffState.userRecording);
+            }
+            setState(() {
+              _isListening = true;
+              _textController.text = 'Listening...';
+            });
+          } else {
+            await _handleWakeWordEvent();
+          }
+        } else if (eventName == 'RECORDING_STARTED') {
+          _addUiLog('[FLUTTER] received RECORDING_STARTED');
+          setState(() {
+            _isListening = true;
+            _textController.text = 'Listening...';
+          });
+          if (_currentState != HandsOffState.handsOffOff) {
+            _changeState(HandsOffState.userRecording);
+          }
+        } else if (eventName == 'RECORDING_STOPPED') {
+          _addUiLog('[FLUTTER] received RECORDING_STOPPED');
+          setState(() {
+            _isListening = false;
+            _textController.text = 'Transcribing...';
+          });
+        } else if (eventName == 'TRANSCRIBING') {
+          _addUiLog('[FLUTTER] received TRANSCRIBING');
+          if (_currentState != HandsOffState.handsOffOff) {
+            _changeState(HandsOffState.transcribing);
+          }
+          setState(() {
+            _isListening = false;
+            _textController.text = 'Transcribing...';
+          });
+          await _setAvatarState(AvatarState.thinking);
+        } else if (eventName == 'STT_RESULT') {
+          final String text = data['text'] ?? '';
+          _addUiLog('[FLUTTER] received STT_RESULT: "$text"');
+          setState(() {
+            _isListening = false;
+            _textController.clear();
+          });
+          if (text.trim().isNotEmpty) {
+            _sendMessage(text);
+          }
+        } else if (eventName == 'STT_ERROR') {
+          final String err = data['error'] ?? 'Unknown transcription error';
+          _addUiLog('[FLUTTER] received STT_ERROR: $err');
+          setState(() {
+            _isListening = false;
+            _textController.clear();
+          });
+          _showStatusSnackBar('Audio Error: $err', isError: true);
+          await _setAvatarState(AvatarState.idle);
+          _abortAndRestartWakeWord();
         }
       } catch (e) {
         debugPrint('Error parsing wake word message: $e');
@@ -1499,11 +1637,27 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           const SizedBox(width: 10),
         ],
         Expanded(
-          child: Text(
-            'Ask $_pName anything...',
-            style: const TextStyle(color: Colors.white, fontSize: 14),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Ask $_pName anything...',
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (USE_PYTHON_AUDIO) ...[
+                const SizedBox(height: 2),
+                Text(
+                  _audioServerConnected ? '🟢 Audio Server Connected' : '🔴 Audio Server Disconnected',
+                  style: TextStyle(
+                    color: _audioServerConnected ? Colors.greenAccent : Colors.redAccent,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ],
@@ -1652,6 +1806,22 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             ),
           ),
           const SizedBox(height: 8),
+          if (USE_PYTHON_AUDIO) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  _audioServerConnected ? '🟢 Audio Server Connected' : '🔴 Audio Server Disconnected',
+                  style: TextStyle(
+                    color: _audioServerConnected ? Colors.greenAccent : Colors.redAccent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+          ],
 
           // ── Input row ─────────────────────────────────────
           Row(
