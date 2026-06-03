@@ -2,7 +2,9 @@ const ort = window.ort || globalThis.ort;
 
 export const MODEL_FILE_MAP = {
     john: 'john.onnx',
+    john_v2: 'john_v2.onnx',
     linda: 'linda.onnx',
+    linda_v2: 'linda_v2.onnx',
     alexa: 'alexa.onnx',
     hey_mycroft: 'hey_mycroft_v0.1.onnx',
     hey_jarvis: 'hey_jarvis.onnx',
@@ -121,22 +123,27 @@ export class WakeWordEngine {
         for (const keyword of this.config.keywords) {
             const file = this.config.modelFiles[keyword];
             if (!file) {
-                throw new Error(`No model file configured for keyword "${keyword}"`);
+                this._debug(`No model file configured for keyword "${keyword}"`);
+                continue;
             }
-            const session = await ort.InferenceSession.create(resolver(file), sessionOptions);
-            const windowSize = this._inferKeywordWindowSize(session) ?? this.config.embeddingWindowSize;
-            maxWindowSize = Math.max(maxWindowSize, windowSize);
-            const history = [];
-            for (let i = 0; i < windowSize; i++) {
-                history.push(new Float32Array(96).fill(0));
+            try {
+                const session = await ort.InferenceSession.create(resolver(file), sessionOptions);
+                const windowSize = this._inferKeywordWindowSize(session) ?? this.config.embeddingWindowSize;
+                maxWindowSize = Math.max(maxWindowSize, windowSize);
+                const history = [];
+                for (let i = 0; i < windowSize; i++) {
+                    history.push(new Float32Array(96).fill(0));
+                }
+                this._keywordModels[keyword] = {
+                    session,
+                    scores: new Array(50).fill(0),
+                    windowSize,
+                    history
+                };
+                this._debug('Loaded keyword model', { keyword, file, windowSize });
+            } catch (err) {
+                console.warn(`[WakeWordEngine] Optional model "${keyword}" (${file}) failed to load. Skipping.`, err);
             }
-            this._keywordModels[keyword] = {
-                session,
-                scores: new Array(50).fill(0),
-                windowSize,
-                history
-            };
-            this._debug('Loaded keyword model', { keyword, file, windowSize });
         }
         this._embeddingWindowSize = maxWindowSize;
         this._debug('Embedding window size resolved', this._embeddingWindowSize);

@@ -1,11 +1,9 @@
 
-# ROBOT MCP SERVER — compatible with Week_11_day_2_mcp_relocate_pick_yaw (1).py
+# ROBOT MCP SERVER — compatible with Week_10_day_5Humanedited_MCP_COMPAT.py
 import asyncio
 import logging
 import os
-import json
 import importlib.util
-import urllib.request
 from typing import Any
 
 from mcp.server import Server
@@ -25,36 +23,7 @@ logger = logging.getLogger("robot-mcp")
 # as this RoboControl file when running on the robot PC.
 # ------------------------------------------------------------
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-ROBOT_CONTROL_PATH = os.path.join(THIS_DIR, "Week_11_day_2_mcp_relocate_pick_yaw (1).py")
-
-# Vision MCP REST endpoint for verification photo after relocation.
-# Both servers run on Laptop B, so localhost is correct.
-VISION_MCP_CAPTURE_URL = os.environ.get(
-    "VISION_MCP_CAPTURE_URL", "http://localhost:8001/api/capture-and-detect"
-)
-
-
-def call_vision_capture_and_detect():
-    """
-    Call the Vision MCP server's REST endpoint to capture a fresh photo
-    and run YOLOv11 OBB detection. Returns the full detection list.
-
-    This is used ONLY after relocate_object to give Qwen an updated
-    workspace view. pick_and_place_object does NOT call this because
-    the object leaves the workspace entirely.
-    """
-    try:
-        req = urllib.request.Request(VISION_MCP_CAPTURE_URL)
-        with urllib.request.urlopen(req, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            logger.info(
-                f"Vision MCP returned {len(data.get('detections', []))} detection(s) "
-                f"after verification photo."
-            )
-            return data
-    except Exception as e:
-        logger.error(f"Failed to call Vision MCP capture_and_detect: {e}")
-        return {"status": "ERROR", "detections": [], "error": str(e)}
+ROBOT_CONTROL_PATH = os.path.join(THIS_DIR, "Week_10_day_5Humanedited_MCP_COMPAT.py")
 
 spec = importlib.util.spec_from_file_location("week10_robot_control", ROBOT_CONTROL_PATH)
 robot_control = importlib.util.module_from_spec(spec)
@@ -72,7 +41,9 @@ async def handle_list_tools() -> list[Tool]:
             description=(
                 "Pick and place one detected object using the main robot controller. "
                 "Input comes from the vision MCP/AI pipeline: object_name, x, y, z in metres, "
-                "and angle_deg (yaw in degrees, robot base frame, from YOLOv11 OBB decomposed RPY)."
+                "and angle_deg (yaw in degrees, robot base frame, from YOLOv11 OBB decomposed RPY). "
+                "For the pipe, grasp_label and all_grasp_candidates from the segmentation model "
+                "are also accepted to enable smart end-selection."
             ),
             inputSchema={
                 "type": "object",
@@ -91,6 +62,23 @@ async def handle_list_tools() -> list[Tool]:
                             "extracted from YOLOv11 OBB transformation matrix RPY decomposition. "
                             "If omitted, the catalogue default grasp angle is used."
                         )
+                    },
+                    "grasp_label": {
+                        "type": "string",
+                        "description": (
+                            "For pipe only: which end vision_core segmentation selected "
+                            "(grasp_A or grasp_B). When provided, x/y/z already point to "
+                            "that end and catalogue offsets are zeroed. When absent, "
+                            "robot-side fallback grasp selection runs automatically."
+                        )
+                    },
+                    "all_grasp_candidates": {
+                        "type": "array",
+                        "description": (
+                            "For pipe only: both grasp candidates with XYZ and angle "
+                            "computed by vision_core segmentation. Stored for diagnostics."
+                        ),
+                        "items": {"type": "object"}
                     }
                 },
                 "required": ["object_name", "x", "y", "z"]
@@ -167,16 +155,22 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     args = arguments or {}
 
     if name == "pick_and_place_object":
-        object_name = args.get("object_name")
-        x = float(args.get("x"))
-        y = float(args.get("y"))
-        z = float(args.get("z"))
-        angle_deg = float(args["angle_deg"]) if "angle_deg" in args else None
-        detections = args.get("detections", None)
+        object_name          = args.get("object_name")
+        x                    = float(args.get("x"))
+        y                    = float(args.get("y"))
+        z                    = float(args.get("z"))
+        angle_deg            = float(args["angle_deg"]) if "angle_deg" in args else None
+        grasp_label          = args.get("grasp_label", None)
 
-        logger.info(f"MCP pick_and_place_object: {object_name} at ({x}, {y}, {z}) angle={angle_deg}")
+        logger.info(
+            f"MCP pick_and_place_object: {object_name} at ({x}, {y}, {z}) "
+            f"angle={angle_deg} grasp={grasp_label}"
+        )
         result = robot_control.run_mcp_pick_and_place(
-            object_name, x, y, z, angle=angle_deg, detections=detections
+            object_name,
+            x, y, z,
+            angle=angle_deg,
+            grasp_label=grasp_label,
         )
         return [TextContent(type="text", text=f"Completed: {result}")]
 
@@ -214,17 +208,19 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         )
 
         # Robot signals it needs a fresh detection before Qwen plans next action.
-        # Automatically trigger a verification photo via the Vision MCP's REST
-        # endpoint.  The full detection list is returned so Qwen receives the
-        # updated workspace state without managing the camera itself.
+        # The MCP server triggers the YOLO re-photograph here so Qwen automatically
+        # receives the updated scene in the response without managing the camera itself.
         if result.get("requires_redetection"):
-            logger.info("Relocation complete — triggering fresh YOLO verification photo...")
-            vision_result = call_vision_capture_and_detect()
-            fresh_detections = vision_result.get("detections", [])
-            result["fresh_detections"] = fresh_detections
-            logger.info(
-                f"Verification photo returned {len(fresh_detections)} detection(s): "
-                f"{[d.get('object_name') for d in fresh_detections]}"
+            logger.info("Relocation complete — triggering fresh YOLO detection...")
+            # TODO: call your YOLO MCP server here to take a new photo and detect.
+            # Replace the placeholder below with your actual YOLO MCP client call.
+            # Example:
+            #   fresh_detections = await yolo_mcp_client.detect()
+            #   result["fresh_detections"] = fresh_detections
+            result["fresh_detections"] = None   # placeholder until YOLO MCP is wired in
+            result["redetection_note"] = (
+                "Fresh YOLO photo triggered. Wire yolo_mcp_client.detect() into "
+                "the TODO above to populate fresh_detections automatically."
             )
 
         return [TextContent(type="text", text=f"Completed: {result}")]

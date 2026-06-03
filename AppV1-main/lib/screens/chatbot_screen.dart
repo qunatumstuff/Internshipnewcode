@@ -74,6 +74,21 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   bool _wakeWsReconnecting = false;      // prevents overlapping reconnect attempts
   bool _isManualRestarting = false;
 
+  // Real-time diagnostics & custom thresholds
+  double _lastRms = 0.0;
+  double _lastJohnScore = 0.0;
+  double _lastJohnV2Score = 0.0;
+  double _lastLindaScore = 0.0;
+  double _lastLindaV2Score = 0.0;
+  double _lastJohnPeak = 0.0;
+  double _lastJohnV2Peak = 0.0;
+  double _lastLindaPeak = 0.0;
+  double _lastLindaV2Peak = 0.0;
+  double _johnThresh = 0.35;
+  double _lindaThresh = 0.35;
+  final TextEditingController _johnThreshController = TextEditingController(text: '0.35');
+  final TextEditingController _lindaThreshController = TextEditingController(text: '0.35');
+
   // ── Python Audio Server mode ──
   // Set to true to use Python mic. Set to false to fallback to browser mic.
   static const bool USE_PYTHON_AUDIO = false;
@@ -98,7 +113,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       case HandsOffState.handsOffOff:
         return 'Paused';
       case HandsOffState.wakewordListening:
-        return 'Listening';
+        return 'Listening (RMS: ${_lastRms.toStringAsFixed(4)}, J: ${_lastJohnScore.toStringAsFixed(2)} [P: ${_lastJohnPeak.toStringAsFixed(2)}], L: ${_lastLindaScore.toStringAsFixed(2)} [P: ${_lastLindaPeak.toStringAsFixed(2)}])';
       case HandsOffState.userRecording:
       case HandsOffState.transcribing:
         return 'Recording';
@@ -183,6 +198,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _textController.dispose();
     _scrollController.dispose();
     _subtitleScrollController.dispose();
+    _johnThreshController.dispose();
+    _lindaThreshController.dispose();
     _audioElement?.pause();
     _audioElement = null;
     debugPrint('⚠️ [DEBUG] Calling _wakeWordSocket?.close() from dispose()');
@@ -1146,6 +1163,21 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _initBrowserWakeWord();
   }
 
+  void _updateThresholds() {
+    final johnVal = double.tryParse(_johnThreshController.text) ?? 0.35;
+    final lindaVal = double.tryParse(_lindaThreshController.text) ?? 0.35;
+    setState(() {
+      _johnThresh = johnVal;
+      _lindaThresh = lindaVal;
+    });
+    try {
+      js.context.callMethod('setWakeWordThresholds', [johnVal, lindaVal]);
+      _addUiLog('[OWW] updated thresholds: J=$johnVal, L=$lindaVal');
+    } catch (e) {
+      _addUiLog('[OWW] failed to set thresholds: $e');
+    }
+  }
+
   void _initBrowserWakeWord() {
     if (mounted) setState(() => _wakeWsStatus = 'connecting');
     _addUiLog('[OWW] Initializing client-side openWakeWord engine...');
@@ -1153,12 +1185,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     
     try {
       js.context.callMethod('initWakeWordEngine', [
-        js.allowInterop((score) {
-          _addUiLog('[OWW] John detected (score: $score)');
+        js.allowInterop((score, [modelName]) {
+          final name = modelName ?? 'john';
+          _addUiLog('[OWW] $name detected (score: $score)');
           _handleWakeWordDetected('john');
         }),
-        js.allowInterop((score) {
-          _addUiLog('[OWW] Linda detected (score: $score)');
+        js.allowInterop((score, [modelName]) {
+          final name = modelName ?? 'linda';
+          _addUiLog('[OWW] $name detected (score: $score)');
           _handleWakeWordDetected('linda');
         }),
         js.allowInterop(() {
@@ -1168,6 +1202,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               _audioServerConnected = true;
               _wakeWsStatus = 'connected';
             });
+            _updateThresholds(); // Call update thresholds on ready to synchronize settings
             _showStatusSnackBar('Client-side openWakeWord Ready');
           }
         }),
@@ -1186,16 +1221,59 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       final parts = eventName.substring('status_update:'.length).split(',');
       String rms = '0.0000';
       String john = '0.00';
+      String johnPeak = '0.00';
+      String johnV2 = '0.00';
+      String johnV2Peak = '0.00';
       String linda = '0.00';
+      String lindaPeak = '0.00';
+      String lindaV2 = '0.00';
+      String lindaV2Peak = '0.00';
+      String models = 'none';
+      String threshJohn = '0.35';
+      String threshLinda = '0.35';
+      String callback = 'false';
       for (var part in parts) {
         final kv = part.split('=');
         if (kv.length == 2) {
           if (kv[0] == 'rms') rms = kv[1];
           if (kv[0] == 'john') john = kv[1];
+          if (kv[0] == 'john_peak') johnPeak = kv[1];
+          if (kv[0] == 'john_v2') johnV2 = kv[1];
+          if (kv[0] == 'john_v2_peak') johnV2Peak = kv[1];
           if (kv[0] == 'linda') linda = kv[1];
+          if (kv[0] == 'linda_peak') lindaPeak = kv[1];
+          if (kv[0] == 'linda_v2') lindaV2 = kv[1];
+          if (kv[0] == 'linda_v2_peak') lindaV2Peak = kv[1];
+          if (kv[0] == 'models') models = kv[1];
+          if (kv[0] == 'thresh_john') threshJohn = kv[1];
+          if (kv[0] == 'thresh_linda') threshLinda = kv[1];
+          if (kv[0] == 'callback') callback = kv[1];
         }
       }
-      _addUiLog('[OWW] audio active (RMS: $rms, John: $john, Linda: $linda)');
+      if (mounted) {
+        setState(() {
+          _lastRms = double.tryParse(rms) ?? 0.0;
+          _lastJohnScore = double.tryParse(john) ?? 0.0;
+          _lastJohnPeak = double.tryParse(johnPeak) ?? 0.0;
+          _lastJohnV2Score = double.tryParse(johnV2) ?? 0.0;
+          _lastJohnV2Peak = double.tryParse(johnV2Peak) ?? 0.0;
+          _lastLindaScore = double.tryParse(linda) ?? 0.0;
+          _lastLindaPeak = double.tryParse(lindaPeak) ?? 0.0;
+          _lastLindaV2Score = double.tryParse(lindaV2) ?? 0.0;
+          _lastLindaV2Peak = double.tryParse(lindaV2Peak) ?? 0.0;
+        });
+      }
+      _addUiLog('[OWW] active (RMS: $rms, models: $models, TJ: $threshJohn, TL: $threshLinda)');
+      return;
+    }
+
+    if (eventName.startsWith('near_miss:')) {
+      final parts = eventName.substring('near_miss:'.length).split('=');
+      if (parts.length == 2) {
+        final keyword = parts[0];
+        final score = parts[1];
+        _addUiLog('[OWW] $keyword near miss: score $score');
+      }
       return;
     }
 
@@ -1930,6 +2008,78 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                           child: const Icon(Icons.close, color: Colors.white54, size: 16),
                         )
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('John Thresh', style: TextStyle(color: Colors.white, fontSize: 10)),
+                              const SizedBox(height: 4),
+                              TextField(
+                                controller: _johnThreshController,
+                                style: const TextStyle(color: Colors.white, fontSize: 11),
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  border: OutlineInputBorder(),
+                                  fillColor: Colors.black26,
+                                  filled: true,
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (_) => _updateThresholds(),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Linda Thresh', style: TextStyle(color: Colors.white, fontSize: 10)),
+                              const SizedBox(height: 4),
+                              TextField(
+                                controller: _lindaThreshController,
+                                style: const TextStyle(color: Colors.white, fontSize: 11),
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  border: OutlineInputBorder(),
+                                  fillColor: Colors.black26,
+                                  filled: true,
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (_) => _updateThresholds(),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.black38,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.green.withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('RMS: ${_lastRms.toStringAsFixed(4)}', style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontFamily: 'monospace')),
+                          const SizedBox(height: 4),
+                          Text('John: ${_lastJohnScore.toStringAsFixed(2)}  (Peak: ${_lastJohnPeak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace')),
+                          Text('John V2: ${_lastJohnV2Score.toStringAsFixed(2)} (Peak: ${_lastJohnV2Peak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace')),
+                          const SizedBox(height: 4),
+                          Text('Linda: ${_lastLindaScore.toStringAsFixed(2)}  (Peak: ${_lastLindaPeak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace')),
+                          Text('Linda V2: ${_lastLindaV2Score.toStringAsFixed(2)} (Peak: ${_lastLindaV2Peak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace')),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 8),
                     ElevatedButton(

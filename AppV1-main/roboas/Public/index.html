@@ -54,6 +54,17 @@
   <script type="module">
     import { WakeWordEngine } from './WakeWordEngine.js';
 
+    window.johnThreshold = 0.35;
+    window.lindaThreshold = 0.35;
+    window.johnScoresWindow = [];
+    window.lindaScoresWindow = [];
+
+    window.setWakeWordThresholds = function(johnVal, lindaVal) {
+      window.johnThreshold = Number(johnVal);
+      window.lindaThreshold = Number(lindaVal);
+      console.log(`[JS] Thresholds updated: John=${window.johnThreshold}, Linda=${window.lindaThreshold}`);
+    };
+
     let engine = null;
     let isListening = false;
     let lastActiveTime = Date.now();
@@ -64,6 +75,7 @@
     let onDetectLindaCallback = null;
     let onReadyCallback = null;
     let onEventCallback = null;
+    let detectCallbackAttached = false;
 
     window.initWakeWordEngine = async function(onDetectJohn, onDetectLinda, onReady, onEvent) {
       console.log("[JS] Registering openWakeWord engine interops...");
@@ -77,14 +89,19 @@
 
     async function setupEngine() {
       if (onEventCallback) onEventCallback('restarting');
-      console.log("[JS] Initializing openWakeWord engine for John and Linda...");
+      console.log("[JS] Initializing openWakeWord engine for John and Linda (including optional V2)...");
+      detectCallbackAttached = false;
+      window.johnScoresWindow = [];
+      window.johnV2ScoresWindow = [];
+      window.lindaScoresWindow = [];
+      window.lindaV2ScoresWindow = [];
       try {
         ort.env.wasm.wasmPaths = '/ort/';
 
         engine = new WakeWordEngine({
           baseAssetUrl: '/models',
-          keywords: ['john', 'linda'],
-          detectionThreshold: 0.45,
+          keywords: ['john', 'john_v2', 'linda', 'linda_v2'],
+          detectionThreshold: 99.0, // Disable built-in threshold callback to prevent cooldown locks
           cooldownMs: 2500,
           ortWasmPath: '/ort/',
           debug: true
@@ -95,14 +112,11 @@
         if (onReadyCallback) onReadyCallback();
         if (onEventCallback) onEventCallback('restarted');
 
+        // Note: Built-in 'detect' is bypassed by detectionThreshold: 99.0
         engine.on('detect', ({ keyword, score }) => {
-          console.log(`[JS] Detected: ${keyword} (${score})`);
-          if (keyword === 'john') {
-            if (onDetectJohnCallback) onDetectJohnCallback(score);
-          } else if (keyword === 'linda') {
-            if (onDetectLindaCallback) onDetectLindaCallback(score);
-          }
+          console.log(`[JS] Built-in detect (unused): ${keyword} (${score})`);
         });
+        detectCallbackAttached = true;
 
         let framesCount = 0;
         let lastScoreRmsLogged = 0;
@@ -116,9 +130,132 @@
             if (onEventCallback) onEventCallback('active_listening_confirmed');
           }
 
+          // Call the original chunk processor to execute VAD and compute new scores
+          const result = await originalProcessChunk.call(engine, chunk, options);
+
           // Calculate RMS and fetch active keyword scores
           const now = Date.now();
-          if (now - lastScoreRmsLogged > 4000) {
+          let johnScore = 0;
+          let johnV2Score = 0;
+          let lindaScore = 0;
+          let lindaV2Score = 0;
+          if (engine && engine._keywordModels) {
+            if (engine._keywordModels.john && engine._keywordModels.john.scores) {
+              const s = engine._keywordModels.john.scores;
+              johnScore = s[s.length - 1] || 0;
+            }
+            if (engine._keywordModels.john_v2 && engine._keywordModels.john_v2.scores) {
+              const s = engine._keywordModels.john_v2.scores;
+              johnV2Score = s[s.length - 1] || 0;
+            }
+            if (engine._keywordModels.linda && engine._keywordModels.linda.scores) {
+              const s = engine._keywordModels.linda.scores;
+              lindaScore = s[s.length - 1] || 0;
+            }
+            if (engine._keywordModels.linda_v2 && engine._keywordModels.linda_v2.scores) {
+              const s = engine._keywordModels.linda_v2.scores;
+              lindaV2Score = s[s.length - 1] || 0;
+            }
+          }
+
+          // Maintain rolling score peaks for the last 5 seconds (5000ms)
+          window.johnScoresWindow.push({ score: johnScore, timestamp: now });
+          window.johnV2ScoresWindow.push({ score: johnV2Score, timestamp: now });
+          window.lindaScoresWindow.push({ score: lindaScore, timestamp: now });
+          window.lindaV2ScoresWindow.push({ score: lindaV2Score, timestamp: now });
+
+          window.johnScoresWindow = window.johnScoresWindow.filter(item => now - item.timestamp <= 5000);
+          window.johnV2ScoresWindow = window.johnV2ScoresWindow.filter(item => now - item.timestamp <= 5000);
+          window.lindaScoresWindow = window.lindaScoresWindow.filter(item => now - item.timestamp <= 5000);
+          window.lindaV2ScoresWindow = window.lindaV2ScoresWindow.filter(item => now - item.timestamp <= 5000);
+
+          const johnPeak = Math.max(...window.johnScoresWindow.map(item => item.score), 0);
+          const johnV2Peak = Math.max(...window.johnV2ScoresWindow.map(item => item.score), 0);
+          const lindaPeak = Math.max(...window.lindaScoresWindow.map(item => item.score), 0);
+          const lindaV2Peak = Math.max(...window.lindaV2ScoresWindow.map(item => item.score), 0);
+
+          const speechActive = engine ? engine._isSpeechActive : false;
+          const johnThresh = window.johnThreshold || 0.35;
+          const lindaThresh = window.lindaThreshold || 0.35;
+
+          // Check John Manual Threshold
+          if (johnScore >= johnThresh) {
+            if (speechActive && !window.johnCooldownActive) {
+              window.johnCooldownActive = true;
+              console.log(`[OWW] John detected (score: ${johnScore.toFixed(4)})`);
+              if (onDetectJohnCallback) onDetectJohnCallback(johnScore, 'john');
+              setTimeout(() => { window.johnCooldownActive = false; }, 2500);
+            }
+          } else if (johnScore >= (johnThresh - 0.10) && johnScore > 0.01) {
+            if (speechActive && !window.johnNearMissCooldown) {
+              window.johnNearMissCooldown = true;
+              console.log(`[OWW] John near miss: score ${johnScore.toFixed(2)}`);
+              if (onEventCallback) {
+                onEventCallback(`near_miss:john=${johnScore.toFixed(2)}`);
+              }
+              setTimeout(() => { window.johnNearMissCooldown = false; }, 1500);
+            }
+          }
+
+          // Check John V2 Manual Threshold
+          if (johnV2Score >= johnThresh) {
+            if (speechActive && !window.johnCooldownActive) {
+              window.johnCooldownActive = true;
+              console.log(`[OWW] John_v2 detected (score: ${johnV2Score.toFixed(4)})`);
+              if (onDetectJohnCallback) onDetectJohnCallback(johnV2Score, 'john_v2');
+              setTimeout(() => { window.johnCooldownActive = false; }, 2500);
+            }
+          } else if (johnV2Score >= (johnThresh - 0.10) && johnV2Score > 0.01) {
+            if (speechActive && !window.johnV2NearMissCooldown) {
+              window.johnV2NearMissCooldown = true;
+              console.log(`[OWW] John_v2 near miss: score ${johnV2Score.toFixed(2)}`);
+              if (onEventCallback) {
+                onEventCallback(`near_miss:john_v2=${johnV2Score.toFixed(2)}`);
+              }
+              setTimeout(() => { window.johnV2NearMissCooldown = false; }, 1500);
+            }
+          }
+
+          // Check Linda Manual Threshold
+          if (lindaScore >= lindaThresh) {
+            if (speechActive && !window.lindaCooldownActive) {
+              window.lindaCooldownActive = true;
+              console.log(`[OWW] Linda detected (score: ${lindaScore.toFixed(4)})`);
+              if (onDetectLindaCallback) onDetectLindaCallback(lindaScore, 'linda');
+              setTimeout(() => { window.lindaCooldownActive = false; }, 2500);
+            }
+          } else if (lindaScore >= (lindaThresh - 0.10) && lindaScore > 0.01) {
+            if (speechActive && !window.lindaNearMissCooldown) {
+              window.lindaNearMissCooldown = true;
+              console.log(`[OWW] Linda near miss: score ${lindaScore.toFixed(2)}`);
+              if (onEventCallback) {
+                onEventCallback(`near_miss:linda=${lindaScore.toFixed(2)}`);
+              }
+              setTimeout(() => { window.lindaNearMissCooldown = false; }, 1500);
+            }
+          }
+
+          // Check Linda V2 Manual Threshold
+          if (lindaV2Score >= lindaThresh) {
+            if (speechActive && !window.lindaCooldownActive) {
+              window.lindaCooldownActive = true;
+              console.log(`[OWW] Linda_v2 detected (score: ${lindaV2Score.toFixed(4)})`);
+              if (onDetectLindaCallback) onDetectLindaCallback(lindaV2Score, 'linda_v2');
+              setTimeout(() => { window.lindaCooldownActive = false; }, 2500);
+            }
+          } else if (lindaV2Score >= (lindaThresh - 0.10) && lindaV2Score > 0.01) {
+            if (speechActive && !window.lindaV2NearMissCooldown) {
+              window.lindaV2NearMissCooldown = true;
+              console.log(`[OWW] Linda_v2 near miss: score ${lindaV2Score.toFixed(2)}`);
+              if (onEventCallback) {
+                onEventCallback(`near_miss:linda_v2=${lindaV2Score.toFixed(2)}`);
+              }
+              setTimeout(() => { window.lindaV2NearMissCooldown = false; }, 1500);
+            }
+          }
+
+          // Emit diagnostic status update every 2 seconds
+          if (now - lastScoreRmsLogged > 2000) {
             lastScoreRmsLogged = now;
             let sumSquares = 0;
             for (let i = 0; i < chunk.length; i++) {
@@ -126,25 +263,17 @@
             }
             let rms = Math.sqrt(sumSquares / chunk.length);
 
-            let johnScore = 0;
-            let lindaScore = 0;
+            let loadedModels = [];
             if (engine && engine._keywordModels) {
-              if (engine._keywordModels.john && engine._keywordModels.john.scores) {
-                const s = engine._keywordModels.john.scores;
-                johnScore = s[s.length - 1] || 0;
-              }
-              if (engine._keywordModels.linda && engine._keywordModels.linda.scores) {
-                const s = engine._keywordModels.linda.scores;
-                lindaScore = s[s.length - 1] || 0;
-              }
+              loadedModels = Object.keys(engine._keywordModels);
             }
             if (onEventCallback) {
-              onEventCallback(`status_update:rms=${rms.toFixed(4)},john=${johnScore.toFixed(2)},linda=${lindaScore.toFixed(2)}`);
+              onEventCallback(`status_update:rms=${rms.toFixed(4)},john=${johnScore.toFixed(2)},john_peak=${johnPeak.toFixed(2)},john_v2=${johnV2Score.toFixed(2)},john_v2_peak=${johnV2Peak.toFixed(2)},linda=${lindaScore.toFixed(2)},linda_peak=${lindaPeak.toFixed(2)},linda_v2=${lindaV2Score.toFixed(2)},linda_v2_peak=${lindaV2Peak.toFixed(2)},models=${loadedModels.join('+')},thresh_john=${johnThresh.toFixed(2)},thresh_linda=${lindaThresh.toFixed(2)},callback=${detectCallbackAttached}`);
             }
           }
 
           triggerAudioActive();
-          return originalProcessChunk.call(engine, chunk, options);
+          return result;
         };
 
         return true;
@@ -192,6 +321,10 @@
       try {
         console.log("[JS] Starting WakeWordEngine mic capture...");
         await engine.start();
+        if (engine._audioContext && engine._audioContext.state === 'suspended') {
+          console.log("[JS] start: AudioContext suspended. Resuming...");
+          await engine._audioContext.resume();
+        }
         isListening = true;
         lastActiveTime = Date.now();
         startWatchdog();
@@ -214,6 +347,7 @@
         }
         await engine.stop();
         isListening = false;
+        detectCallbackAttached = false;
         if (onEventCallback) onEventCallback('stopped');
         return true;
       } catch (err) {
@@ -235,6 +369,7 @@
         console.error("[JS] Error stopping engine during restart:", e);
       }
       isListening = false;
+      detectCallbackAttached = false;
       stopWatchdog();
 
       const success = await setupEngine();
@@ -242,6 +377,10 @@
         try {
           console.log("[JS] Starting WakeWordEngine mic capture after restart...");
           await engine.start();
+          if (engine._audioContext && engine._audioContext.state === 'suspended') {
+            console.log("[JS] restart: AudioContext suspended. Resuming...");
+            await engine._audioContext.resume();
+          }
           isListening = true;
           startWatchdog();
           if (onEventCallback) onEventCallback('started');
