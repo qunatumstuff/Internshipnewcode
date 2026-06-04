@@ -8425,7 +8425,8 @@ _.dx=g
 _.fr="disconnected"
 _.fy=!1
 _.p2=_.p1=_.ok=_.k4=_.k3=_.k2=_.k1=_.id=_.go=0
-_.p4=_.p3=0.001
+_.p3=0.001
+_.p4=0.0005
 _.R8=0
 _.rx=_.RG="none"
 _.ry=!1
@@ -44452,7 +44453,7 @@ a2=a2[s[15]]
 c=$.aD()
 b=A.BM()
 a=A.BM()
-return new A.DL(new A.a0d(new A.il(a0,a0,t.nk),new A.arU(a1),r+q+p+o+"-"+n+m+"-"+l+k+"-"+j+i+"-"+h+g+f+e+d+a2),A.w(t.N,t.cf),B.b_,new A.vo(B.zA,c),b,a,B.bC,new A.vo(new A.cy("0.001",B.fi,B.aK),c),new A.vo(new A.cy("0.001",B.fi,B.aK),c),A.c([],t.SU),A.c([],t.Le),A.c([],t.s),a0,a0)}}
+return new A.DL(new A.a0d(new A.il(a0,a0,t.nk),new A.arU(a1),r+q+p+o+"-"+n+m+"-"+l+k+"-"+j+i+"-"+h+g+f+e+d+a2),A.w(t.N,t.cf),B.b_,new A.vo(B.zA,c),b,a,B.bC,new A.vo(new A.cy("0.001",B.fi,B.aK),c),new A.vo(new A.cy("0.0005",B.fi,B.aK),c),A.c([],t.SU),A.c([],t.Le),A.c([],t.s),a0,a0)}}
 A.DL.prototype={
 gjg(){var s=!0
 if(!this.f)if(this.Q!==B.bg){s=this.W
@@ -45035,7 +45036,7 @@ s=11
 return A.v(q.jh(),$async$xf)
 case 11:case 9:case 6:case 3:return A.D(null,r)}})
 return A.E($async$xf,r)},
-GH(){var s,r,q=this,p=A.eR(q.to.a.a),o=p==null?0.001:p,n=A.eR(q.x1.a.a),m=n==null?0.001:n
+GH(){var s,r,q=this,p=A.eR(q.to.a.a),o=p==null?0.001:p,n=A.eR(q.x1.a.a),m=n==null?0.0005:n
 q.a4(new A.alV(q,o,m))
 try{$.ox().qc("setWakeWordThresholds",[o,m])
 q.aN("[OWW] updated thresholds: J="+A.k(o)+", L="+A.k(m))}catch(r){s=A.a7(r)
