@@ -25,7 +25,7 @@ logger = logging.getLogger("vision-mcp")
 # ==========================================
 # CONFIGURATION
 # ==========================================
-LAPTOP_A_IP  = os.environ.get("LAPTOP_A_IP",  "192.168.2.10")
+LAPTOP_A_IP  = os.environ.get("LAPTOP_A_IP",  "localhost")
 QWEN_MODEL   = os.environ.get("QWEN_MODEL",   "qwen3-vl:2b")
 
 # Robot MCP server address
@@ -218,12 +218,10 @@ app = Starlette(routes=[
 
 if __name__ == "__main__":
     # Start the RealSense & YOLO vision loop thread from camera.py
-    logger.info("Initializing D435i Camera & YOLO Vision Loop...")
+    print("Initializing D435i Camera & YOLO Vision Loop...")
     vision_thread = threading.Thread(target=camera.vision_loop, daemon=True)
     vision_thread.start()
     
-    # Allow camera time to initialize
-    logger.info("Camera warming up...")
     
-    logger.info("👁️ Vision MCP Server listening on port 8001...")
+    print("👁️ Vision MCP Server listening on port 8001...")
     uvicorn.run(app, host="0.0.0.0", port=8001)
