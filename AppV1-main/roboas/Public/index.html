@@ -292,6 +292,11 @@
             }
             let rms = Math.sqrt(sumSquares / chunk.length);
 
+            // Log live confidence percentages to browser console for tuning
+            if (johnScore > 0.01 || johnV2Score > 0.01 || lindaScore > 0.01 || lindaV2Score > 0.01) {
+              console.log(`[OWW Scores] John: ${(johnScore * 100).toFixed(1)}% (Peak: ${(johnPeak * 100).toFixed(1)}%), John V2: ${(johnV2Score * 100).toFixed(1)}% | Linda: ${(lindaScore * 100).toFixed(1)}% (Peak: ${(lindaPeak * 100).toFixed(1)}%), Linda V2: ${(lindaV2Score * 100).toFixed(1)}%`);
+            }
+
             let loadedModels = [];
             if (engine && engine._keywordModels) {
               loadedModels = Object.keys(engine._keywordModels);
