@@ -55,7 +55,7 @@
     import { WakeWordEngine } from './WakeWordEngine.js';
 
     window.johnThreshold = 0.001;
-    window.lindaThreshold = 0.001;
+    window.lindaThreshold = 0.0005;
     window.johnScoresWindow = [];
     window.lindaScoresWindow = [];
 
@@ -197,7 +197,7 @@
 
           const speechActive = engine ? engine._isSpeechActive : false;
           const johnThresh = window.johnThreshold || 0.001;
-          const lindaThresh = window.lindaThreshold || 0.001;
+          const lindaThresh = window.lindaThreshold || 0.0005;
 
           // Check John Manual Threshold
           if (johnScore >= johnThresh) {
