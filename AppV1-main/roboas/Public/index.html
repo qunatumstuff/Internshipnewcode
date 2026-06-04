@@ -54,8 +54,8 @@
   <script type="module">
     import { WakeWordEngine } from './WakeWordEngine.js';
 
-    window.johnThreshold = 0.15;
-    window.lindaThreshold = 0.15;
+    window.johnThreshold = 0.005;
+    window.lindaThreshold = 0.005;
     window.johnScoresWindow = [];
     window.lindaScoresWindow = [];
 
@@ -196,8 +196,8 @@
           const lindaV2Peak = Math.max(...window.lindaV2ScoresWindow.map(item => item.score), 0);
 
           const speechActive = engine ? engine._isSpeechActive : false;
-          const johnThresh = window.johnThreshold || 0.15;
-          const lindaThresh = window.lindaThreshold || 0.15;
+          const johnThresh = window.johnThreshold || 0.005;
+          const lindaThresh = window.lindaThreshold || 0.005;
 
           // Check John Manual Threshold
           if (johnScore >= johnThresh) {
@@ -207,7 +207,7 @@
               if (onDetectJohnCallback) onDetectJohnCallback(johnScore, 'john');
               setTimeout(() => { window.johnCooldownActive = false; }, 2500);
             }
-          } else if (johnScore >= (johnThresh - 0.10) && johnScore > 0.01) {
+          } else if (johnScore >= (johnThresh - 0.10) && johnScore > 0.001) {
             if (speechActive && !window.johnNearMissCooldown && !window.wakewordDetectionMuted) {
               window.johnNearMissCooldown = true;
               console.log(`[OWW] John near miss: score ${johnScore.toFixed(2)}`);
@@ -226,7 +226,7 @@
               if (onDetectJohnCallback) onDetectJohnCallback(johnV2Score, 'john_v2');
               setTimeout(() => { window.johnCooldownActive = false; }, 2500);
             }
-          } else if (johnV2Score >= (johnThresh - 0.10) && johnV2Score > 0.01) {
+          } else if (johnV2Score >= (johnThresh - 0.10) && johnV2Score > 0.001) {
             if (speechActive && !window.johnV2NearMissCooldown && !window.wakewordDetectionMuted) {
               window.johnV2NearMissCooldown = true;
               console.log(`[OWW] John_v2 near miss: score ${johnV2Score.toFixed(2)}`);
@@ -245,7 +245,7 @@
               if (onDetectLindaCallback) onDetectLindaCallback(lindaScore, 'linda');
               setTimeout(() => { window.lindaCooldownActive = false; }, 2500);
             }
-          } else if (lindaScore >= (lindaThresh - 0.10) && lindaScore > 0.01) {
+          } else if (lindaScore >= (lindaThresh - 0.10) && lindaScore > 0.001) {
             if (speechActive && !window.lindaNearMissCooldown && !window.wakewordDetectionMuted) {
               window.lindaNearMissCooldown = true;
               console.log(`[OWW] Linda near miss: score ${lindaScore.toFixed(2)}`);
@@ -264,7 +264,7 @@
               if (onDetectLindaCallback) onDetectLindaCallback(lindaV2Score, 'linda_v2');
               setTimeout(() => { window.lindaCooldownActive = false; }, 2500);
             }
-          } else if (lindaV2Score >= (lindaThresh - 0.10) && lindaV2Score > 0.01) {
+          } else if (lindaV2Score >= (lindaThresh - 0.10) && lindaV2Score > 0.001) {
             if (speechActive && !window.lindaV2NearMissCooldown && !window.wakewordDetectionMuted) {
               window.lindaV2NearMissCooldown = true;
               console.log(`[OWW] Linda_v2 near miss: score ${lindaV2Score.toFixed(2)}`);
@@ -293,7 +293,7 @@
             let rms = Math.sqrt(sumSquares / chunk.length);
 
             // Log live confidence percentages to browser console for tuning
-            if (johnScore > 0.01 || johnV2Score > 0.01 || lindaScore > 0.01 || lindaV2Score > 0.01) {
+            if (johnScore > 0.001 || johnV2Score > 0.001 || lindaScore > 0.001 || lindaV2Score > 0.001) {
               console.log(`[OWW Scores] John: ${(johnScore * 100).toFixed(1)}% (Peak: ${(johnPeak * 100).toFixed(1)}%), John V2: ${(johnV2Score * 100).toFixed(1)}% | Linda: ${(lindaScore * 100).toFixed(1)}% (Peak: ${(lindaPeak * 100).toFixed(1)}%), Linda V2: ${(lindaV2Score * 100).toFixed(1)}%`);
             }
 
