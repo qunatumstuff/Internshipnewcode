@@ -89,37 +89,36 @@
 
     window.preRequestMicPermission = function() {
       console.log("[JS] Pre-requesting mic permission and AudioContext on user gesture...");
-      
-      try {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        const ctx = new AudioContextClass({ sampleRate: 16000 });
-        window.preCreatedAudioContext = ctx;
-        
-        // ── Autoplay unlock hack ──
-        // Play a 1-sample silent buffer synchronously to unlock/authorize the AudioContext permanently
-        const buffer = ctx.createBuffer(1, 1, 22050);
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(ctx.destination);
-        source.start(0);
-        
-        console.log("[JS] AudioContext pre-created and unlocked with dummy buffer source, state:", ctx.state);
-        
-        if (ctx.state === 'suspended') {
-          ctx.resume().then(() => {
-            console.log("[JS] AudioContext resumed synchronously inside user gesture.");
-          }).catch(e => {
-            console.warn("[JS] Failed to resume AudioContext inside user gesture:", e);
-          });
-        }
-      } catch (err) {
-        console.error("[JS] Failed to pre-create AudioContext:", err);
-      }
 
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         window.preRequestedStreamPromise = navigator.mediaDevices.getUserMedia({ audio: true })
           .then(stream => {
-            console.log("[JS] Mic permission pre-granted and stream saved.");
+            console.log("[JS] Mic permission pre-granted and stream saved. Creating AudioContext...");
+            try {
+              const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+              const ctx = new AudioContextClass({ sampleRate: 16000 });
+              window.preCreatedAudioContext = ctx;
+              
+              // ── Autoplay unlock hack ──
+              // Play a 1-sample silent buffer synchronously to unlock/authorize the AudioContext permanently
+              const buffer = ctx.createBuffer(1, 1, 22050);
+              const source = ctx.createBufferSource();
+              source.buffer = buffer;
+              source.connect(ctx.destination);
+              source.start(0);
+              
+              console.log("[JS] AudioContext pre-created and unlocked with dummy buffer source, state:", ctx.state);
+              
+              if (ctx.state === 'suspended') {
+                ctx.resume().then(() => {
+                  console.log("[JS] AudioContext resumed synchronously inside user gesture.");
+                }).catch(e => {
+                  console.warn("[JS] Failed to resume AudioContext inside user gesture:", e);
+                });
+              }
+            } catch (err) {
+              console.error("[JS] Failed to pre-create AudioContext:", err);
+            }
             return stream;
           })
           .catch(err => {

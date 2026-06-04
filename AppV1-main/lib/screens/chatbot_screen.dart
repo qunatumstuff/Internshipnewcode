@@ -48,6 +48,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   final _audioRecorder = AudioRecorder();
   html.AudioElement? _audioElement;
   html.SpeechSynthesisUtterance? _currentUtterance;
+  Timer? _ttsResumeTimer;
+
+  void _cancelTtsResumeTimer() {
+    _ttsResumeTimer?.cancel();
+    _ttsResumeTimer = null;
+  }
   bool _isTtsInProgress = false;
   bool _isCcEnabled = true;
   bool _hasEnteredChat = false;
@@ -196,6 +202,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   @override
   void dispose() {
+    _cancelTtsResumeTimer();
     _vizController.dispose();
     _audioRecorder.dispose();
     _videoController?.dispose();
@@ -224,6 +231,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     await _initRecorder();
     // Load talking video first so it's ready immediately
     await _loadVideo(AvatarState.talking);
+    _initBrowserWakeWord();
   }
 
   void _startConversation() {
@@ -437,6 +445,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       try {
         html.window.speechSynthesis?.cancel();
       } catch (_) {}
+      _cancelTtsResumeTimer();
 
       final response = await http.post(
         Uri.parse('$baseUrl/tts'),
@@ -515,6 +524,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       // Cancel any ongoing speech
       synth.cancel();
+      _cancelTtsResumeTimer();
       _currentUtterance = null;
 
       final utterance = html.SpeechSynthesisUtterance(text);
@@ -544,6 +554,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       utterance.onStart.listen((_) {
         debugPrint('📢 [NATIVE TTS] Started speaking...');
+        _ttsResumeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+          try {
+            html.window.speechSynthesis?.resume();
+          } catch (_) {}
+        });
         if (mounted) {
           setState(() {
             _isTtsInProgress = true;
@@ -564,6 +579,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       utterance.onEnd.listen((_) async {
         debugPrint('📢 [NATIVE TTS] Completed successfully.');
+        _cancelTtsResumeTimer();
         if (_currentUtterance == utterance) {
           _currentUtterance = null;
         }
@@ -584,6 +600,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       utterance.onError.listen((e) async {
         debugPrint('❌ [NATIVE TTS] Error: $e');
+        _cancelTtsResumeTimer();
         if (_currentUtterance == utterance) {
           _currentUtterance = null;
         }
@@ -605,6 +622,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       synth.speak(utterance);
     } catch (e) {
       debugPrint('❌ [NATIVE TTS] Exception: $e');
+      _cancelTtsResumeTimer();
     }
   }
 
@@ -616,6 +634,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     try {
       html.window.speechSynthesis?.cancel();
     } catch (_) {}
+    _cancelTtsResumeTimer();
     _currentUtterance = null;
     if (mounted) {
       setState(() {
@@ -642,6 +661,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     try {
       html.window.speechSynthesis?.cancel();
     } catch (_) {}
+    _cancelTtsResumeTimer();
     _currentUtterance = null;
 
     // Stop recording
@@ -1395,6 +1415,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       case 'mic_issue':
         _addUiLog('[OWW] mic issue');
         _showStatusSnackBar('Mic issue. Try again.', isError: true);
+        _changeState(HandsOffState.handsOffOff);
         break;
     }
   }
@@ -1899,8 +1920,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   Widget _circleBtn(IconData icon, Color color, VoidCallback onTap,
       {double radius = 22}) {
-    return GestureDetector(
-      onTap: onTap,
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => onTap(),
       child: CircleAvatar(
         radius: radius,
         backgroundColor: color,
@@ -2101,21 +2123,27 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 32),
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.greenAccent[700],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                              elevation: 8,
-                              shadowColor: Colors.greenAccent.withOpacity(0.5),
+                          Listener(
+                            behavior: HitTestBehavior.opaque,
+                            onPointerDown: (_) => _startConversation(),
+                            child: IgnorePointer(
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.greenAccent[700],
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                                  elevation: 8,
+                                  shadowColor: Colors.greenAccent.withOpacity(0.5),
+                                ),
+                                icon: const Icon(Icons.bolt, size: 20),
+                                label: const Text(
+                                  'START CONVERSATION',
+                                  style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
+                                ),
+                                onPressed: () {},
+                              ),
                             ),
-                            icon: const Icon(Icons.bolt, size: 20),
-                            label: const Text(
-                              'START CONVERSATION',
-                              style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
-                            ),
-                            onPressed: _startConversation,
                           ),
                         ],
                       ),
