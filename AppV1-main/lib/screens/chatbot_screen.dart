@@ -85,13 +85,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   double _lastLindaPeak = 0.0;
   double _lastLindaV2Peak = 0.0;
   double _johnThresh = 0.001;
-  double _lindaThresh = 0.0005;
+  double _lindaThresh = 0.00085;
   double _lastCps = 0.0;
   String _lastCtx = 'none';
   String _lastTrack = 'none';
   bool _lastTrackEnabled = false;
   final TextEditingController _johnThreshController = TextEditingController(text: '0.001');
-  final TextEditingController _lindaThreshController = TextEditingController(text: '0.0005');
+  final TextEditingController _lindaThreshController = TextEditingController(text: '0.00085');
   bool _showDebugPanel = true;
 
 
@@ -1196,7 +1196,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   void _updateThresholds() {
     final johnVal = double.tryParse(_johnThreshController.text) ?? 0.001;
-    final lindaVal = double.tryParse(_lindaThreshController.text) ?? 0.0005;
+    final lindaVal = double.tryParse(_lindaThreshController.text) ?? 0.00085;
     setState(() {
       _johnThresh = johnVal;
       _lindaThresh = lindaVal;
@@ -1260,7 +1260,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       String lindaV2Peak = '0.00';
       String models = 'none';
       String threshJohn = '0.001';
-      String threshLinda = '0.0005';
+      String threshLinda = '0.00085';
       String callback = 'false';
       String cps = '0.0';
       String ctx = 'none';
@@ -1368,6 +1368,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   Future<void> _handleWakeWordDetected(String keyword) async {
     _addUiLog('[FLUTTER] wake word detected client-side: $keyword');
+    if (_currentPersona != keyword) {
+      _addUiLog('[WAKE] Ignored $keyword because current persona is $_currentPersona');
+      return;
+    }
     if (_isTtsInProgress || _isListening || _isInteractionBlocked) {
       _addUiLog('[WAKE] blocked: tts=$_isTtsInProgress, listen=$_isListening, blocked=$_isInteractionBlocked');
       _showStatusSnackBar('Wakeword heard, but recording did not start.', isError: true);
@@ -1376,28 +1380,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     // 1. Mute openWakeWord detection callbacks
     _setWakeWordMute(true);
-
-    // 2. Switch persona if it's different
-    if (_currentPersona != keyword) {
-      _addUiLog('[FLUTTER] switching persona silently to $keyword');
-      if (mounted) {
-        setState(() {
-          _currentPersona = keyword;
-        });
-      }
-      await _loadVideo(AvatarState.idle, force: true);
-      
-      // Notify backend about persona switch
-      try {
-        await http.post(
-          Uri.parse('$baseUrl/switch-persona'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'persona': keyword}),
-        );
-      } catch (e) {
-        _addUiLog('[FLUTTER] failed to notify backend of switch: $e');
-      }
-    }
 
     // Add a 800ms delay to allow the browser to release the microphone device completely
     await Future.delayed(const Duration(milliseconds: 800));
