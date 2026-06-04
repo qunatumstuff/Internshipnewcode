@@ -84,6 +84,20 @@
     let onEventCallback = null;
     let detectCallbackAttached = false;
 
+    window.preRequestMicPermission = function() {
+      console.log("[JS] Pre-requesting mic permission on user gesture...");
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(stream => {
+            console.log("[JS] Mic permission pre-granted.");
+            stream.getTracks().forEach(track => track.stop());
+          })
+          .catch(err => {
+            console.warn("[JS] Mic permission pre-request failed:", err);
+          });
+      }
+    };
+
     window.initWakeWordEngine = async function(onDetectJohn, onDetectLinda, onReady, onEvent) {
       console.log("[JS] Registering openWakeWord engine interops...");
       onDetectJohnCallback = onDetectJohn;

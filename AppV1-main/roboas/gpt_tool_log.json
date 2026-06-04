@@ -1,6 +1,6 @@
 [
   {
-    "timestamp": "2026-06-04T05:43:16.252Z",
+    "timestamp": "2026-06-04T06:03:22.544Z",
     "userQuestion": "System Command",
     "toolName": "switch_avatar",
     "args": {
@@ -9,7 +9,7 @@
     "result": "switched to john"
   },
   {
-    "timestamp": "2026-06-04T05:43:16.256Z",
+    "timestamp": "2026-06-04T06:03:22.548Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -18,39 +18,12 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-04T05:43:16.263Z",
+    "timestamp": "2026-06-04T06:03:22.552Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
       "state": "idle"
     },
     "result": "updated to 🤗"
-  },
-  {
-    "timestamp": "2026-06-04T05:43:49.642Z",
-    "userQuestion": "Can you pick up the sponge?",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "sponge"
-    },
-    "result": "Calling Remote Vision MCP..."
-  },
-  {
-    "timestamp": "2026-06-04T05:44:11.363Z",
-    "userQuestion": "Can you pick up the sponge?",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "sponge"
-    },
-    "result": "Success"
-  },
-  {
-    "timestamp": "2026-06-04T05:44:16.837Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
   }
 ]

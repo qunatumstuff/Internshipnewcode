@@ -1120,6 +1120,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _toggleHandsFree() {
+    if (_wakeWsStatus == 'connecting') {
+      return;
+    }
     if (!_audioServerConnected) {
       if (_wakeWsStatus == 'disconnected') {
         _connectWakeWord();
@@ -1191,6 +1194,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _connectWakeWord({VoidCallback? onConnected}) {
+    try {
+      js.context.callMethod('preRequestMicPermission');
+    } catch (e) {
+      _addUiLog('[OWW] Failed to call preRequestMicPermission: $e');
+    }
     _initBrowserWakeWord();
   }
 
@@ -1967,7 +1975,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               // Headphone (hands-free toggle) - green when active (LEFT of mic)
               _circleBtn(
                 Icons.headphones,
-                _currentState != HandsOffState.handsOffOff ? Colors.green : Colors.grey[600]!,
+                _currentState != HandsOffState.handsOffOff
+                    ? Colors.green
+                    : (_wakeWsStatus == 'connecting' ? Colors.orangeAccent : Colors.grey[600]!),
                 _toggleHandsFree,
                 radius: 18,
               ),
