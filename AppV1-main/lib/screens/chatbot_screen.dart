@@ -1130,7 +1130,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _handleWakeWordDetected('linda');
   }
 
-  void _toggleHandsFree() {
+  void _toggleHandsFree({bool isManual = false}) {
     if (_wakeWsStatus == 'connecting') {
       return;
     }
@@ -1144,10 +1144,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     if (_currentState == HandsOffState.handsOffOff) {
       _changeState(HandsOffState.restarting);
       _addUiLog('[OWW] Hands Off ON: starting engine listening');
-      try {
-        js.context.callMethod('preRequestMicPermission');
-      } catch (e) {
-        _addUiLog('[OWW] Failed to call preRequestMicPermission: $e');
+      if (isManual) {
+        try {
+          js.context.callMethod('preRequestMicPermission');
+        } catch (e) {
+          _addUiLog('[OWW] Failed to call preRequestMicPermission: $e');
+        }
       }
       js.context.callMethod('startWakeWordListening');
     } else {
@@ -1997,7 +1999,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 _currentState != HandsOffState.handsOffOff
                     ? Colors.green
                     : (_wakeWsStatus == 'connecting' ? Colors.orangeAccent : Colors.grey[600]!),
-                _toggleHandsFree,
+                () => _toggleHandsFree(isManual: true),
                 radius: 18,
               ),
               const SizedBox(width: 6),
