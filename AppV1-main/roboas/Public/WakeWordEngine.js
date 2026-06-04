@@ -168,7 +168,15 @@ export class WakeWordEngine {
             });
         }
 
-        this._audioContext = new AudioContext({ sampleRate: this.config.sampleRate });
+        if (window.preCreatedAudioContext) {
+            console.log("[OWW Engine] Reusing pre-created AudioContext...");
+            this._audioContext = window.preCreatedAudioContext;
+            window.preCreatedAudioContext = null; // consume it
+        } else {
+            console.log("[OWW Engine] Creating new AudioContext...");
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            this._audioContext = new AudioContextClass({ sampleRate: this.config.sampleRate });
+        }
         const source = this._audioContext.createMediaStreamSource(this._mediaStream);
         this._gainNode = this._audioContext.createGain();
         this._gainNode.gain.value = gain;

@@ -5,6 +5,7 @@ import 'dart:js' as js;
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:web_audio' as wa;
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -49,6 +50,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   html.SpeechSynthesisUtterance? _currentUtterance;
   bool _isTtsInProgress = false;
   bool _isCcEnabled = true;
+  bool _hasEnteredChat = false;
   String? _currentSubtitleText;
 
   // ── Video ──
@@ -222,11 +224,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     await _initRecorder();
     // Load talking video first so it's ready immediately
     await _loadVideo(AvatarState.talking);
+  }
+
+  void _startConversation() {
+    _unlockAudio();
     const welcome =
         "Welcome! I'm John, your robotic assistant. How can I help you today?";
     setState(() {
       _messages.add(ChatMessage(
           text: 'John($_idleEmoji): $welcome', isUser: false));
+      _hasEnteredChat = true;
     });
     _speak(welcome);
   }
@@ -2039,6 +2046,84 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         children: [
           // ── Avatar (full screen) ──────────────────────────
           Positioned.fill(child: _buildAvatar()),
+
+          // ── Welcome Overlay ───────────────────────────────
+          if (!_hasEnteredChat)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.75),
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Center(
+                    child: Container(
+                      width: 400,
+                      padding: const EdgeInsets.all(32),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[900]!.withOpacity(0.85),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: Colors.white10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.green.withOpacity(0.15),
+                            blurRadius: 40,
+                            spreadRadius: 5,
+                          )
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.psychology, size: 64, color: Colors.greenAccent),
+                          const SizedBox(height: 24),
+                          const Text(
+                            'NEURA ROBOTICS',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'AI Chatbot Assistant',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 26,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Voice-enabled hands-free assistant. Connect to start collaborative control.',
+                            style: TextStyle(color: Colors.white54, fontSize: 13),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 32),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.greenAccent[700],
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                              elevation: 8,
+                              shadowColor: Colors.greenAccent.withOpacity(0.5),
+                            ),
+                            icon: const Icon(Icons.bolt, size: 20),
+                            label: const Text(
+                              'START CONVERSATION',
+                              style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
+                            ),
+                            onPressed: _startConversation,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // ── Debug Overlay ─────────────────────────────────
           if (_showDebugPanel)
