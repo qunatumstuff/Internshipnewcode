@@ -84,14 +84,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   double _lastJohnV2Peak = 0.0;
   double _lastLindaPeak = 0.0;
   double _lastLindaV2Peak = 0.0;
-  double _johnThresh = 0.005;
-  double _lindaThresh = 0.005;
+  double _johnThresh = 0.0008;
+  double _lindaThresh = 0.0008;
   double _lastCps = 0.0;
   String _lastCtx = 'none';
   String _lastTrack = 'none';
   bool _lastTrackEnabled = false;
-  final TextEditingController _johnThreshController = TextEditingController(text: '0.005');
-  final TextEditingController _lindaThreshController = TextEditingController(text: '0.005');
+  final TextEditingController _johnThreshController = TextEditingController(text: '0.0008');
+  final TextEditingController _lindaThreshController = TextEditingController(text: '0.0008');
   bool _showDebugPanel = true;
 
 
@@ -188,7 +188,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       vsync: this,
       duration: const Duration(milliseconds: 500),
     )..repeat(reverse: true);
-    _connectWakeWord();
     _initializeAll();
   }
 
@@ -1086,6 +1085,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _manualRestartWakeWord() {
+    if (!_audioServerConnected) return;
     _isManualRestarting = true;
     _changeState(HandsOffState.restarting);
     _addUiLog('[OWW] manual restart initiated');
@@ -1093,12 +1093,17 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _startWakeWord() {
+    if (!_audioServerConnected) {
+      _showStatusSnackBar('Wakeword Engine is not initialized! Enable Hands-Free first.', isError: true);
+      return;
+    }
     _changeState(HandsOffState.wakewordListening);
     js.context.callMethod('startWakeWordListening');
     _addUiLog('[FLUTTER] Start Wakeword clicked');
   }
 
   void _stopWakeWord() {
+    if (!_audioServerConnected) return;
     _changeState(HandsOffState.handsOffOff);
     js.context.callMethod('stopWakeWordListening');
     _addUiLog('[FLUTTER] Stop Wakeword clicked');
@@ -1116,7 +1121,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   void _toggleHandsFree() {
     if (!_audioServerConnected) {
-      _showStatusSnackBar('Hands Off requires Wakeword Engine to be ready!', isError: true);
+      if (_wakeWsStatus == 'disconnected') {
+        _connectWakeWord();
+      }
+      _showStatusSnackBar('Initializing Wakeword Engine... Please wait.');
       return;
     }
     if (_currentState == HandsOffState.handsOffOff) {
@@ -1187,8 +1195,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _updateThresholds() {
-    final johnVal = double.tryParse(_johnThreshController.text) ?? 0.005;
-    final lindaVal = double.tryParse(_lindaThreshController.text) ?? 0.005;
+    final johnVal = double.tryParse(_johnThreshController.text) ?? 0.0008;
+    final lindaVal = double.tryParse(_lindaThreshController.text) ?? 0.0008;
     setState(() {
       _johnThresh = johnVal;
       _lindaThresh = lindaVal;
@@ -1225,6 +1233,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             });
             _updateThresholds(); // Call update thresholds on ready to synchronize settings
             _showStatusSnackBar('Client-side openWakeWord Ready');
+            _toggleHandsFree(); // Automatically enable hands-free listening
           }
         }),
         js.allowInterop((eventName) {
@@ -1250,8 +1259,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       String lindaV2 = '0.00';
       String lindaV2Peak = '0.00';
       String models = 'none';
-      String threshJohn = '0.005';
-      String threshLinda = '0.005';
+      String threshJohn = '0.0008';
+      String threshLinda = '0.0008';
       String callback = 'false';
       String cps = '0.0';
       String ctx = 'none';
