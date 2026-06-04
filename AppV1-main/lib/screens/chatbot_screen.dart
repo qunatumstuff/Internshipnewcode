@@ -46,6 +46,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ── Audio ──
   final _audioRecorder = AudioRecorder();
   html.AudioElement? _audioElement;
+  html.SpeechSynthesisUtterance? _currentUtterance;
   bool _isTtsInProgress = false;
   bool _isCcEnabled = true;
   String? _currentSubtitleText;
@@ -507,8 +508,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       // Cancel any ongoing speech
       synth.cancel();
+      _currentUtterance = null;
 
       final utterance = html.SpeechSynthesisUtterance(text);
+      _currentUtterance = utterance;
       
       // Set voice based on current persona
       final voices = synth.getVoices();
@@ -554,6 +557,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       utterance.onEnd.listen((_) async {
         debugPrint('📢 [NATIVE TTS] Completed successfully.');
+        if (_currentUtterance == utterance) {
+          _currentUtterance = null;
+        }
         _setWakeWordMute(false);
         if (mounted) {
           setState(() {
@@ -571,6 +577,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       utterance.onError.listen((e) async {
         debugPrint('❌ [NATIVE TTS] Error: $e');
+        if (_currentUtterance == utterance) {
+          _currentUtterance = null;
+        }
         _setWakeWordMute(false);
         if (mounted) {
           setState(() {
@@ -600,6 +609,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     try {
       html.window.speechSynthesis?.cancel();
     } catch (_) {}
+    _currentUtterance = null;
     if (mounted) {
       setState(() {
         _isTtsInProgress = false;
@@ -625,6 +635,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     try {
       html.window.speechSynthesis?.cancel();
     } catch (_) {}
+    _currentUtterance = null;
 
     // Stop recording
     if (_isListening) {
@@ -1133,6 +1144,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     if (_currentState == HandsOffState.handsOffOff) {
       _changeState(HandsOffState.restarting);
       _addUiLog('[OWW] Hands Off ON: starting engine listening');
+      try {
+        js.context.callMethod('preRequestMicPermission');
+      } catch (e) {
+        _addUiLog('[OWW] Failed to call preRequestMicPermission: $e');
+      }
       js.context.callMethod('startWakeWordListening');
     } else {
       _changeState(HandsOffState.handsOffOff);
@@ -1435,7 +1451,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           final answer = data['answer'] as String;
           final newPersona = data['persona'] as String?;
           if (newPersona != null && newPersona != _currentPersona) {
-            setState(() => _currentPersona = newPersona);
+            setState(() {
+              _currentPersona = newPersona;
+              _idleEmoji = newPersona == 'linda' ? '👩' : '👨';
+            });
             _loadVideo(_avatarState, force: true);
             if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
               _wakeWordSocket!.send(json.encode({

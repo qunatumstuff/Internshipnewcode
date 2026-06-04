@@ -84,16 +84,20 @@
     let onEventCallback = null;
     let detectCallbackAttached = false;
 
+    window.preRequestedStreamPromise = null;
+
     window.preRequestMicPermission = function() {
       console.log("[JS] Pre-requesting mic permission on user gesture...");
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ audio: true })
+        window.preRequestedStreamPromise = navigator.mediaDevices.getUserMedia({ audio: true })
           .then(stream => {
-            console.log("[JS] Mic permission pre-granted.");
-            stream.getTracks().forEach(track => track.stop());
+            console.log("[JS] Mic permission pre-granted and stream saved.");
+            return stream;
           })
           .catch(err => {
             console.warn("[JS] Mic permission pre-request failed:", err);
+            window.preRequestedStreamPromise = null;
+            throw err;
           });
       }
     };

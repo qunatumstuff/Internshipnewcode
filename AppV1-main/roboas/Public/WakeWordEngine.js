@@ -157,9 +157,16 @@ export class WakeWordEngine {
         if (this._workletNode) return;
 
         this._resetState();
-        this._mediaStream = await navigator.mediaDevices.getUserMedia({
-            audio: deviceId ? { deviceId: { exact: deviceId } } : true
-        });
+        if (window.preRequestedStreamPromise) {
+            console.log("[OWW Engine] Reusing pre-requested mic stream promise...");
+            this._mediaStream = await window.preRequestedStreamPromise;
+            window.preRequestedStreamPromise = null; // consume it
+        } else {
+            console.log("[OWW Engine] Capturing new mic stream...");
+            this._mediaStream = await navigator.mediaDevices.getUserMedia({
+                audio: deviceId ? { deviceId: { exact: deviceId } } : true
+            });
+        }
 
         this._audioContext = new AudioContext({ sampleRate: this.config.sampleRate });
         const source = this._audioContext.createMediaStreamSource(this._mediaStream);
