@@ -25,7 +25,7 @@ logger = logging.getLogger("vision-mcp")
 # ==========================================
 # CONFIGURATION
 # ==========================================
-LAPTOP_A_IP  = os.environ.get("LAPTOP_A_IP",  "127.0.0.1")
+LAPTOP_A_IP  = os.environ.get("LAPTOP_A_IP",  "192.168.2.10")
 QWEN_MODEL   = os.environ.get("QWEN_MODEL",   "qwen3-vl:2b")
 
 # Robot MCP server address
@@ -51,7 +51,7 @@ OBJECT_CATALOGUE = {
 # QWEN VLM UTILITIES
 # ==========================================
 async def query_qwen(prompt: str, image_b64: str) -> str:
-    """Send image + prompt to Qwen3-VL locally via Ollama API."""
+    """Send image + prompt to Qwen3-VL on Laptop A via Ollama API."""
     raw_b64 = image_b64
     # Strip data URL prefix if present
     if raw_b64.startswith("data:"):

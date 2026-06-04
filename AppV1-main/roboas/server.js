@@ -883,7 +883,9 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               try {
                 const parsed = JSON.parse(toolResultText);
                 if (parsed.status && parsed.status.startsWith("SUCCESS")) {
-                  sendProgress(`Success! YOLO localized "${args.target_name}". Directing robotic arm to move...`);
+                  const coords = parsed.coordinates;
+                  console.log(`📍 [COORDINATES DELIVERED]: X: ${coords?.x}, Y: ${coords?.y}, Z: ${coords?.z}`);
+                  sendProgress(`Success! YOLO localized "${args.target_name}" at X: ${coords?.x?.toFixed(3)}, Y: ${coords?.y?.toFixed(3)}, Z: ${coords?.z?.toFixed(3)}. Directing robotic arm to move...`);
                   await new Promise(resolve => setTimeout(resolve, 2500));
                 } else if (parsed.status && parsed.status.startsWith("BLOCKED")) {
                   sendProgress(`Blocked: Qwen safety gate determined pickup is NOT safe!`);
