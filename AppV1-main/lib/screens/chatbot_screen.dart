@@ -5,7 +5,6 @@ import 'dart:js' as js;
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:web_audio' as wa;
-import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -47,16 +46,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ── Audio ──
   final _audioRecorder = AudioRecorder();
   html.AudioElement? _audioElement;
-  html.SpeechSynthesisUtterance? _currentUtterance;
-  Timer? _ttsResumeTimer;
-
-  void _cancelTtsResumeTimer() {
-    _ttsResumeTimer?.cancel();
-    _ttsResumeTimer = null;
-  }
   bool _isTtsInProgress = false;
   bool _isCcEnabled = true;
-  bool _hasEnteredChat = false;
   String? _currentSubtitleText;
 
   // ── Video ──
@@ -202,7 +193,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   @override
   void dispose() {
-    _cancelTtsResumeTimer();
     _vizController.dispose();
     _audioRecorder.dispose();
     _videoController?.dispose();
@@ -231,17 +221,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     await _initRecorder();
     // Load talking video first so it's ready immediately
     await _loadVideo(AvatarState.talking);
-    _initBrowserWakeWord();
-  }
-
-  void _startConversation() {
-    _unlockAudio();
     const welcome =
         "Welcome! I'm John, your robotic assistant. How can I help you today?";
     setState(() {
       _messages.add(ChatMessage(
           text: 'John($_idleEmoji): $welcome', isUser: false));
-      _hasEnteredChat = true;
     });
     _speak(welcome);
   }
@@ -445,7 +429,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       try {
         html.window.speechSynthesis?.cancel();
       } catch (_) {}
-      _cancelTtsResumeTimer();
 
       final response = await http.post(
         Uri.parse('$baseUrl/tts'),
@@ -524,11 +507,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       // Cancel any ongoing speech
       synth.cancel();
-      _cancelTtsResumeTimer();
-      _currentUtterance = null;
 
       final utterance = html.SpeechSynthesisUtterance(text);
-      _currentUtterance = utterance;
       
       // Set voice based on current persona
       final voices = synth.getVoices();
@@ -554,11 +534,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       utterance.onStart.listen((_) {
         debugPrint('📢 [NATIVE TTS] Started speaking...');
-        _ttsResumeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          try {
-            html.window.speechSynthesis?.resume();
-          } catch (_) {}
-        });
         if (mounted) {
           setState(() {
             _isTtsInProgress = true;
@@ -579,10 +554,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       utterance.onEnd.listen((_) async {
         debugPrint('📢 [NATIVE TTS] Completed successfully.');
-        _cancelTtsResumeTimer();
-        if (_currentUtterance == utterance) {
-          _currentUtterance = null;
-        }
         _setWakeWordMute(false);
         if (mounted) {
           setState(() {
@@ -600,10 +571,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       utterance.onError.listen((e) async {
         debugPrint('❌ [NATIVE TTS] Error: $e');
-        _cancelTtsResumeTimer();
-        if (_currentUtterance == utterance) {
-          _currentUtterance = null;
-        }
         _setWakeWordMute(false);
         if (mounted) {
           setState(() {
@@ -622,7 +589,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       synth.speak(utterance);
     } catch (e) {
       debugPrint('❌ [NATIVE TTS] Exception: $e');
-      _cancelTtsResumeTimer();
     }
   }
 
@@ -634,8 +600,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     try {
       html.window.speechSynthesis?.cancel();
     } catch (_) {}
-    _cancelTtsResumeTimer();
-    _currentUtterance = null;
     if (mounted) {
       setState(() {
         _isTtsInProgress = false;
@@ -661,8 +625,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     try {
       html.window.speechSynthesis?.cancel();
     } catch (_) {}
-    _cancelTtsResumeTimer();
-    _currentUtterance = null;
 
     // Stop recording
     if (_isListening) {
@@ -1157,10 +1119,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _handleWakeWordDetected('linda');
   }
 
-  void _toggleHandsFree({bool isManual = false}) {
-    if (_wakeWsStatus == 'connecting') {
-      return;
-    }
+  void _toggleHandsFree() {
     if (!_audioServerConnected) {
       if (_wakeWsStatus == 'disconnected') {
         _connectWakeWord();
@@ -1171,13 +1130,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     if (_currentState == HandsOffState.handsOffOff) {
       _changeState(HandsOffState.restarting);
       _addUiLog('[OWW] Hands Off ON: starting engine listening');
-      if (isManual) {
-        try {
-          js.context.callMethod('preRequestMicPermission');
-        } catch (e) {
-          _addUiLog('[OWW] Failed to call preRequestMicPermission: $e');
-        }
-      }
       js.context.callMethod('startWakeWordListening');
     } else {
       _changeState(HandsOffState.handsOffOff);
@@ -1239,11 +1191,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _connectWakeWord({VoidCallback? onConnected}) {
-    try {
-      js.context.callMethod('preRequestMicPermission');
-    } catch (e) {
-      _addUiLog('[OWW] Failed to call preRequestMicPermission: $e');
-    }
     _initBrowserWakeWord();
   }
 
@@ -1415,7 +1362,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       case 'mic_issue':
         _addUiLog('[OWW] mic issue');
         _showStatusSnackBar('Mic issue. Try again.', isError: true);
-        _changeState(HandsOffState.handsOffOff);
         break;
     }
   }
@@ -1481,10 +1427,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           final answer = data['answer'] as String;
           final newPersona = data['persona'] as String?;
           if (newPersona != null && newPersona != _currentPersona) {
-            setState(() {
-              _currentPersona = newPersona;
-              _idleEmoji = newPersona == 'linda' ? '👩' : '👨';
-            });
+            setState(() => _currentPersona = newPersona);
             _loadVideo(_avatarState, force: true);
             if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
               _wakeWordSocket!.send(json.encode({
@@ -1920,9 +1863,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   Widget _circleBtn(IconData icon, Color color, VoidCallback onTap,
       {double radius = 22}) {
-    return Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: (_) => onTap(),
+    return GestureDetector(
+      onTap: onTap,
       child: CircleAvatar(
         radius: radius,
         backgroundColor: color,
@@ -2025,10 +1967,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               // Headphone (hands-free toggle) - green when active (LEFT of mic)
               _circleBtn(
                 Icons.headphones,
-                _currentState != HandsOffState.handsOffOff
-                    ? Colors.green
-                    : (_wakeWsStatus == 'connecting' ? Colors.orangeAccent : Colors.grey[600]!),
-                () => _toggleHandsFree(isManual: true),
+                _currentState != HandsOffState.handsOffOff ? Colors.green : Colors.grey[600]!,
+                _toggleHandsFree,
                 radius: 18,
               ),
               const SizedBox(width: 6),
@@ -2068,90 +2008,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         children: [
           // ── Avatar (full screen) ──────────────────────────
           Positioned.fill(child: _buildAvatar()),
-
-          // ── Welcome Overlay ───────────────────────────────
-          if (!_hasEnteredChat)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black.withOpacity(0.75),
-                child: BackdropFilter(
-                  filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Center(
-                    child: Container(
-                      width: 400,
-                      padding: const EdgeInsets.all(32),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[900]!.withOpacity(0.85),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.white10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.green.withOpacity(0.15),
-                            blurRadius: 40,
-                            spreadRadius: 5,
-                          )
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.psychology, size: 64, color: Colors.greenAccent),
-                          const SizedBox(height: 24),
-                          const Text(
-                            'NEURA ROBOTICS',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'AI Chatbot Assistant',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 26,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 12),
-                          const Text(
-                            'Voice-enabled hands-free assistant. Connect to start collaborative control.',
-                            style: TextStyle(color: Colors.white54, fontSize: 13),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 32),
-                          Listener(
-                            behavior: HitTestBehavior.opaque,
-                            onPointerDown: (_) => _startConversation(),
-                            child: IgnorePointer(
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.greenAccent[700],
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                                  elevation: 8,
-                                  shadowColor: Colors.greenAccent.withOpacity(0.5),
-                                ),
-                                icon: const Icon(Icons.bolt, size: 20),
-                                label: const Text(
-                                  'START CONVERSATION',
-                                  style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
-                                ),
-                                onPressed: () {},
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
 
           // ── Debug Overlay ─────────────────────────────────
           if (_showDebugPanel)

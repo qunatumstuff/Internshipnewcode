@@ -157,26 +157,11 @@ export class WakeWordEngine {
         if (this._workletNode) return;
 
         this._resetState();
-        if (window.preRequestedStreamPromise) {
-            console.log("[OWW Engine] Reusing pre-requested mic stream promise...");
-            this._mediaStream = await window.preRequestedStreamPromise;
-            window.preRequestedStreamPromise = null; // consume it
-        } else {
-            console.log("[OWW Engine] Capturing new mic stream...");
-            this._mediaStream = await navigator.mediaDevices.getUserMedia({
-                audio: deviceId ? { deviceId: { exact: deviceId } } : true
-            });
-        }
+        this._mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: deviceId ? { deviceId: { exact: deviceId } } : true
+        });
 
-        if (window.preCreatedAudioContext) {
-            console.log("[OWW Engine] Reusing pre-created AudioContext...");
-            this._audioContext = window.preCreatedAudioContext;
-            window.preCreatedAudioContext = null; // consume it
-        } else {
-            console.log("[OWW Engine] Creating new AudioContext...");
-            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-            this._audioContext = new AudioContextClass({ sampleRate: this.config.sampleRate });
-        }
+        this._audioContext = new AudioContext({ sampleRate: this.config.sampleRate });
         const source = this._audioContext.createMediaStreamSource(this._mediaStream);
         this._gainNode = this._audioContext.createGain();
         this._gainNode.gain.value = gain;
