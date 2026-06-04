@@ -84,14 +84,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   double _lastJohnV2Peak = 0.0;
   double _lastLindaPeak = 0.0;
   double _lastLindaV2Peak = 0.0;
-  double _johnThresh = 0.35;
-  double _lindaThresh = 0.35;
+  double _johnThresh = 0.20;
+  double _lindaThresh = 0.20;
   double _lastCps = 0.0;
   String _lastCtx = 'none';
   String _lastTrack = 'none';
   bool _lastTrackEnabled = false;
-  final TextEditingController _johnThreshController = TextEditingController(text: '0.35');
-  final TextEditingController _lindaThreshController = TextEditingController(text: '0.35');
+  final TextEditingController _johnThreshController = TextEditingController(text: '0.20');
+  final TextEditingController _lindaThreshController = TextEditingController(text: '0.20');
   bool _showDebugPanel = true;
 
 
@@ -1187,8 +1187,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _updateThresholds() {
-    final johnVal = double.tryParse(_johnThreshController.text) ?? 0.35;
-    final lindaVal = double.tryParse(_lindaThreshController.text) ?? 0.35;
+    final johnVal = double.tryParse(_johnThreshController.text) ?? 0.20;
+    final lindaVal = double.tryParse(_lindaThreshController.text) ?? 0.20;
     setState(() {
       _johnThresh = johnVal;
       _lindaThresh = lindaVal;
@@ -1250,8 +1250,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       String lindaV2 = '0.00';
       String lindaV2Peak = '0.00';
       String models = 'none';
-      String threshJohn = '0.35';
-      String threshLinda = '0.35';
+      String threshJohn = '0.20';
+      String threshLinda = '0.20';
       String callback = 'false';
       String cps = '0.0';
       String ctx = 'none';
