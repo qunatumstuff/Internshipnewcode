@@ -54,8 +54,8 @@
   <script type="module">
     import { WakeWordEngine } from './WakeWordEngine.js';
 
-    window.johnThreshold = 0.20;
-    window.lindaThreshold = 0.20;
+    window.johnThreshold = 0.15;
+    window.lindaThreshold = 0.15;
     window.johnScoresWindow = [];
     window.lindaScoresWindow = [];
 
@@ -196,8 +196,8 @@
           const lindaV2Peak = Math.max(...window.lindaV2ScoresWindow.map(item => item.score), 0);
 
           const speechActive = engine ? engine._isSpeechActive : false;
-          const johnThresh = window.johnThreshold || 0.20;
-          const lindaThresh = window.lindaThreshold || 0.20;
+          const johnThresh = window.johnThreshold || 0.15;
+          const lindaThresh = window.lindaThreshold || 0.15;
 
           // Check John Manual Threshold
           if (johnScore >= johnThresh) {

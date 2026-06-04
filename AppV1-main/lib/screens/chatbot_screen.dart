@@ -84,14 +84,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   double _lastJohnV2Peak = 0.0;
   double _lastLindaPeak = 0.0;
   double _lastLindaV2Peak = 0.0;
-  double _johnThresh = 0.20;
-  double _lindaThresh = 0.20;
+  double _johnThresh = 0.15;
+  double _lindaThresh = 0.15;
   double _lastCps = 0.0;
   String _lastCtx = 'none';
   String _lastTrack = 'none';
   bool _lastTrackEnabled = false;
-  final TextEditingController _johnThreshController = TextEditingController(text: '0.20');
-  final TextEditingController _lindaThreshController = TextEditingController(text: '0.20');
+  final TextEditingController _johnThreshController = TextEditingController(text: '0.15');
+  final TextEditingController _lindaThreshController = TextEditingController(text: '0.15');
   bool _showDebugPanel = true;
 
 
@@ -1187,8 +1187,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _updateThresholds() {
-    final johnVal = double.tryParse(_johnThreshController.text) ?? 0.20;
-    final lindaVal = double.tryParse(_lindaThreshController.text) ?? 0.20;
+    final johnVal = double.tryParse(_johnThreshController.text) ?? 0.15;
+    final lindaVal = double.tryParse(_lindaThreshController.text) ?? 0.15;
     setState(() {
       _johnThresh = johnVal;
       _lindaThresh = lindaVal;
@@ -1250,8 +1250,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       String lindaV2 = '0.00';
       String lindaV2Peak = '0.00';
       String models = 'none';
-      String threshJohn = '0.20';
-      String threshLinda = '0.20';
+      String threshJohn = '0.15';
+      String threshLinda = '0.15';
       String callback = 'false';
       String cps = '0.0';
       String ctx = 'none';
@@ -1296,7 +1296,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           _lastTrackEnabled = trackEnabled == 'true';
         });
       }
-      _addUiLog('[OWW] active (RMS: $rms, models: $models, TJ: $threshJohn, TL: $threshLinda)');
+      final double jPercent = (double.tryParse(john) ?? 0.0) * 100;
+      final double jV2Percent = (double.tryParse(johnV2) ?? 0.0) * 100;
+      final double lPercent = (double.tryParse(linda) ?? 0.0) * 100;
+      final double lV2Percent = (double.tryParse(lindaV2) ?? 0.0) * 100;
+      _addUiLog('[OWW] Active | RMS: $rms | J: ${jPercent.toStringAsFixed(1)}% (V2: ${jV2Percent.toStringAsFixed(1)}%) | L: ${lPercent.toStringAsFixed(1)}% (V2: ${lV2Percent.toStringAsFixed(1)}%)');
       return;
     }
 
