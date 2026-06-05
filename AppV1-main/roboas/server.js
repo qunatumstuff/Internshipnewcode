@@ -875,6 +875,11 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           if (visionMcpClient) {
             try {
               sendProgress(`Capturing frame on Laptop B & running Qwen environment safety scan...`);
+              console.log("=================================");
+              console.log("RAW LOCATE TOOL CALL");
+              console.log("Tool:", "locate_object");
+              console.log("Args:", JSON.stringify(args, null, 2));
+              console.log("=================================");
               const res = await visionMcpClient.callTool({ name: "locate_object", arguments: args });
               toolResultText = res.content[0].text;
               logToolCall(question, "locate_object", args, "Success");
