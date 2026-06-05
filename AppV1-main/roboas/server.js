@@ -110,6 +110,20 @@ async function startVisionMcpClient() {
 }
 startVisionMcpClient();
 
+// === Robot MCP Server Client (Local/Ethernet via SSE) ===
+let robotMcpClient = null;
+async function startRobotMcpClient() {
+  try {
+    const transport = new SSEClientTransport(new URL("http://localhost:8002/sse"));
+    robotMcpClient = new Client({ name: "roboas-robot-mcp", version: "1.0.0" }, { capabilities: {} });
+    await robotMcpClient.connect(transport);
+    console.log("✅ Robot MCP Server connected via SSE at localhost:8002");
+  } catch (err) {
+    console.error("❌ Failed to bind Robot MCP Client:", err.message);
+  }
+}
+startRobotMcpClient();
+
 async function getStatusEmoji(state) {
   if (!mcpEmojiClient) return state === "answering" ? "🤖" : "🤗";
   try {
@@ -578,7 +592,7 @@ app.post('/ask-question', async (req, res) => {
 
 function parseTextToolCall(text) {
   if (!text) return null;
-  const toolNames = ["search_web", "switch_avatar", "locate_object", "get_camera_snapshot", "analyse_surroundings"];
+  const toolNames = ["search_web", "switch_avatar", "locate_object", "get_camera_snapshot", "analyse_surroundings", "pick_and_place_object", "relocate_object"];
   let matchedTool = null;
   
   for (const name of toolNames) {
@@ -614,6 +628,42 @@ function parseTextToolCall(text) {
       } else if (matchedTool === "analyse_surroundings") {
         const promptMatch = text.match(/"prompt"\s*:\s*"([^"]+)"/);
         if (promptMatch) return { toolName: matchedTool, args: { prompt: promptMatch[1] } };
+      } else if (matchedTool === "pick_and_place_object") {
+        const objectMatch = text.match(/"object_name"\s*:\s*"([^"]+)"/);
+        const xMatch = text.match(/"x"\s*:\s*([0-9.-]+)/);
+        const yMatch = text.match(/"y"\s*:\s*([0-9.-]+)/);
+        const zMatch = text.match(/"z"\s*:\s*([0-9.-]+)/);
+        const angleMatch = text.match(/"angle_deg"\s*:\s*([0-9.-]+)/);
+        if (objectMatch && xMatch && yMatch && zMatch) {
+          return {
+            toolName: matchedTool,
+            args: {
+              object_name: objectMatch[1],
+              x: parseFloat(xMatch[1]),
+              y: parseFloat(yMatch[1]),
+              z: parseFloat(zMatch[1]),
+              angle_deg: angleMatch ? parseFloat(angleMatch[1]) : undefined
+            }
+          };
+        }
+      } else if (matchedTool === "relocate_object") {
+        const obstacleMatch = text.match(/"obstacle_name"\s*:\s*"([^"]+)"/);
+        const xMatch = text.match(/"obstacle_x"\s*:\s*([0-9.-]+)/);
+        const yMatch = text.match(/"obstacle_y"\s*:\s*([0-9.-]+)/);
+        const zMatch = text.match(/"obstacle_z"\s*:\s*([0-9.-]+)/);
+        const angleMatch = text.match(/"obstacle_angle_deg"\s*:\s*([0-9.-]+)/);
+        if (obstacleMatch && xMatch && yMatch && zMatch) {
+          return {
+            toolName: matchedTool,
+            args: {
+              obstacle_name: obstacleMatch[1],
+              obstacle_x: parseFloat(xMatch[1]),
+              obstacle_y: parseFloat(yMatch[1]),
+              obstacle_z: parseFloat(zMatch[1]),
+              obstacle_angle_deg: angleMatch ? parseFloat(angleMatch[1]) : undefined
+            }
+          };
+        }
       }
     }
   }
@@ -722,6 +772,9 @@ CRITICAL DUCKDUCKGO / INTERNET ACCESS RULES:
 - You DO have direct, real-time access to the internet/web search via the 'search_web' tool (powered by DuckDuckGo and Wikipedia).
 - When asked about search engines, DuckDuckGo, or internet access, you MUST clearly, confidently, and enthusiastically declare that you CAN query DuckDuckGo directly in real-time. Never deny having internet search access or claim you are limited to static knowledge.
 
+CRITICAL OBJECT INFERENCE RULE:
+- If the user makes an implicit or vague request to pick or locate an item (e.g. expressing a need like being sick, wanting to write, or needing to clean), use your common-sense reasoning to select the most appropriate object from the available tool parameters/enum values and call the tool directly instead of asking for clarification.
+
 CRITICAL OUTPUT CLEANLINESS:
 - Do NOT output raw coordinates (e.g. x, y, z values), technical tool arguments, or structured JSON/dictionary info. Keep your responses purely conversational, natural, and concise. Speak about actions in plain English, not data info.
 
@@ -811,6 +864,55 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                   description: "Custom analysis instruction prompt for the model. Defaults to describing objects and layout." 
                 } 
               }
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "pick_and_place_object",
+            description: "Pick and place one detected object using the main robot controller. Input comes from the vision MCP/AI pipeline: object_name, x, y, and z in metres, and optionally angle_deg (yaw in degrees, robot base frame).",
+            parameters: {
+              type: "object",
+              properties: {
+                object_name: {
+                  type: "string",
+                  description: "Object to pick.",
+                  enum: ["black marker", "blue marker", "cube", "green marker", "medicine", "nut", "pipe", "sponge"]
+                },
+                x: { type: "number", description: "Robot-frame X in metres." },
+                y: { type: "number", description: "Robot-frame Y in metres." },
+                z: { type: "number", description: "Robot-frame Z in metres." },
+                angle_deg: { type: "number", description: "Object yaw angle in degrees in robot base frame (optional)." }
+              },
+              required: ["object_name", "x", "y", "z"]
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "relocate_object",
+            description: "Pick an obstacle object and move it to a safe empty position within the pick workspace (NOT the placement box), then take a fresh photo. Use this when an object is blocking the target and needs to be moved out of the way first.",
+            parameters: {
+              type: "object",
+              properties: {
+                obstacle_name: {
+                  type: "string",
+                  description: "Name of the object to relocate.",
+                  enum: ["black marker", "blue marker", "cube", "green marker", "medicine", "nut", "pipe", "sponge"]
+                },
+                obstacle_x: { type: "number", description: "Robot-frame X of obstacle in metres." },
+                obstacle_y: { type: "number", description: "Robot-frame Y of obstacle in metres." },
+                obstacle_z: { type: "number", description: "Robot-frame Z of obstacle in metres." },
+                obstacle_angle_deg: { type: "number", description: "Obstacle yaw in degrees (optional)." },
+                detections: {
+                  type: "array",
+                  description: "Full YOLO detection list for the current scene (optional). Used for dynamic obstacle avoidance.",
+                  items: { type: "object" }
+                }
+              },
+              required: ["obstacle_name", "obstacle_x", "obstacle_y", "obstacle_z"]
             }
           }
         }
@@ -985,6 +1087,52 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             toolResultText = "Error: Vision MCP is not connected.";
             sendProgress("Error: Remote Vision MCP is not connected.");
             logToolCall(question, "analyse_surroundings", args, "Failed: Not Connected");
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+        else if (toolCall.name === "pick_and_place_object") {
+          logToolCall(question, "pick_and_place_object", args, "Calling Robot MCP...");
+          sendProgress(`Executing pick-and-place for "${args.object_name}"...`);
+          if (robotMcpClient) {
+            try {
+              const res = await robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args });
+              toolResultText = res.content[0].text;
+              logToolCall(question, "pick_and_place_object", args, "Success");
+              sendProgress(`Pick-and-place completed for "${args.object_name}".`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } catch (e) {
+              toolResultText = `Error calling Robot MCP pick_and_place_object: ${e.message}`;
+              sendProgress(`Error: ${e.message}`);
+              logToolCall(question, "pick_and_place_object", args, `Failed: ${e.message}`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          } else {
+            toolResultText = "Error: Robot MCP is not connected.";
+            sendProgress("Error: Robot MCP is not connected.");
+            logToolCall(question, "pick_and_place_object", args, "Failed: Not Connected");
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+        else if (toolCall.name === "relocate_object") {
+          logToolCall(question, "relocate_object", args, "Calling Robot MCP...");
+          sendProgress(`Relocating obstacle "${args.obstacle_name}"...`);
+          if (robotMcpClient) {
+            try {
+              const res = await robotMcpClient.callTool({ name: "relocate_object", arguments: args });
+              toolResultText = res.content[0].text;
+              logToolCall(question, "relocate_object", args, "Success");
+              sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } catch (e) {
+              toolResultText = `Error calling Robot MCP relocate_object: ${e.message}`;
+              sendProgress(`Error: ${e.message}`);
+              logToolCall(question, "relocate_object", args, `Failed: ${e.message}`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          } else {
+            toolResultText = "Error: Robot MCP is not connected.";
+            sendProgress("Error: Robot MCP is not connected.");
+            logToolCall(question, "relocate_object", args, "Failed: Not Connected");
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
         }
