@@ -1027,7 +1027,6 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               console.log("=================================");
               const res = await visionMcpClient.callTool({ name: "locate_object", arguments: args });
               toolResultText = res.content[0].text;
-              logToolCall(question, "locate_object", args, "Success");
               
               // Parse progress details for premium UI status updates
               try {
@@ -1072,6 +1071,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               } catch (jsonErr) {
                 sendProgress(`Target scan completed. Generating final response...`);
               }
+              
+              logToolCall(question, "locate_object", args, toolResultText);
             } catch (e) {
               toolResultText = `Error calling Vision MCP: ${e.message}`;
               sendProgress(`Error: ${e.message}`);
@@ -1094,7 +1095,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             const searchResults = await search(args.query);
             const topResults = searchResults.results.slice(0, 4).map(r => `Title: ${r.title}\nSnippet: ${r.description}\nURL: ${r.url}`).join('\n\n');
             toolResultText = `Search Results for '${args.query}':\n\n${topResults || "No results found."}`;
-            logToolCall(question, "search_web", args, `Found results`);
+            logToolCall(question, "search_web", args, toolResultText);
           } catch (err) {
             console.log(`DDG failed, falling back to Wikipedia: ${err.message}`);
             try {
@@ -1104,7 +1105,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               if (wikiData.query && wikiData.query.search && wikiData.query.search.length > 0) {
                 const topResults = wikiData.query.search.slice(0, 4).map(r => `Title: ${r.title}\nSnippet: ${r.snippet.replace(/<[^>]*>?/gm, '')}`).join('\n\n');
                 toolResultText = `Search Results (Wikipedia) for '${args.query}':\n\n${topResults}`;
-                logToolCall(question, "search_web", args, `Found Wikipedia results`);
+                logToolCall(question, "search_web", args, toolResultText);
               } else {
                 throw new Error("No Wikipedia results found.");
               }
@@ -1121,7 +1122,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             try {
               const res = await visionMcpClient.callTool({ name: "get_camera_snapshot", arguments: args });
               toolResultText = res.content[0].text;
-              logToolCall(question, "get_camera_snapshot", args, "Success");
+              logToolCall(question, "get_camera_snapshot", args, toolResultText);
               sendProgress("Snapshot retrieved successfully.");
               await new Promise(resolve => setTimeout(resolve, 1500));
             } catch (e) {
@@ -1146,7 +1147,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             try {
               const res = await visionMcpClient.callTool({ name: "analyse_surroundings", arguments: args });
               toolResultText = res.content[0].text;
-              logToolCall(question, "analyse_surroundings", args, "Success");
+              logToolCall(question, "analyse_surroundings", args, toolResultText);
               sendProgress("Analysis complete.");
               await new Promise(resolve => setTimeout(resolve, 1500));
             } catch (e) {
@@ -1171,7 +1172,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             try {
               const res = await robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args });
               toolResultText = res.content[0].text;
-              logToolCall(question, "pick_and_place_object", args, "Success");
+              logToolCall(question, "pick_and_place_object", args, toolResultText);
               sendProgress(`Pick-and-place completed for "${args.object_name}".`);
               await new Promise(resolve => setTimeout(resolve, 2000));
             } catch (e) {
@@ -1196,7 +1197,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             try {
               const res = await robotMcpClient.callTool({ name: "relocate_object", arguments: args });
               toolResultText = res.content[0].text;
-              logToolCall(question, "relocate_object", args, "Success");
+              logToolCall(question, "relocate_object", args, toolResultText);
               sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`);
               await new Promise(resolve => setTimeout(resolve, 2000));
             } catch (e) {

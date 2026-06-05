@@ -10,23 +10,81 @@ mcp = FastMCP("Roboas Monitor")
 LOG_FILE = os.path.join(os.path.dirname(__file__), "gpt_tool_log.json")
 
 @mcp.tool()
-def get_gpt_tool_logs(limit: int = 10):
+def get_gpt_tool_logs(limit: int = 10, tool_filter: str = None):
     """
     Get the most recent tool calls made by the Shadow Brain (OpenAI/Claude Dual-Brain).
     Use this to see exactly what is happening in the Roboas Web App.
+    
+    Parameters:
+    - limit: The maximum number of log entries to return (default is 10).
+    - tool_filter: Optional filter to only return logs for a specific tool (e.g., 'locate_object').
     """
+    api_error = None
+    try:
+        with urllib.request.urlopen("http://localhost:3000/tool-log", timeout=3) as r:
+            data = json.loads(r.read().decode("utf-8"))
+            if data.get("success"):
+                logs = data.get("log", [])
+                
+                # Apply tool filter if present
+                if tool_filter:
+                    logs = [log for log in logs if tool_filter.lower() in log.get("toolName", "").lower()]
+                
+                recent = logs[-limit:]
+                recent.reverse()
+                
+                mcp_status = data.get("mcpStatus", {})
+                emoji_status = "Online" if mcp_status.get("emoji") else "Offline"
+                vision_status = "Online" if mcp_status.get("vision") else "Offline"
+                robot_status = "Online" if mcp_status.get("robot") else "Offline"
+                
+                result_obj = {
+                    "source": "Active Node.js Server (HTTP API)",
+                    "active_persona": data.get("currentPersona", "unknown"),
+                    "mcp_servers_health": {
+                        "emoji_server": emoji_status,
+                        "vision_mcp": vision_status,
+                        "robot_mcp": robot_status
+                    },
+                    "total_calls_logged": data.get("totalCalls", len(logs)),
+                    "returned_calls_count": len(recent),
+                    "logs": recent
+                }
+                return json.dumps(result_obj, indent=2)
+    except Exception as e:
+        api_error = str(e)
+
     if not os.path.exists(LOG_FILE):
-        return "No tool logs found yet. Start chatting in the app!"
+        return json.dumps({
+            "source": "None",
+            "error": f"Failed to connect to Node.js server ({api_error}) and log file does not exist at {LOG_FILE}",
+            "logs": []
+        }, indent=2)
 
     try:
         with open(LOG_FILE, "r") as f:
             logs = json.load(f)
-            # Reverse to get most recent at top
+            
+            # Apply tool filter if present
+            if tool_filter:
+                logs = [log for log in logs if tool_filter.lower() in log.get("toolName", "").lower()]
+            
             recent = logs[-limit:]
             recent.reverse()
-            return json.dumps(recent, indent=2)
-    except Exception as e:
-        return f"Error reading logs: {str(e)}"
+            
+            return json.dumps({
+                "source": "Disk Fallback (Local File)",
+                "note": f"Could not reach Node.js server (Error: {api_error}). Showing logs from disk.",
+                "total_calls_logged": len(logs),
+                "returned_calls_count": len(recent),
+                "logs": recent
+            }, indent=2)
+    except Exception as disk_err:
+        return json.dumps({
+            "source": "None",
+            "error": f"Failed to connect to Node.js server ({api_error}) and failed to read log file ({str(disk_err)})",
+            "logs": []
+        }, indent=2)
 
 @mcp.tool()
 def get_roboas_status():
