@@ -217,7 +217,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     "id": 1
                 }
                 req = urllib.request.Request(
-                    "http://localhost:8001/messages",
+                    "http://192.168.2.99:8001/messages",
                     data=json.dumps(payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"}
                 )
@@ -264,11 +264,11 @@ async def handle_messages(request: Request):
 
 # 5. Bind routes
 app = Starlette(routes=[
-    Route("/sse", endpoint=handle_sse),
+    Route("/settings", endpoint=handle_sse),
     Route("/messages", endpoint=handle_messages, methods=["POST"])
 ])
 
 if __name__ == "__main__":
-    logger.info("🦾 Robot Arm MCP Server listening on Ethernet port 8002...")
+    logger.info("🦾 Robot Arm MCP Server listening on Ethernet port 8080...")
     logger.info("Tool: pick_and_place_object(object_name, x, y, z, angle_deg[optional])")
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
