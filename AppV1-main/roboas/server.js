@@ -774,6 +774,7 @@ CRITICAL DUCKDUCKGO / INTERNET ACCESS RULES:
 
 CRITICAL OBJECT INFERENCE RULE:
 - If the user makes an implicit or vague request to pick or locate an item (e.g. expressing a need like being sick, wanting to write, or needing to clean), use your common-sense reasoning to select the most appropriate object from the available tool parameters/enum values and call the tool directly instead of asking for clarification.
+- However, if the user explicitly asks for a specific object that is NOT in the available tool parameters/enum values (e.g. a "screwdriver"), you MUST NOT call any locate or pick tool. Instead, politely inform the user that this object is not available in the workspace and list the actual objects you can interact with. Never guess or fall back to an unrelated object like "cube".
 
 CRITICAL OUTPUT CLEANLINESS:
 - Do NOT output raw coordinates (e.g. x, y, z values), technical tool arguments, or structured JSON/dictionary info. Keep your responses purely conversational, natural, and concise. Speak about actions in plain English, not data info.
@@ -989,10 +990,33 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               // Parse progress details for premium UI status updates
               try {
                 const parsed = JSON.parse(toolResultText);
-                if (parsed.status && parsed.status.startsWith("SUCCESS")) {
-                  const coords = parsed.coordinates;
-                  console.log(`📍 [COORDINATES DELIVERED]: X: ${coords?.x}, Y: ${coords?.y}, Z: ${coords?.z}`);
-                  sendProgress(`Success! YOLO localized "${args.target_name}" at X: ${coords?.x?.toFixed(3)}, Y: ${coords?.y?.toFixed(3)}, Z: ${coords?.z?.toFixed(3)}. Directing robotic arm to move...`);
+                if (parsed.status && parsed.status.startsWith("SUCCESS") && parsed.coordinates) {
+                  let coords = parsed.coordinates;
+                  console.log(`📍 [RAW VISION COORDS]: X: ${coords.x}, Y: ${coords.y}, Z: ${coords.z}`);
+                  
+                  // Check if the coordinates are in the camera frame and need transformation
+                  // Robot workspace X is 0.25 to 0.585. Camera X is usually negative or small.
+                  // Z in camera is around 0.9-1.0m, whereas robot Z is 0.0 to 0.8.
+                  if (coords.x < 0.2 || coords.z > 0.8) {
+                    console.log("🔄 Transforming camera coordinates to robot base frame...");
+                    const xc = coords.x;
+                    const yc = coords.y;
+                    const zc = coords.z;
+                    
+                    const xr = 0.7337634310 * xc + 0.6126652048 * yc - 0.2936538341 * zc + 0.7173839756;
+                    const yr = 0.6785283256 * xc - 0.6388791698 * yc + 0.3625365054 * zc - 0.4903506740;
+                    const zr = 0.0345041846 * xc - 0.4652684744 * yc - 0.8844968672 * zc + 0.7880605490;
+                    
+                    coords.x = xr;
+                    coords.y = yr;
+                    coords.z = zr;
+                    
+                    parsed.coordinates = coords;
+                    toolResultText = JSON.stringify(parsed);
+                    console.log(`📍 [TRANSFORMED ROBOT COORDS]: X: ${xr.toFixed(4)}, Y: ${yr.toFixed(4)}, Z: ${zr.toFixed(4)}`);
+                  }
+                  
+                  sendProgress(`Success! YOLO localized "${args.target_name}" at X: ${coords.x.toFixed(3)}, Y: ${coords.y.toFixed(3)}, Z: ${coords.z.toFixed(3)}. Directing robotic arm to move...`);
                   await new Promise(resolve => setTimeout(resolve, 2500));
                 } else if (parsed.status && parsed.status.startsWith("BLOCKED")) {
                   sendProgress(`Blocked: Qwen safety gate determined pickup is NOT safe!`);
