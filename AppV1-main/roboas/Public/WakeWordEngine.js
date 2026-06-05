@@ -2,9 +2,9 @@ const ort = window.ort || globalThis.ort;
 
 export const MODEL_FILE_MAP = {
     john: 'john.onnx',
-    john_v2: 'john_v2.onnx',
+    john_v2: 'john_v3.onnx',
     linda: 'linda.onnx',
-    linda_v2: 'linda_v2.onnx',
+    linda_v2: 'linda_v3.onnx',
     alexa: 'alexa.onnx',
     hey_mycroft: 'hey_mycroft_v0.1.onnx',
     hey_jarvis: 'hey_jarvis.onnx',
