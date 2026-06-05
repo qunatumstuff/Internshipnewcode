@@ -352,13 +352,16 @@ OBJECT_CATALOGUE = {
         "grasp_width_m": 0.040,
         "grasp_breadth_m": 0.040,
         "grasp_height_m": 0.040,
+        # Offsets zeroed — vision segmentation computes the exact grasp end
+        # position and sends it as x/y/z directly. Any offset here would
+        # shift the gripper away from the segmentation-computed point.
         "grasp_offset_x_m": 0.0,
-        "grasp_offset_y_m": -0.020,
+        "grasp_offset_y_m": 0.0,
         "grasp_offset_z_m": 0.0,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
         "grip_center_ratio": 0.5,
-        "description": "60-degree elbow pipe with lower tube grip region",
+        "description": "60-degree elbow pipe — grasp point computed live from segmentation mask",
     },
 
     "8": {
@@ -3185,7 +3188,7 @@ def diagnostic_print_placement_and_box(sequence):
     )
 
 
-def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angle=None, detections=None):
+def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angle=None, detections=None, grasp_label=None):
     """
     Build the internal pick_sequence from MCP data.
 
@@ -3196,6 +3199,10 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
     MCP z is treated as an object-height hint, not final robot TCP Z.
     MCP angle is the object yaw in robot base frame from YOLOv11 OBB RPY decomposition.
     If angle is None, the catalogue preferred_grasp_angle_deg is used instead.
+
+    grasp_label — for the pipe: which end the segmentation model selected
+    (grasp_A or grasp_B). When provided, x/y/z already point to that exact
+    end and catalogue offsets are confirmed zero so nothing shifts the position.
     """
     global MCP_DYNAMIC_OBSTACLES, MCP_PLACEMENT_BOX_DETECTIONS
 
@@ -3289,6 +3296,16 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
     else:
         selected_object["mcp_camera_angle_deg"] = None  # catalogue default will be used
 
+    # For the pipe, when vision segmentation provides a grasp_label the x/y/z
+    # coordinates already point to the chosen pipe end. Confirm offsets are zero
+    # so nothing shifts the segmentation-computed position, and store the label
+    # for diagnostics only.
+    if selected_object.get("label") == "pipe" and grasp_label:
+        selected_object["grasp_offset_x_m"] = 0.0
+        selected_object["grasp_offset_y_m"] = 0.0
+        selected_object["grasp_offset_z_m"] = 0.0
+        selected_object["_chosen_grasp_label"] = grasp_label
+
     sequence = [{
         "index": 1,
         "pick_x": float(target["x"]),
@@ -3320,7 +3337,7 @@ def mcp_robot_startup_once():
 
 
 
-def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, detections=None):
+def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, detections=None, grasp_label=None):
     """
     MCP entry point for robot execution.
 
@@ -3331,6 +3348,10 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
     MCP z is used only as an object-height hint; TCP Z is calculated by this robot code.
     MCP angle is the object yaw in degrees in robot base frame, from YOLOv11 OBB RPY
     decomposition. If None, the catalogue preferred_grasp_angle_deg is used instead.
+
+    grasp_label — for the pipe: which end vision segmentation selected
+    (grasp_A or grasp_B). Stored for diagnostics. x/y/z already point to
+    the correct end when this is provided.
     """
     global MCP_NO_UI_MODE
     MCP_NO_UI_MODE = True
@@ -3345,6 +3366,7 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
         z=z,
         angle=angle,
         detections=detections,
+        grasp_label=grasp_label,
     )
 
     preplan_all_drop_slots(sequence)
@@ -3357,18 +3379,19 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
         execute_one_pick_cycle(seq_item, 1, 1)
 
     return {
-        "status": "ok",
-        "picked_object": sequence[0].get("object_name", object_name),
-        "pick_x": sequence[0]["pick_x"],
-        "pick_y": sequence[0]["pick_y"],
-        "mcp_detected_z": sequence[0].get("pick_z", z),
-        "mcp_camera_angle_deg": sequence[0]["object"].get("mcp_camera_angle_deg"),
-        "object_height_used_m": sequence[0]["object"].get("mcp_height_used_m"),
-        "dynamic_obstacle_count": len(MCP_DYNAMIC_OBSTACLES),
+        "status":                       "ok",
+        "picked_object":                sequence[0].get("object_name", object_name),
+        "pick_x":                       sequence[0]["pick_x"],
+        "pick_y":                       sequence[0]["pick_y"],
+        "mcp_detected_z":               sequence[0].get("pick_z", z),
+        "mcp_camera_angle_deg":         sequence[0]["object"].get("mcp_camera_angle_deg"),
+        "chosen_grasp":                 sequence[0]["object"].get("_chosen_grasp_label"),
+        "object_height_used_m":         sequence[0]["object"].get("mcp_height_used_m"),
+        "dynamic_obstacle_count":       len(MCP_DYNAMIC_OBSTACLES),
         "placement_box_detected_count": len(MCP_PLACEMENT_BOX_DETECTIONS),
-        "avoidance_mode": MCP_DYNAMIC_OBJECT_AVOIDANCE_MODE,
-        "available_placement_area_m2": _placement_available_area_m2(),
-        "drop_slot": sequence[0]["object"].get("_planned_drop_slot", {}),
+        "avoidance_mode":               MCP_DYNAMIC_OBJECT_AVOIDANCE_MODE,
+        "available_placement_area_m2":  _placement_available_area_m2(),
+        "drop_slot":                    sequence[0]["object"].get("_planned_drop_slot", {}),
     }
 
 

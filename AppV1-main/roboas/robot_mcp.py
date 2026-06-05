@@ -23,7 +23,7 @@ logger = logging.getLogger("robot-mcp")
 # as this RoboControl file when running on the robot PC.
 # ------------------------------------------------------------
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-ROBOT_CONTROL_PATH = os.path.join(THIS_DIR, "Week_10_day_5Humanedited_MCP_COMPAT.py")
+ROBOT_CONTROL_PATH = os.path.join(THIS_DIR, "Week_12_NO_GRIPPER.py")
 
 spec = importlib.util.spec_from_file_location("week10_robot_control", ROBOT_CONTROL_PATH)
 robot_control = importlib.util.module_from_spec(spec)
@@ -42,8 +42,7 @@ async def handle_list_tools() -> list[Tool]:
                 "Pick and place one detected object using the main robot controller. "
                 "Input comes from the vision MCP/AI pipeline: object_name, x, y, z in metres, "
                 "and angle_deg (yaw in degrees, robot base frame, from YOLOv11 OBB decomposed RPY). "
-                "For the pipe, grasp_label and all_grasp_candidates from the segmentation model "
-                "are also accepted to enable smart end-selection."
+                "For the pipe, grasp_label identifies which end the segmentation model selected."
             ),
             inputSchema={
                 "type": "object",
@@ -66,19 +65,10 @@ async def handle_list_tools() -> list[Tool]:
                     "grasp_label": {
                         "type": "string",
                         "description": (
-                            "For pipe only: which end vision_core segmentation selected "
+                            "For pipe only: which end vision segmentation selected "
                             "(grasp_A or grasp_B). When provided, x/y/z already point to "
-                            "that end and catalogue offsets are zeroed. When absent, "
-                            "robot-side fallback grasp selection runs automatically."
+                            "that end and catalogue offsets are zeroed automatically."
                         )
-                    },
-                    "all_grasp_candidates": {
-                        "type": "array",
-                        "description": (
-                            "For pipe only: both grasp candidates with XYZ and angle "
-                            "computed by vision_core segmentation. Stored for diagnostics."
-                        ),
-                        "items": {"type": "object"}
                     }
                 },
                 "required": ["object_name", "x", "y", "z"]
@@ -155,12 +145,12 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     args = arguments or {}
 
     if name == "pick_and_place_object":
-        object_name          = args.get("object_name")
-        x                    = float(args.get("x"))
-        y                    = float(args.get("y"))
-        z                    = float(args.get("z"))
-        angle_deg            = float(args["angle_deg"]) if "angle_deg" in args else None
-        grasp_label          = args.get("grasp_label", None)
+        object_name = args.get("object_name")
+        x           = float(args.get("x"))
+        y           = float(args.get("y"))
+        z           = float(args.get("z"))
+        angle_deg   = float(args["angle_deg"]) if "angle_deg" in args else None
+        grasp_label = args.get("grasp_label", None)
 
         logger.info(
             f"MCP pick_and_place_object: {object_name} at ({x}, {y}, {z}) "
