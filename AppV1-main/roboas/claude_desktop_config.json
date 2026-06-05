@@ -3,15 +3,14 @@
     "roboas-debugger": {
       "command": "python",
       "args": [
-        "C:/Users/domin/Downloads/AppV1/roboas/mcp_debugger_server.py"
+        "c:/Users/Dominic/Downloads/AppV1-main/AiChatbot/AppV1-main/roboas/mcp_debugger_server.py"
       ]
     },
     "roboas-emoji-server": {
       "command": "python",
       "args": [
-        "C:/Users/domin/Downloads/AppV1/roboas/mcp_emoji_server.py"
+        "c:/Users/Dominic/Downloads/AppV1-main/AiChatbot/AppV1-main/roboas/mcp_emoji_server.py"
       ]
     }
   }
-  
 }

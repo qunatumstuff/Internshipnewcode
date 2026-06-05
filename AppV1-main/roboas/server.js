@@ -42,25 +42,32 @@ function logToolCall(userQuestion, toolName, args, result) {
   toolCallLog.push(entry);
   if (toolCallLog.length > 50) toolCallLog.shift(); // Keep last 50 entries
   
-  // High-Visibility Terminal Output
+  // High-Visibility Colorized Terminal Output
+  const cyan = "\x1b[36m";
+  const green = "\x1b[32m";
+  const yellow = "\x1b[33m";
+  const reset = "\x1b[0m";
+
   console.log("\n" + "=".repeat(50));
-  console.log(`🤖 [MCP TOOL TRIGGERED]: ${toolName.toUpperCase()}`);
+  console.log(`🤖 ${cyan}[MCP TOOL TRIGGERED]: ${toolName.toUpperCase()}${reset}`);
   console.log(`❓ User Asked: "${userQuestion}"`);
-  console.log(`📦 Arguments:  ${JSON.stringify(args)}`);
-  console.log(`✅ Result:     ${result}`);
+  console.log(`📦 Arguments:  ${yellow}${JSON.stringify(args)}${reset}`);
+  console.log(`✅ Result:     ${green}${result}${reset}`);
   console.log("=".repeat(50) + "\n");
 
   // Write to disk so Claude Desktop MCP server can read it
   try {
     fs.writeFileSync(TOOL_LOG_FILE, JSON.stringify(toolCallLog, null, 2));
   } catch (e) {
-    console.error('❌ Failed to write tool log to disk:', e.message);
+    console.error('❌ \x1b[31mFailed to write tool log to disk:\x1b[0m', e.message);
   }
 }
 
 // === MCP Emoji Server Client ===
 let mcpEmojiClient = null;
+let isEmojiConnected = false;
 async function startMcpClient() {
+  if (isEmojiConnected) return;
   try {
     const transport = new StdioClientTransport({
       command: "python",
@@ -68,9 +75,12 @@ async function startMcpClient() {
     });
     mcpEmojiClient = new Client({ name: "roboas-main", version: "1.0.0" }, { capabilities: {} });
     await mcpEmojiClient.connect(transport);
-    console.log("✅ MCP Emoji Server (Python) connected via Stdio");
+    isEmojiConnected = true;
+    console.log("✅ \x1b[32mMCP Emoji Server (Python) connected via Stdio\x1b[0m");
   } catch (err) {
-    console.error("❌ Failed to bind MCP Client:", err.message);
+    console.error("❌ \x1b[31mFailed to bind MCP Client:\x1b[0m", err.message);
+    isEmojiConnected = false;
+    mcpEmojiClient = null;
   }
 }
 startMcpClient();
@@ -98,31 +108,57 @@ function startWakeWordServer() {
 
 // === Vision MCP Server Client (Remote on Laptop B) ===
 let visionMcpClient = null;
+let isVisionConnected = false;
 async function startVisionMcpClient() {
+  if (isVisionConnected) return;
   try {
     const transport = new SSEClientTransport(new URL(`http://${LAPTOP_B_IP}:8001/sse`));
     visionMcpClient = new Client({ name: "roboas-main", version: "1.0.0" }, { capabilities: {} });
     await visionMcpClient.connect(transport);
-    console.log(`✅ Vision MCP Server connected via SSE at ${LAPTOP_B_IP}:8001`);
+    isVisionConnected = true;
+    console.log(`✅ \x1b[32mVision MCP Server connected via SSE at ${LAPTOP_B_IP}:8001\x1b[0m`);
   } catch (err) {
-    console.error(`❌ Failed to bind Vision MCP Client at ${LAPTOP_B_IP}:`, err.message);
+    console.error(`❌ \x1b[31mFailed to bind Vision MCP Client at ${LAPTOP_B_IP}:\x1b[0m`, err.message);
+    isVisionConnected = false;
+    visionMcpClient = null;
   }
 }
 startVisionMcpClient();
 
 // === Robot MCP Server Client (Local/Ethernet via SSE) ===
 let robotMcpClient = null;
+let isRobotConnected = false;
 async function startRobotMcpClient() {
+  if (isRobotConnected) return;
   try {
     const transport = new SSEClientTransport(new URL("http://localhost:8002/sse"));
     robotMcpClient = new Client({ name: "roboas-robot-mcp", version: "1.0.0" }, { capabilities: {} });
     await robotMcpClient.connect(transport);
-    console.log("✅ Robot MCP Server connected via SSE at localhost:8002");
+    isRobotConnected = true;
+    console.log("✅ \x1b[32mRobot MCP Server connected via SSE at localhost:8002\x1b[0m");
   } catch (err) {
-    console.error("❌ Failed to bind Robot MCP Client:", err.message);
+    console.error("❌ \x1b[31mFailed to bind Robot MCP Client:\x1b[0m", err.message);
+    isRobotConnected = false;
+    robotMcpClient = null;
   }
 }
 startRobotMcpClient();
+
+// Periodic Reconnection Check Loop
+setInterval(() => {
+  if (!isEmojiConnected) {
+    console.log("🔌 Attempting to reconnect to Emoji MCP Server...");
+    startMcpClient();
+  }
+  if (!isVisionConnected) {
+    console.log("🔌 Attempting to reconnect to Vision MCP Server...");
+    startVisionMcpClient();
+  }
+  if (!isRobotConnected) {
+    console.log("🔌 Attempting to reconnect to Robot MCP Server...");
+    startRobotMcpClient();
+  }
+}, 10000);
 
 async function getStatusEmoji(state) {
   if (!mcpEmojiClient) return state === "answering" ? "🤖" : "🤗";
@@ -135,7 +171,9 @@ async function getStatusEmoji(state) {
     logToolCall("System Status", "get_status_emoji", { state }, `updated to ${emoji}`);
     return emoji;
   } catch (e) {
-    console.error("❌ MCP Tool error:", e.message);
+    console.error("❌ \x1b[31mMCP Tool error:\x1b[0m", e.message);
+    isEmojiConnected = false;
+    mcpEmojiClient = null;
     return state === "answering" ? "🤖" : "🤗";
   }
 }
@@ -183,7 +221,9 @@ async function switchAvatar(persona) {
     
     return result.content[0].text;
   } catch (e) {
-    console.error("❌ MCP Tool error:", e.message);
+    console.error("❌ \x1b[31mMCP Tool error:\x1b[0m", e.message);
+    isEmojiConnected = false;
+    mcpEmojiClient = null;
     currentPersona = persona;
     return persona;
   }
@@ -746,6 +786,8 @@ app.post('/ask-gpt', async (req, res) => {
         }
       } catch (e) {
         console.error("Failed to fetch camera snapshot visual context:", e.message);
+        isVisionConnected = false;
+        visionMcpClient = null;
       }
     }
 
@@ -992,7 +1034,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                 const parsed = JSON.parse(toolResultText);
                 if (parsed.status && parsed.status.startsWith("SUCCESS") && parsed.coordinates) {
                   let coords = parsed.coordinates;
-                  console.log(`📍 [RAW VISION COORDS]: X: ${coords.x}, Y: ${coords.y}, Z: ${coords.z}`);
+                  console.log(`📍 \x1b[35m[RAW VISION COORDS]:\x1b[0m X: ${coords.x}, Y: ${coords.y}, Z: ${coords.z}`);
                   
                   // Check if the coordinates are in the camera frame and need transformation
                   // Robot workspace X is 0.25 to 0.585. Camera X is usually negative or small.
@@ -1013,7 +1055,9 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                     
                     parsed.coordinates = coords;
                     toolResultText = JSON.stringify(parsed);
-                    console.log(`📍 [TRANSFORMED ROBOT COORDS]: X: ${xr.toFixed(4)}, Y: ${yr.toFixed(4)}, Z: ${zr.toFixed(4)}`);
+                    console.log(`📍 \x1b[35m[COORDINATES TRANSFORMED]:\x1b[0m`);
+                    console.log(`   Raw Camera:  X: ${xc.toFixed(4)}, Y: ${yc.toFixed(4)}, Z: ${zc.toFixed(4)}`);
+                    console.log(`   Robot Base:  \x1b[32mX: ${xr.toFixed(4)}, Y: ${yr.toFixed(4)}, Z: ${zr.toFixed(4)}\x1b[0m`);
                   }
                   
                   sendProgress(`Success! YOLO localized "${args.target_name}" at X: ${coords.x.toFixed(3)}, Y: ${coords.y.toFixed(3)}, Z: ${coords.z.toFixed(3)}. Directing robotic arm to move...`);
@@ -1032,6 +1076,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               toolResultText = `Error calling Vision MCP: ${e.message}`;
               sendProgress(`Error: ${e.message}`);
               logToolCall(question, "locate_object", args, `Failed: ${e.message}`);
+              isVisionConnected = false;
+              visionMcpClient = null;
               await new Promise(resolve => setTimeout(resolve, 2000));
             }
           } else {
@@ -1082,6 +1128,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               toolResultText = `Error calling Vision MCP: ${e.message}`;
               sendProgress(`Error: ${e.message}`);
               logToolCall(question, "get_camera_snapshot", args, `Failed: ${e.message}`);
+              isVisionConnected = false;
+              visionMcpClient = null;
               await new Promise(resolve => setTimeout(resolve, 2000));
             }
           } else {
@@ -1105,6 +1153,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               toolResultText = `Error calling Vision MCP: ${e.message}`;
               sendProgress(`Error: ${e.message}`);
               logToolCall(question, "analyse_surroundings", args, `Failed: ${e.message}`);
+              isVisionConnected = false;
+              visionMcpClient = null;
               await new Promise(resolve => setTimeout(resolve, 2000));
             }
           } else {
@@ -1128,6 +1178,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               toolResultText = `Error calling Robot MCP pick_and_place_object: ${e.message}`;
               sendProgress(`Error: ${e.message}`);
               logToolCall(question, "pick_and_place_object", args, `Failed: ${e.message}`);
+              isRobotConnected = false;
+              robotMcpClient = null;
               await new Promise(resolve => setTimeout(resolve, 2000));
             }
           } else {
@@ -1151,6 +1203,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               toolResultText = `Error calling Robot MCP relocate_object: ${e.message}`;
               sendProgress(`Error: ${e.message}`);
               logToolCall(question, "relocate_object", args, `Failed: ${e.message}`);
+              isRobotConnected = false;
+              robotMcpClient = null;
               await new Promise(resolve => setTimeout(resolve, 2000));
             }
           } else {
@@ -1282,8 +1336,70 @@ app.get('/tool-log', (req, res) => {
     success: true,
     currentPersona,
     totalCalls: toolCallLog.length,
-    log: toolCallLog.slice(-20) // Last 20 tool calls
+    log: toolCallLog.slice(-20), // Last 20 tool calls
+    mcpStatus: {
+      emoji: isEmojiConnected,
+      vision: isVisionConnected,
+      robot: isRobotConnected
+    }
   });
+});
+
+// === Debug Trigger Mock Tool Endpoint ===
+app.post('/debug/trigger-mock-tool', (req, res) => {
+  const { toolName, args } = req.body;
+  if (!toolName) {
+    return res.status(400).json({ success: false, message: 'Missing toolName' });
+  }
+  
+  console.log(`[DEBUG HUD] Mocking tool call: ${toolName}`);
+  
+  let mockResult = "Success (Mock)";
+  
+  // If we mock locate_object, simulate coordinate translation!
+  if (toolName === "locate_object") {
+    let rawX = args.x !== undefined ? Number(args.x) : -0.1009;
+    let rawY = args.y !== undefined ? Number(args.y) : -0.1316;
+    let rawZ = args.z !== undefined ? Number(args.z) : 0.9670;
+    
+    // Transform coordinates
+    const xr = 0.7337634310 * rawX + 0.6126652048 * rawY - 0.2936538341 * rawZ + 0.7173839756;
+    const yr = 0.6785283256 * rawX - 0.6388791698 * rawY + 0.3625365054 * rawZ - 0.4903506740;
+    const zr = 0.0345041846 * rawX - 0.4652684744 * rawY - 0.8844968672 * rawZ + 0.7880605490;
+    
+    console.log(`📍 \x1b[35m[MOCK COORDINATES TRANSFORMED]:\x1b[0m`);
+    console.log(`   Raw Camera:  X: ${rawX.toFixed(4)}, Y: ${rawY.toFixed(4)}, Z: ${rawZ.toFixed(4)}`);
+    console.log(`   Robot Base:  \x1b[32mX: ${xr.toFixed(4)}, Y: ${yr.toFixed(4)}, Z: ${zr.toFixed(4)}\x1b[0m`);
+    
+    mockResult = JSON.stringify({
+      status: `SUCCESS: Localized ${args.target_name || "object"}`,
+      coordinates: { x: xr, y: yr, z: zr },
+      raw_coordinates: { x: rawX, y: rawY, z: rawZ }
+    });
+  } else if (toolName === "pick_and_place_object" || toolName === "relocate_object") {
+    mockResult = `Completed: mock action for ${toolName} finished successfully.`;
+  }
+  
+  logToolCall("Mock Debugger Trigger", toolName, args, mockResult);
+  
+  res.json({
+    success: true,
+    toolName,
+    args,
+    result: mockResult
+  });
+});
+
+// === Debug Clear Logs Endpoint ===
+app.post('/debug/clear-logs', (req, res) => {
+  console.log(`[DEBUG HUD] Clearing tool log history...`);
+  toolCallLog.length = 0; // Empty the in-memory array
+  try {
+    fs.writeFileSync(TOOL_LOG_FILE, JSON.stringify(toolCallLog, null, 2));
+    res.json({ success: true, message: 'Logs cleared successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: `Failed to clear logs: ${err.message}` });
+  }
 });
 
 // Debug vector state

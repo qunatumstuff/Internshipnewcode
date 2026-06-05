@@ -269,6 +269,154 @@
             padding: 15px;
             text-align: center;
         }
+
+        /* --- Debug Control Panel --- */
+        .debug-control-panel {
+            position: fixed;
+            bottom: 85px;
+            right: 20px;
+            width: 330px;
+            height: 420px;
+            background: rgba(10, 10, 10, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.85), 0 0 25px rgba(0, 242, 255, 0.15);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0;
+            transform: translateY(20px) scale(0.95);
+            pointer-events: none;
+            resize: both;
+            overflow: hidden;
+            min-width: 280px;
+            min-height: 250px;
+            max-width: 90vw;
+            max-height: 80vh;
+        }
+
+        .debug-control-panel.active {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: all;
+        }
+
+        .panel-header {
+            padding: 12px 15px;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid var(--glass-border);
+            font-weight: 700;
+            font-size: 0.8rem;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--accent);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-body {
+            padding: 15px;
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .panel-body::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .panel-body::-webkit-scrollbar-thumb {
+            background: var(--glass-border);
+            border-radius: 2px;
+        }
+
+        .panel-btn-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            color: #fff;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 1.35rem;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0, 242, 255, 0.4);
+            z-index: 1001;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .panel-btn-toggle:hover {
+            transform: scale(1.08) rotate(15deg);
+            box-shadow: 0 5px 25px rgba(0, 242, 255, 0.6);
+        }
+
+        .panel-btn-toggle:active {
+            transform: scale(0.92);
+        }
+        
+        .debug-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--glass-border);
+            color: var(--text-main);
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        
+        .debug-btn:hover {
+            background: rgba(0, 242, 255, 0.12);
+            border-color: var(--accent);
+            box-shadow: 0 0 10px rgba(0, 242, 255, 0.2);
+        }
+        
+        .debug-select, .debug-textarea {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid var(--glass-border);
+            color: var(--text-main);
+            padding: 8px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.8rem;
+            width: 100%;
+        }
+
+        .debug-textarea {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+        }
+        
+        .debug-select:focus, .debug-textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 8px var(--accent-glow);
+        }
+        
+        .debug-form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .debug-form-group label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            letter-spacing: 0.5px;
+        }
     </style>
 </head>
 <body>
@@ -304,8 +452,19 @@
 
             <div class="card">
                 <div class="card-title">Connection Status</div>
-                <div style="font-size: 0.9rem; margin-bottom: 5px;">Server: <span style="color: var(--accent)">Online</span></div>
-                <div style="font-size: 0.9rem;">Port: <span style="color: var(--accent)">3000</span></div>
+                <div style="font-size: 0.95rem; margin-bottom: 10px;">Server: <span style="color: #00ff88; font-weight: 600;">Online</span> (Port 3000)</div>
+                <div style="font-size: 0.85rem; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Emoji MCP:</span>
+                    <span id="status-emoji" style="padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; background: rgba(255,0,0,0.1); color: #ff4444;">Offline</span>
+                </div>
+                <div style="font-size: 0.85rem; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Vision MCP:</span>
+                    <span id="status-vision" style="padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; background: rgba(255,0,0,0.1); color: #ff4444;">Offline</span>
+                </div>
+                <div style="font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Robot MCP:</span>
+                    <span id="status-robot" style="padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; background: rgba(255,0,0,0.1); color: #ff4444;">Offline</span>
+                </div>
             </div>
         </aside>
 
@@ -356,6 +515,13 @@
                 iconEl.style.boxShadow = '0 0 20px rgba(0, 242, 255, 0.3)';
             }
 
+            // Update Connection Badges
+            if (data.mcpStatus) {
+                updateBadge('status-emoji', data.mcpStatus.emoji);
+                updateBadge('status-vision', data.mcpStatus.vision);
+                updateBadge('status-robot', data.mcpStatus.robot);
+            }
+
             // Update Metrics
             document.getElementById('total-calls').innerText = data.totalCalls;
             const now = new Date();
@@ -392,6 +558,155 @@
         // Start Polling
         fetchLogs();
         setInterval(fetchLogs, 2000);
+
+        // --- Debug Control Panel Code ---
+        const debugPanel = document.getElementById('debug-panel');
+        const toggleBtn = document.getElementById('toggle-panel-btn');
+        
+        toggleBtn.addEventListener('click', () => {
+            const isActive = debugPanel.classList.contains('active');
+            togglePanel(!isActive);
+        });
+        
+        function togglePanel(open) {
+            if (open) {
+                debugPanel.classList.add('active');
+                toggleBtn.style.transform = 'rotate(90deg)';
+            } else {
+                debugPanel.classList.remove('active');
+                toggleBtn.style.transform = 'rotate(0deg)';
+            }
+        }
+        
+        async function triggerPersona(persona) {
+            try {
+                const res = await fetch('/switch-persona', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ persona, silent: false })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    fetchLogs();
+                }
+            } catch (err) {
+                console.error("Failed to switch persona:", err);
+            }
+        }
+        
+        async function clearLogs() {
+            if (!confirm("Are you sure you want to clear the logs?")) return;
+            try {
+                const res = await fetch('/debug/clear-logs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await res.json();
+                if (result.success) {
+                    fetchLogs();
+                }
+            } catch (err) {
+                console.error("Failed to clear logs:", err);
+            }
+        }
+        
+        const placeholders = {
+            locate_object: '{\n  "target_name": "cube",\n  "x": -0.1009,\n  "y": -0.1316,\n  "z": 0.9670\n}',
+            pick_and_place_object: '{\n  "object_name": "cube",\n  "x": 0.285,\n  "y": -0.120,\n  "z": 0.050,\n  "angle_deg": 45\n}',
+            relocate_object: '{\n  "obstacle_name": "medicine",\n  "obstacle_x": 0.310,\n  "obstacle_y": -0.050,\n  "obstacle_z": 0.020\n}'
+        };
+        
+        function updateMockArgsPlaceholder() {
+            const select = document.getElementById('mock-tool-select');
+            const textarea = document.getElementById('mock-args-input');
+            textarea.value = placeholders[select.value] || '{}';
+        }
+        
+        updateMockArgsPlaceholder();
+        
+        async function submitMockTool() {
+            const select = document.getElementById('mock-tool-select');
+            const textarea = document.getElementById('mock-args-input');
+            
+            let args = {};
+            try {
+                args = JSON.parse(textarea.value);
+            } catch (err) {
+                alert("Arguments must be a valid JSON object");
+                return;
+            }
+            
+            try {
+                const res = await fetch('/debug/trigger-mock-tool', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ toolName: select.value, args })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    alert("Mock executed successfully! Log recorded in feed.");
+                    fetchLogs();
+                } else {
+                    alert("Error: " + result.message);
+                }
+            } catch (err) {
+                console.error("Mock Execution Error:", err);
+                alert("Execution Failed: " + err.message);
+            }
+        }
+
+        function updateBadge(elementId, isConnected) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            if (isConnected) {
+                el.innerText = 'Online';
+                el.style.background = 'rgba(0, 255, 136, 0.1)';
+                el.style.color = '#00ff88';
+            } else {
+                el.innerText = 'Offline';
+                el.style.background = 'rgba(255, 68, 68, 0.1)';
+                el.style.color = '#ff4444';
+            }
+        }
     </script>
+    
+    <!-- Floating Control Panel Toggle Button -->
+    <button class="panel-btn-toggle" id="toggle-panel-btn" title="Toggle Debug Panel">🔧</button>
+
+    <!-- Collapsible Control Panel -->
+    <div class="debug-control-panel" id="debug-panel">
+        <div class="panel-header">
+            <span>Interactive Controls</span>
+            <button class="debug-btn" style="padding: 2px 6px; font-size: 0.75rem;" onclick="togglePanel(false)">✕</button>
+        </div>
+        <div class="panel-body">
+            <div class="debug-form-group">
+                <label>Quick Actions</label>
+                <div style="display: flex; gap: 8px;">
+                    <button class="debug-btn" style="flex: 1;" onclick="triggerPersona('john')">John 👨</button>
+                    <button class="debug-btn" style="flex: 1;" onclick="triggerPersona('linda')">Linda 👩</button>
+                </div>
+                <button class="debug-btn" style="margin-top: 8px; border-color: rgba(255, 68, 68, 0.4);" onclick="clearLogs()">Clear Tool Logs 🗑️</button>
+            </div>
+            
+            <hr style="border: 0; border-top: 1px solid var(--glass-border);">
+            
+            <div class="debug-form-group">
+                <label>Mock Tool Trigger</label>
+                <select class="debug-select" id="mock-tool-select" onchange="updateMockArgsPlaceholder()">
+                    <option value="locate_object">locate_object</option>
+                    <option value="pick_and_place_object">pick_and_place_object</option>
+                    <option value="relocate_object">relocate_object</option>
+                </select>
+            </div>
+            
+            <div class="debug-form-group">
+                <label>Arguments (JSON)</label>
+                <textarea class="debug-textarea" id="mock-args-input" rows="4"></textarea>
+            </div>
+            
+            <button class="debug-btn" style="background: linear-gradient(135deg, var(--accent), var(--purple)); border: none; color: white;" onclick="submitMockTool()">Execute Mock Call ⚡</button>
+        </div>
+    </div>
 </body>
 </html>

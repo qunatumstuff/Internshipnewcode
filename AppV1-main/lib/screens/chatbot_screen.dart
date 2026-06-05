@@ -85,14 +85,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   double _lastLindaPeak = 0.0;
   double _lastLindaV2Peak = 0.0;
   double _johnThresh = 0.001;
-  double _lindaThresh = 0.00085;
+  double _lindaThresh = 0.0009;
   double _lastCps = 0.0;
   String _lastCtx = 'none';
   String _lastTrack = 'none';
   bool _lastTrackEnabled = false;
   final TextEditingController _johnThreshController = TextEditingController(text: '0.001');
-  final TextEditingController _lindaThreshController = TextEditingController(text: '0.00085');
-  bool _showDebugPanel = true;
+  final TextEditingController _lindaThreshController = TextEditingController(text: '0.0009');
+  bool _showDebugPanel = false;
 
 
   // ── Python Audio Server mode ──
@@ -1196,7 +1196,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   void _updateThresholds() {
     final johnVal = double.tryParse(_johnThreshController.text) ?? 0.001;
-    final lindaVal = double.tryParse(_lindaThreshController.text) ?? 0.00085;
+    final lindaVal = double.tryParse(_lindaThreshController.text) ?? 0.0009;
     setState(() {
       _johnThresh = johnVal;
       _lindaThresh = lindaVal;
@@ -1260,7 +1260,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       String lindaV2Peak = '0.00';
       String models = 'none';
       String threshJohn = '0.001';
-      String threshLinda = '0.00085';
+      String threshLinda = '0.0009';
       String callback = 'false';
       String cps = '0.0';
       String ctx = 'none';
@@ -1921,22 +1921,18 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           ),
           const SizedBox(height: 8),
           if (true) ...[
-            GestureDetector(
-              onTap: () => setState(() => _showDebugPanel = !_showDebugPanel),
-              behavior: HitTestBehavior.opaque,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text(
-                    _audioServerConnected ? '🟢 Wakeword: $_visibleStateText' : '🔴 Wakeword Engine Loading...',
-                    style: TextStyle(
-                      color: _audioServerConnected ? Colors.greenAccent : Colors.redAccent,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  _audioServerConnected ? '🟢 Wakeword: $_visibleStateText' : '🔴 Wakeword Engine Loading...',
+                  style: TextStyle(
+                    color: _audioServerConnected ? Colors.greenAccent : Colors.redAccent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
             const SizedBox(height: 4),
           ],
@@ -2010,231 +2006,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           Positioned.fill(child: _buildAvatar()),
 
           // ── Debug Overlay ─────────────────────────────────
-          if (_showDebugPanel)
-            Positioned(
-              top: 80,
-              left: 20,
-              child: Container(
-                width: 350,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.83),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.green),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('🎙️ WAKEWORD DEBUG PANEL', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
-                            const SizedBox(height: 2),
-                            Text('WS Connection: $_wakeWsStatus', style: TextStyle(
-                              color: _wakeWsStatus == 'connected' ? Colors.greenAccent :
-                                     _wakeWsStatus == 'connecting' ? Colors.orange :
-                                     Colors.redAccent,
-                              fontSize: 10,
-                            )),
-                            const SizedBox(height: 4),
-                            const Text('Loaded Models:\n• john.onnx\n• linda.onnx', style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 10,
-                            )),
-                          ],
-                        ),
-                        InkWell(
-                          onTap: () => setState(() => _showDebugPanel = false),
-                          child: const Icon(Icons.close, color: Colors.white54, size: 16),
-                        )
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('John Thresh', style: TextStyle(color: Colors.white, fontSize: 10)),
-                              const SizedBox(height: 4),
-                              TextField(
-                                controller: _johnThreshController,
-                                style: const TextStyle(color: Colors.white, fontSize: 11),
-                                decoration: const InputDecoration(
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                  border: OutlineInputBorder(),
-                                  fillColor: Colors.black26,
-                                  filled: true,
-                                ),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                onChanged: (_) => _updateThresholds(),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Linda Thresh', style: TextStyle(color: Colors.white, fontSize: 10)),
-                              const SizedBox(height: 4),
-                              TextField(
-                                controller: _lindaThreshController,
-                                style: const TextStyle(color: Colors.white, fontSize: 11),
-                                decoration: const InputDecoration(
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                  border: OutlineInputBorder(),
-                                  fillColor: Colors.black26,
-                                  filled: true,
-                                ),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                onChanged: (_) => _updateThresholds(),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.black38,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.green.withOpacity(0.3)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('RMS: ${_lastRms.toStringAsFixed(4)}  Chunks/Sec: ${_lastCps.toStringAsFixed(1)}', style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontFamily: 'monospace')),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              const Text('Level VU: ', style: TextStyle(color: Colors.white70, fontSize: 9)),
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(2),
-                                  child: LinearProgressIndicator(
-                                    value: (_lastRms * 12).clamp(0.0, 1.0),
-                                    backgroundColor: Colors.white10,
-                                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
-                                    minHeight: 4,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text('AudioContext: $_lastCtx', style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace')),
-                          Text('Track Status: $_lastTrack (${_lastTrackEnabled ? "enabled" : "disabled"})', style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace')),
-                          const SizedBox(height: 4),
-                          Text('John score: ${_lastJohnScore.toStringAsFixed(2)}  (Peak: ${_lastJohnPeak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace')),
-                          Text('John V2: ${_lastJohnV2Score.toStringAsFixed(2)} (Peak: ${_lastJohnV2Peak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace')),
-                          const SizedBox(height: 4),
-                          Text('Linda score: ${_lastLindaScore.toStringAsFixed(2)}  (Peak: ${_lastLindaPeak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace')),
-                          Text('Linda V2: ${_lastLindaV2Score.toStringAsFixed(2)} (Peak: ${_lastLindaV2Peak.toStringAsFixed(2)})', style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace')),
-                          const SizedBox(height: 4),
-                          Text('Current threshold: John: ${_johnThresh.toStringAsFixed(2)}, Linda: ${_lindaThresh.toStringAsFixed(2)}', style: const TextStyle(color: Colors.orangeAccent, fontSize: 10, fontFamily: 'monospace')),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        ElevatedButton(
-                          onPressed: _startWakeWord,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green[700],
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text('Start Wakeword', style: TextStyle(color: Colors.white, fontSize: 10)),
-                        ),
-                        ElevatedButton(
-                          onPressed: _stopWakeWord,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red[700],
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text('Stop Wakeword', style: TextStyle(color: Colors.white, fontSize: 10)),
-                        ),
-                        ElevatedButton(
-                          onPressed: _manualRestartWakeWord,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue[700],
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text('Restart Wakeword', style: TextStyle(color: Colors.white, fontSize: 10)),
-                        ),
-                        ElevatedButton(
-                          onPressed: _testJohnCallback,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.purple[700],
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text('Test John Callback', style: TextStyle(color: Colors.white, fontSize: 10)),
-                        ),
-                        ElevatedButton(
-                          onPressed: _testLindaCallback,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.indigo[700],
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text('Test Linda Callback', style: TextStyle(color: Colors.white, fontSize: 10)),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => setState(() => _micDebugLogs.clear()),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey[800],
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text('Clear Logs', style: TextStyle(color: Colors.white, fontSize: 10)),
-                        ),
-                      ],
-                    ),
-                    if (_micDebugLogs.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      const Text('LOGS:', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 10)),
-                      const SizedBox(height: 4),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 150),
-                        child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: _micDebugLogs.map((log) => Text(
-                              log,
-                              style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'monospace'),
-                            )).toList(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
+
 
           // ── Logo ──────────────────────────────────────────
           Positioned(
