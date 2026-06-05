@@ -17,6 +17,8 @@ import vision
 current_rgb_frame = None
 current_target_class = None  # e.g., "cup", "bottle", "apple"
 latest_3d_coords = {"x": 0.0, "y": 0.0, "z": 0.0}
+current_depth_frame = None
+camera_intrinsics = None
 
 # Initialize F                                                                                                                                                          1`astMCP Server
 mcp = FastMCP("TIEFA_Module_B_Vision")
@@ -83,7 +85,7 @@ def rotationMatrixToEulerAngles(R):
 
 
 def vision_loop():
-    global current_rgb_frame, current_target_class, latest_3d_coords, last_click, spatial_coords
+    global current_rgb_frame, current_target_class, latest_3d_coords, last_click, spatial_coords, current_depth_frame, camera_intrinsics
 
     # Configure Intel RealSense pipeline
     pipeline = rs.pipeline()
@@ -106,6 +108,7 @@ def vision_loop():
     depth_table.disparityShift=20
     depth_scale = depth_sensor.get_depth_scale()
     intrinsics = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+    camera_intrinsics = intrinsics
 
     print("[Vision Thread] D435i Camera Started. YOLO Inference Running...")
 
@@ -125,6 +128,7 @@ def vision_loop():
             # Convert images to numpy arrays
             color_image = np.asanyarray(color_frame.get_data())
             current_rgb_frame = color_image.copy() # Update global state for MCP snapshot
+            current_depth_frame = depth_frame
 
             if current_target_class is None:
                 print("No target")
@@ -140,7 +144,7 @@ def vision_loop():
                         confidences = sponge.boxes.conf.cpu().numpy()
 
                         for mask, class_id, conf in zip(masks, class_ids, confidences):
-                                cls_name = model.names[class_id]
+                                cls_name = segment.names[class_id]
 
                                 if cls_name==current_target_class.lower():
                                     mask_binary = cv2.resize(mask,(color_image.shape[1], color_image.shape[0]))
@@ -205,7 +209,7 @@ def vision_loop():
                         # Update global 3D coordinates
                                latest_3d_coords["x"] = spatial_coords[0]
                                latest_3d_coords["y"] = spatial_coords[1]
-                               latest_3d_coords["z"] = spatial_coords[2]
+                               latest_3d_coords["z"] = spatial_coords[2] + 0.02
                     
                                roll,pitch,yaw=rotationMatrixToEulerAngles(rotation_from_matrix @ rotation_from_camera)
                     

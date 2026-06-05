@@ -1,4 +1,5 @@
 import asyncio
+import time
 import logging
 import json
 import urllib.request
@@ -302,58 +303,12 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
 
 
 # RealSense pipeline — shared across tool calls
-_rs_pipeline  = None
-_rs_intrinsics = None
-_rs_lock       = threading.Lock()
-
-
 def get_realsense_depth_and_intrinsics():
     """
-    Return the current aligned depth frame and colour intrinsics from the
-    RealSense pipeline. Starts the pipeline on first call.
-
-    Returns (depth_frame, intrinsics) or (None, None) if camera not ready.
+    Return the current aligned depth frame and colour intrinsics from camera.py
+    shared in-memory space.
     """
-    global _rs_pipeline, _rs_intrinsics
-
-    with _rs_lock:
-        if _rs_pipeline is None:
-            try:
-                pipeline = rs.pipeline()
-                config   = rs.config()
-                config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16,  30)
-                config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-                profile  = pipeline.start(config)
-
-                # Commit disparityShift to hardware
-                device       = profile.get_device()
-                advanced     = rs.rs400_advanced_mode(device)
-                depth_table  = advanced.get_depth_table()
-                depth_table.disparityShift = 20
-                advanced.set_depth_table(depth_table)
-
-                _rs_intrinsics = (
-                    profile.get_stream(rs.stream.color)
-                           .as_video_stream_profile()
-                           .get_intrinsics()
-                )
-                _rs_pipeline = pipeline
-                logger.info("RealSense depth pipeline started by Vision MCP.")
-            except Exception as e:
-                logger.error(f"Failed to start RealSense pipeline: {e}")
-                return None, None
-
-    try:
-        align  = rs.align(rs.stream.color)
-        frames = _rs_pipeline.wait_for_frames(timeout_ms=2000)
-        aligned = align.process(frames)
-        depth_frame = aligned.get_depth_frame()
-        if not depth_frame:
-            return None, None
-        return depth_frame, _rs_intrinsics
-    except Exception as e:
-        logger.error(f"Failed to get depth frame: {e}")
-        return None, None
+    return camera.current_depth_frame, camera.camera_intrinsics
 
 
 def get_current_detections():
@@ -869,9 +824,14 @@ app = Starlette(routes=[
 ])
 
 if __name__ == "__main__":
-    # camera.py vision_loop must already be running before this starts.
-    # Start camera.py in a separate terminal first.
+    # Start camera.py's vision loop in a background thread of this process
+    logger.info("📷 Starting camera vision loop background thread...")
+    camera_thread = threading.Thread(target=camera.vision_loop, daemon=True)
+    camera_thread.start()
+    
+    # Warm up camera
+    time.sleep(2)
+
     logger.info("📷 Vision MCP Server listening on port 8001...")
-    logger.info("Requires camera.py to be running in a separate terminal.")
     logger.info("Tools: locate_and_pick_object | capture_and_detect | analyse_surroundings | get_camera_snapshot")
     uvicorn.run(app, host="0.0.0.0", port=8001)

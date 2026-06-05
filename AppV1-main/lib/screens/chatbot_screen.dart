@@ -618,6 +618,20 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Future<void> _emergencyStop() async {
+    // Notify the backend immediately to halt robot hardware
+    try {
+      http.post(
+        Uri.parse('$baseUrl/emergency-stop'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({}),
+      ).catchError((e) {
+        debugPrint('Failed to send emergency stop request: $e');
+        return http.Response('Failed', 500);
+      });
+    } catch (e) {
+      debugPrint('Failed to initialize emergency stop HTTP: $e');
+    }
+
     // Kill audio
     _audioElement?.pause();
     _audioElement?.src = '';

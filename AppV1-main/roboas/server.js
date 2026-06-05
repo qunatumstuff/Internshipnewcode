@@ -821,6 +821,12 @@ CRITICAL OBJECT INFERENCE RULE:
 CRITICAL OUTPUT CLEANLINESS:
 - Do NOT output raw coordinates (e.g. x, y, z values), technical tool arguments, or structured JSON/dictionary info. Keep your responses purely conversational, natural, and concise. Speak about actions in plain English, not data info.
 
+ROBOTIC ARM — PICK AND PLACE RULES:
+- When the user asks you to pick up an object, use the 'locate_object' tool with the correct target_name.
+- If the user mentions that an object is underneath, below, hidden by, or behind another object (e.g. "pick up the cube below the sponge", "get the medicine behind the pipe"), call locate_object with the hidden object as target_name AND pass the full user instruction as user_context. The vision system handles all stacking, blocking, and relocation automatically. You do NOT need to plan the steps yourself.
+- Approved objects the robot can pick: black marker, blue marker, cube, green marker, medicine, nut, pipe, sponge.
+- Do NOT call pick_and_place_object or relocate_object directly. The vision system calls those automatically after Qwen analyses the scene.
+
 IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualContext
       },
       ...chatHistory,
@@ -850,15 +856,19 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           type: "function",
           function: {
             name: "locate_object",
-            description: "Uses the robotic vision camera to identify an object and get its coordinates.",
+            description: "Full autonomous pick pipeline. Sends the live camera image and all YOLO detections to Qwen, which decides whether to relocate blockers first or pick directly. Handles stacked objects (e.g. cube below sponge) automatically. Pass user_context if the user described the scene or mentioned stacking.",
             parameters: {
               type: "object",
               properties: { 
                 target_name: { 
                   type: "string", 
-                  description: "Name of the object to locate.", 
+                  description: "Name of the object to pick up.", 
                   enum: ["black marker", "blue marker", "cube", "green marker", "medicine", "nut", "pipe", "sponge"] 
-                } 
+                },
+                user_context: {
+                  type: "string",
+                  description: "Optional: what the user said about the scene, e.g. 'the cube is below the sponge'. Pass this when the user described object positions or mentioned stacking."
+                }
               },
               required: ["target_name"]
             }
@@ -1019,51 +1029,55 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           sendProgress(`Initiating workspace scan for "${args.target_name}"...`);
           if (visionMcpClient) {
             try {
-              sendProgress(`Capturing frame on Laptop B & running Qwen environment safety scan...`);
+              sendProgress(`Capturing frame on Laptop B & sending to Qwen for scene analysis...`);
               console.log("=================================");
               console.log("RAW LOCATE TOOL CALL");
-              console.log("Tool:", "locate_object");
+              console.log("Tool:", "locate_and_pick_object");
               console.log("Args:", JSON.stringify(args, null, 2));
               console.log("=================================");
-              const res = await visionMcpClient.callTool({ name: "locate_object", arguments: args });
+
+              // Build args for locate_and_pick_object.
+              // Pass user_context if GPT extracted it — Qwen uses it as a planning hint
+              // for stacking scenarios ("cube is below the sponge" etc).
+              const visionArgs = { target_name: args.target_name };
+              if (args.user_context) {
+                visionArgs.user_context = args.user_context;
+                console.log(`[locate_object] Forwarding user context to Qwen: "${args.user_context}"`);
+              }
+
+              // Vision MCP now calls locate_and_pick_object — Qwen decides whether
+              // to relocate blockers first or pick directly. The full pick cycle
+              // (including robot MCP calls) happens inside the vision MCP.
+              const res = await visionMcpClient.callTool({ name: "locate_and_pick_object", arguments: visionArgs });
               toolResultText = res.content[0].text;
-              
-              // Parse progress details for premium UI status updates
+
               try {
                 const parsed = JSON.parse(toolResultText);
-                if (parsed.status && parsed.status.startsWith("SUCCESS") && parsed.coordinates) {
-                  let coords = parsed.coordinates;
-                  console.log(`📍 \x1b[35m[RAW VISION COORDS]:\x1b[0m X: ${coords.x}, Y: ${coords.y}, Z: ${coords.z}`);
-                  
-                  // Check if the coordinates are in the camera frame and need transformation
-                  // Robot workspace X is 0.25 to 0.585. Camera X is usually negative or small.
-                  // Z in camera is around 0.9-1.0m, whereas robot Z is 0.0 to 0.8.
-                  if (coords.x < 0.2 || coords.z > 0.8) {
-                    console.log("🔄 Transforming camera coordinates to robot base frame...");
-                    const xc = coords.x;
-                    const yc = coords.y;
-                    const zc = coords.z;
-                    
-                    const xr = 0.7337634310 * xc + 0.6126652048 * yc - 0.2936538341 * zc + 0.7173839756;
-                    const yr = 0.6785283256 * xc - 0.6388791698 * yc + 0.3625365054 * zc - 0.4903506740;
-                    const zr = 0.0345041846 * xc - 0.4652684744 * yc - 0.8844968672 * zc + 0.7880605490;
-                    
-                    coords.x = xr;
-                    coords.y = yr;
-                    coords.z = zr;
-                    
-                    parsed.coordinates = coords;
-                    toolResultText = JSON.stringify(parsed);
-                    console.log(`📍 \x1b[35m[COORDINATES TRANSFORMED]:\x1b[0m`);
-                    console.log(`   Raw Camera:  X: ${xc.toFixed(4)}, Y: ${yc.toFixed(4)}, Z: ${zc.toFixed(4)}`);
-                    console.log(`   Robot Base:  \x1b[32mX: ${xr.toFixed(4)}, Y: ${yr.toFixed(4)}, Z: ${zr.toFixed(4)}\x1b[0m`);
-                  }
-                  
-                  sendProgress(`Success! YOLO localized "${args.target_name}" at X: ${coords.x.toFixed(3)}, Y: ${coords.y.toFixed(3)}, Z: ${coords.z.toFixed(3)}. Directing robotic arm to move...`);
+
+                if (parsed.status === "SUCCESS") {
+                  const historyNote = parsed.history && parsed.history.length > 1
+                    ? ` Took ${parsed.iterations} planning step(s).` : "";
+                  const graspNote = parsed.pick_result && parsed.pick_result.chosen_grasp
+                    ? ` Pipe grasp: ${parsed.pick_result.chosen_grasp}.` : "";
+                  sendProgress(`Success! "${args.target_name}" picked and placed.${historyNote}${graspNote}`);
                   await new Promise(resolve => setTimeout(resolve, 2500));
-                } else if (parsed.status && parsed.status.startsWith("BLOCKED")) {
-                  sendProgress(`Blocked: Qwen safety gate determined pickup is NOT safe!`);
+
+                } else if (parsed.status === "ABORTED") {
+                  sendProgress(`Aborted: ${parsed.reasoning || 'Qwen could not resolve the scene.'}`);
                   await new Promise(resolve => setTimeout(resolve, 3000));
+
+                } else if (parsed.status === "FAILED") {
+                  sendProgress(`Failed: ${parsed.message || parsed.status}`);
+                  await new Promise(resolve => setTimeout(resolve, 2500));
+
+                } else if (parsed.status === "ERROR") {
+                  sendProgress(`Error during ${parsed.stage || 'execution'}: ${parsed.message || ''}`);
+                  await new Promise(resolve => setTimeout(resolve, 2500));
+
+                } else if (parsed.status && parsed.status.startsWith("BLOCKED")) {
+                  sendProgress(`Blocked: Qwen determined pickup is not safe.`);
+                  await new Promise(resolve => setTimeout(resolve, 3000));
+
                 } else if (parsed.status) {
                   sendProgress(parsed.status);
                   await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1505,6 +1519,42 @@ app.post('/switch-persona', (req, res) => {
 
   console.log(`🔄 Persona switched to: ${persona} (Brain Synced ${silent ? ' - SILENT' : ''})`);
   res.json({ success: true, persona });
+});
+
+// Emergency Stop Endpoint (from Chatbot UI)
+app.post('/emergency-stop', async (req, res) => {
+  console.log('\n🚨 \x1b[41m\x1b[37m[EMERGENCY STOP]: Received UI signal! Halting Robot Arm...\x1b[0m\n');
+  
+  let robotSuccess = false;
+  let robotError = null;
+  let responseText = "";
+
+  if (robotMcpClient) {
+    try {
+      const result = await robotMcpClient.callTool({
+        name: "emergency_stop",
+        arguments: {}
+      });
+      robotSuccess = true;
+      responseText = result.content[0].text;
+      console.log('⚠️ Robot MCP Emergency Stop Success:', responseText);
+    } catch (err) {
+      robotError = err.message;
+      console.error('❌ Failed to call Robot MCP emergency_stop:', err.message);
+    }
+  } else {
+    robotError = "Robot MCP is not connected.";
+    console.error('❌ Robot MCP is not connected.');
+  }
+
+  // Log the emergency stop event
+  logToolCall("System Emergency Button", "emergency_stop", {}, robotSuccess ? "Robot halted" : `Failed: ${robotError}`);
+
+  res.json({
+    success: robotSuccess,
+    message: robotSuccess ? "Emergency stop sent successfully." : `Failed to stop robot: ${robotError}`,
+    detail: responseText || robotError
+  });
 });
 
 // Serve debug dashboard

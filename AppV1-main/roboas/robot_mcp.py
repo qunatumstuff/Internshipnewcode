@@ -136,6 +136,11 @@ async def handle_list_tools() -> list[Tool]:
                 },
                 "required": ["obstacle_name", "obstacle_x", "obstacle_y", "obstacle_z"]
             }
+        ),
+        Tool(
+            name="emergency_stop",
+            description="Emergency stop. Halts all physical robot movements immediately.",
+            inputSchema={"type": "object", "properties": {}}
         )
     ]
 
@@ -202,18 +207,46 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         # receives the updated scene in the response without managing the camera itself.
         if result.get("requires_redetection"):
             logger.info("Relocation complete — triggering fresh YOLO detection...")
-            # TODO: call your YOLO MCP server here to take a new photo and detect.
-            # Replace the placeholder below with your actual YOLO MCP client call.
-            # Example:
-            #   fresh_detections = await yolo_mcp_client.detect()
-            #   result["fresh_detections"] = fresh_detections
-            result["fresh_detections"] = None   # placeholder until YOLO MCP is wired in
-            result["redetection_note"] = (
-                "Fresh YOLO photo triggered. Wire yolo_mcp_client.detect() into "
-                "the TODO above to populate fresh_detections automatically."
-            )
+            try:
+                import urllib.request
+                import json
+                payload = {
+                    "jsonrpc": "2.0",
+                    "method": "tools/call",
+                    "params": {"name": "capture_and_detect", "arguments": {}},
+                    "id": 1
+                }
+                req = urllib.request.Request(
+                    "http://localhost:8001/messages",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    res_data = json.loads(r.read().decode("utf-8"))
+                    if "result" in res_data:
+                        content_text = res_data["result"]["content"][0]["text"]
+                        parsed_content = json.loads(content_text)
+                        result["fresh_detections"] = parsed_content.get("detections", [])
+                        result["redetection_note"] = "Fresh YOLO photo triggered and detections parsed successfully."
+                    else:
+                        result["redetection_note"] = f"Failed to call Vision MCP: {res_data.get('error')}"
+            except Exception as e:
+                logger.error(f"Failed to fetch fresh detections from Vision MCP: {e}")
+                result["redetection_note"] = f"Failed to trigger fresh YOLO photo: {str(e)}"
 
         return [TextContent(type="text", text=f"Completed: {result}")]
+
+    if name == "emergency_stop":
+        logger.warning("⚠️ EMERGENCY STOP TRIGGERED!")
+        try:
+            if hasattr(robot_control, 'r') and robot_control.r is not None:
+                robot_control.r.stop()
+            if hasattr(robot_control, 'gripper_open'):
+                robot_control.gripper_open()
+            return [TextContent(type="text", text="Emergency Stop Successful: Robot halted, gripper opened.")]
+        except Exception as e:
+            logger.error(f"Error during emergency stop: {e}")
+            return [TextContent(type="text", text=f"Error executing emergency stop: {str(e)}")]
 
     raise ValueError(f"Unknown tool: {name}")
 
