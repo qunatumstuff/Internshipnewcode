@@ -805,6 +805,12 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 # ==========================================
 # SSE NETWORKING
 # ==========================================
+class AsgiApp:
+    def __init__(self, app_callable):
+        self.app_callable = app_callable
+    async def __call__(self, scope, receive, send):
+        await self.app_callable(scope, receive, send)
+
 sse = SseServerTransport("/messages")
 
 async def sse_app(scope, receive, send):
@@ -814,8 +820,8 @@ async def sse_app(scope, receive, send):
         )
 
 app = Starlette(routes=[
-    Mount("/sse",      app=sse_app),
-    Mount("/messages", app=sse.handle_post_message),
+    Route("/sse",      endpoint=AsgiApp(sse_app), methods=["GET"]),
+    Route("/messages", endpoint=AsgiApp(sse.handle_post_message), methods=["POST"]),
 ])
 
 if __name__ == "__main__":
