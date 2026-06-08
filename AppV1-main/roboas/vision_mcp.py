@@ -16,9 +16,7 @@ from ultralytics import YOLO
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 from mcp.server.sse import SseServerTransport
-from starlette.applications import Starlette
-from starlette.routing import Route, Mount
-from starlette.requests import Request
+# Starlette removed - using pure ASGI routing for maximum robustness
 import uvicorn
 
 # Import camera.py — hardware layer.
@@ -805,12 +803,6 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 # ==========================================
 # SSE NETWORKING
 # ==========================================
-class AsgiApp:
-    def __init__(self, app_callable):
-        self.app_callable = app_callable
-    async def __call__(self, scope, receive, send):
-        await self.app_callable(scope, receive, send)
-
 sse = SseServerTransport("/messages")
 
 async def sse_app(scope, receive, send):
@@ -819,10 +811,38 @@ async def sse_app(scope, receive, send):
             streams[0], streams[1], server.create_initialization_options()
         )
 
-app = Starlette(routes=[
-    Route("/sse",      endpoint=AsgiApp(sse_app), methods=["GET"]),
-    Route("/messages", endpoint=AsgiApp(sse.handle_post_message), methods=["POST"]),
-])
+# Raw ASGI Routing App
+async def app(scope, receive, send):
+    if scope["type"] == "lifespan":
+        while True:
+            message = await receive()
+            if message["type"] == "lifespan.startup":
+                await send({"type": "lifespan.startup.complete"})
+            elif message["type"] == "lifespan.shutdown":
+                await send({"type": "lifespan.shutdown.complete"})
+                break
+        return
+
+    if scope["type"] == "http":
+        path = scope.get("path", "")
+        method = scope.get("method", "")
+        if path == "/sse" and method == "GET":
+            await sse_app(scope, receive, send)
+            return
+        elif path == "/messages" and method == "POST":
+            await sse.handle_post_message(scope, receive, send)
+            return
+
+    # Fallback for other paths / methods
+    await send({
+        "type": "http.response.start",
+        "status": 404,
+        "headers": [(b"content-type", b"text/plain")]
+    })
+    await send({
+        "type": "http.response.body",
+        "body": b"Not Found"
+    })
 
 if __name__ == "__main__":
     # Start camera.py's vision loop in a background thread of this process

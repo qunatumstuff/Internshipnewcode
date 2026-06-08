@@ -9,9 +9,7 @@ from typing import Any
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 from mcp.server.sse import SseServerTransport
-from starlette.applications import Starlette
-from starlette.routing import Route, Mount
-from starlette.requests import Request
+# Starlette removed - using pure ASGI routing for maximum robustness
 import uvicorn
 
 logging.basicConfig(level=logging.INFO)
@@ -251,12 +249,6 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     raise ValueError(f"Unknown tool: {name}")
 
 # 4. SSE Networking Setup
-class AsgiApp:
-    def __init__(self, app_callable):
-        self.app_callable = app_callable
-    async def __call__(self, scope, receive, send):
-        await self.app_callable(scope, receive, send)
-
 sse = SseServerTransport("/messages")
 
 async def sse_app(scope, receive, send):
@@ -264,11 +256,38 @@ async def sse_app(scope, receive, send):
     async with sse.connect_sse(scope, receive, send) as streams:
         await server.run(streams[0], streams[1], server.create_initialization_options())
 
-# 5. Bind routes
-app = Starlette(routes=[
-    Route("/sse", endpoint=AsgiApp(sse_app), methods=["GET"]),
-    Route("/messages", endpoint=AsgiApp(sse.handle_post_message), methods=["POST"])
-])
+# 5. Raw ASGI Routing App
+async def app(scope, receive, send):
+    if scope["type"] == "lifespan":
+        while True:
+            message = await receive()
+            if message["type"] == "lifespan.startup":
+                await send({"type": "lifespan.startup.complete"})
+            elif message["type"] == "lifespan.shutdown":
+                await send({"type": "lifespan.shutdown.complete"})
+                break
+        return
+
+    if scope["type"] == "http":
+        path = scope.get("path", "")
+        method = scope.get("method", "")
+        if path == "/sse" and method == "GET":
+            await sse_app(scope, receive, send)
+            return
+        elif path == "/messages" and method == "POST":
+            await sse.handle_post_message(scope, receive, send)
+            return
+
+    # Fallback for other paths / methods
+    await send({
+        "type": "http.response.start",
+        "status": 404,
+        "headers": [(b"content-type", b"text/plain")]
+    })
+    await send({
+        "type": "http.response.body",
+        "body": b"Not Found"
+    })
 
 if __name__ == "__main__":
     logger.info("🦾 Robot Arm MCP Server listening on Ethernet port 8002...")
