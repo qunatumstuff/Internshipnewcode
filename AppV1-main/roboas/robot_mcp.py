@@ -264,11 +264,11 @@ async def handle_messages(request: Request):
 
 # 5. Bind routes
 app = Starlette(routes=[
-    Route("/settings", endpoint=handle_sse),
+    Route("/sse", endpoint=handle_sse),
     Route("/messages", endpoint=handle_messages, methods=["POST"])
 ])
 
 if __name__ == "__main__":
-    logger.info("🦾 Robot Arm MCP Server listening on Ethernet port 8080...")
+    logger.info("🦾 Robot Arm MCP Server listening on Ethernet port 8002...")
     logger.info("Tool: pick_and_place_object(object_name, x, y, z, angle_deg[optional])")
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8002)

@@ -131,11 +131,11 @@ let isRobotConnected = false;
 async function startRobotMcpClient() {
   if (isRobotConnected) return;
   try {
-    const transport = new SSEClientTransport(new URL("http://192.168.2.13:8080/settings"));
+    const transport = new SSEClientTransport(new URL("http://localhost:8002/sse"));
     robotMcpClient = new Client({ name: "roboas-robot-mcp", version: "1.0.0" }, { capabilities: {} });
     await robotMcpClient.connect(transport);
     isRobotConnected = true;
-    console.log("✅ \x1b[32mRobot MCP Server connected via SSE at 192.168.2.13:8080/settings\x1b[0m");
+    console.log("✅ \x1b[32mRobot MCP Server connected via SSE at localhost:8002\x1b[0m");
   } catch (err) {
     console.error("❌ \x1b[31mFailed to bind Robot MCP Client:\x1b[0m", err.message);
     isRobotConnected = false;

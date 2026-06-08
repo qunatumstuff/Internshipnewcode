@@ -145,7 +145,7 @@ def check_mcp_servers_health():
                 f"=== Roboas Backend MCP Health Check ===\n"
                 f"Emoji Server: {emoji}\n"
                 f"Vision MCP:   {vision} (Port 8001)\n"
-                f"Robot MCP:    {robot} (IP: 192.168.2.13, Port 8080)\n"
+                f"Robot MCP:    {robot} (Port 8002)\n"
                 f"Active Persona: {data.get('currentPersona', 'unknown')}\n"
                 f"Total Logged Tool Calls: {data.get('totalCalls', 0)}"
             )

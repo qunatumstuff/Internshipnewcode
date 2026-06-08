@@ -33,7 +33,7 @@ logger = logging.getLogger("vision-mcp")
 # ==========================================
 LAPTOP_A_IP            = os.environ.get("LAPTOP_A_IP",   "127.0.0.1")
 QWEN_MODEL             = os.environ.get("QWEN_MODEL",    "qwen3-vl:2b")
-ROBOT_MCP_URL          = os.environ.get("ROBOT_MCP_URL", "http://192.168.2.13:8080/messages")
+ROBOT_MCP_URL          = os.environ.get("ROBOT_MCP_URL", "http://localhost:8002/messages")
 MAX_PLANNING_ITERATIONS = 5
 
 # ==========================================
