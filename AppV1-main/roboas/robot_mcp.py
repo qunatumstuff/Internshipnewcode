@@ -217,7 +217,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     "id": 1
                 }
                 req = urllib.request.Request(
-                    "http://192.168.2.99:8001/messages",
+                    "http://localhost:8001/messages",
                     data=json.dumps(payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"}
                 )
