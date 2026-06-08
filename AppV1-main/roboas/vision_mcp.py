@@ -17,7 +17,7 @@ from mcp.server import Server
 from mcp.types import Tool, TextContent
 from mcp.server.sse import SseServerTransport
 from starlette.applications import Starlette
-from starlette.routing import Route
+from starlette.routing import Route, Mount
 from starlette.requests import Request
 import uvicorn
 
@@ -807,20 +807,15 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 # ==========================================
 sse = SseServerTransport("/messages")
 
-async def handle_sse(request: Request):
-    async with sse.connect_sse(
-        request.scope, request.receive, request._send
-    ) as streams:
+async def sse_app(scope, receive, send):
+    async with sse.connect_sse(scope, receive, send) as streams:
         await server.run(
             streams[0], streams[1], server.create_initialization_options()
         )
 
-async def handle_messages(request: Request):
-    await sse.handle_post_message(request.scope, request.receive, request._send)
-
 app = Starlette(routes=[
-    Route("/sse",      endpoint=handle_sse),
-    Route("/messages", endpoint=handle_messages, methods=["POST"]),
+    Mount("/sse",      app=sse_app),
+    Mount("/messages", app=sse.handle_post_message),
 ])
 
 if __name__ == "__main__":
