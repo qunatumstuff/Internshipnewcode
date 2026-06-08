@@ -822,10 +822,10 @@ CRITICAL OUTPUT CLEANLINESS:
 - Do NOT output raw coordinates (e.g. x, y, z values), technical tool arguments, or structured JSON/dictionary info. Keep your responses purely conversational, natural, and concise. Speak about actions in plain English, not data info.
 
 ROBOTIC ARM — PICK AND PLACE RULES:
-- When the user asks you to pick up an object, use the 'locate_object' tool with the correct target_name.
-- If the user mentions that an object is underneath, below, hidden by, or behind another object (e.g. "pick up the cube below the sponge", "get the medicine behind the pipe"), call locate_object with the hidden object as target_name AND pass the full user instruction as user_context. The vision system handles all stacking, blocking, and relocation automatically. You do NOT need to plan the steps yourself.
+- When the user asks you to pick up an object, you MUST simply call the 'locate_object' tool.
+- Once you call 'locate_object', the system will automatically find the coordinates and trigger the robot arm for you.
+- You do NOT need to call 'pick_and_place_object' yourself.
 - Approved objects the robot can pick: black marker, blue marker, cube, green marker, medicine, nut, pipe, sponge.
-- Do NOT call pick_and_place_object or relocate_object directly. The vision system calls those automatically after Qwen analyses the scene.
 
 IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualContext
       },
@@ -856,18 +856,14 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           type: "function",
           function: {
             name: "locate_object",
-            description: "Full autonomous pick pipeline. Sends the live camera image and all YOLO detections to Qwen, which decides whether to relocate blockers first or pick directly. Handles stacked objects (e.g. cube below sponge) automatically. Pass user_context if the user described the scene or mentioned stacking.",
+            description: "Uses the robotic vision camera to identify an object and get its coordinates.",
             parameters: {
               type: "object",
               properties: { 
                 target_name: { 
                   type: "string", 
-                  description: "Name of the object to pick up.", 
+                  description: "Name of the object to locate.", 
                   enum: ["black marker", "blue marker", "cube", "green marker", "medicine", "nut", "pipe", "sponge"] 
-                },
-                user_context: {
-                  type: "string",
-                  description: "Optional: what the user said about the scene, e.g. 'the cube is below the sponge'. Pass this when the user described object positions or mentioned stacking."
                 }
               },
               required: ["target_name"]
@@ -1047,6 +1043,29 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                 if (parsed.status && parsed.status.startsWith("SUCCESS")) {
                   sendProgress(`Localized "${args.target_name}". Coordinates acquired.`);
                   await new Promise(resolve => setTimeout(resolve, 1500));
+                  
+                  // AUTOMATICALLY TRANSFER TO ROBOT ARM
+                  if (robotMcpClient && parsed.coordinates) {
+                    sendProgress(`Transferring coordinates to robot arm to pick up "${args.target_name}"...`);
+                    try {
+                      const robotRes = await robotMcpClient.callTool({ 
+                        name: "pick_and_place_object", 
+                        arguments: {
+                          object_name: args.target_name,
+                          x: parsed.coordinates.x,
+                          y: parsed.coordinates.y,
+                          z: parsed.coordinates.z
+                        }
+                      });
+                      toolResultText += `\n\nRobot Execution Status: ` + robotRes.content[0].text;
+                      sendProgress(`Pick-and-place completed for "${args.target_name}".`);
+                      await new Promise(resolve => setTimeout(resolve, 2000));
+                    } catch (robotErr) {
+                      toolResultText += `\n\nRobot Execution Failed: ${robotErr.message}`;
+                      sendProgress(`Robot Error: ${robotErr.message}`);
+                      await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+                  }
 
                 } else if (parsed.status && parsed.status.startsWith("BLOCKED")) {
                   sendProgress(`Blocked: Qwen determined pickup is not safe.`);
