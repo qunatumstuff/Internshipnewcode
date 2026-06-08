@@ -1,6 +1,6 @@
 [
   {
-    "timestamp": "2026-06-08T05:04:53.337Z",
+    "timestamp": "2026-06-08T09:24:31.387Z",
     "userQuestion": "System Command",
     "toolName": "switch_avatar",
     "args": {
@@ -9,7 +9,7 @@
     "result": "switched to john"
   },
   {
-    "timestamp": "2026-06-08T05:04:53.344Z",
+    "timestamp": "2026-06-08T09:24:31.394Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -18,7 +18,7 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-08T05:04:53.353Z",
+    "timestamp": "2026-06-08T09:24:31.401Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -27,7 +27,7 @@
     "result": "updated to 🤗"
   },
   {
-    "timestamp": "2026-06-08T05:05:33.361Z",
+    "timestamp": "2026-06-08T09:24:52.071Z",
     "userQuestion": "Can you pick up the cube?",
     "toolName": "locate_object",
     "args": {
@@ -36,16 +36,16 @@
     "result": "Calling Remote Vision MCP..."
   },
   {
-    "timestamp": "2026-06-08T05:06:01.039Z",
+    "timestamp": "2026-06-08T09:26:37.721Z",
     "userQuestion": "Can you pick up the cube?",
     "toolName": "locate_object",
     "args": {
       "target_name": "cube"
     },
-    "result": "{\"status\": \"SUCCESS: Localized cube\", \"coordinates\": {\"x\": -0.0560966226712678, \"y\": -0.02200242099330642, \"z\": 0.9361139766232779}}\n\nRobot Execution Status: No free placement slot found inside the box. The box may be full, object footprint too large, or margins too conservative."
+    "result": "{\"status\": \"SUCCESS\", \"target\": \"cube\", \"coordinates\": {\"x\": 0.3996, \"y\": -0.1881, \"z\": 0.0238, \"angle_deg\": -37.77, \"grasp_label\": null}, \"detections\": [{\"object_name\": \"cube\", \"x\": 0.3996, \"y\": -0.1881, \"z\": 0.0238, \"angle_deg\": -37.77, \"confidence\": 0.901}, {\"object_name\": \"medicine\", \"x\": 0.4999, \"y\": -0.2695, \"z\": 0.0125, \"angle_deg\": 40.29, \"confidence\": 0.89}, {\"object_name\": \"pipe\", \"x\": 0.261, \"y\": -0.1648, \"z\": -0.0077, \"angle_deg\": 64.13, \"confidence\": 0.932, \"grasp_label\": \"grasp_A\"}], \"history\": [\"Vision located 'cube' \\u2014 Could not parse Qwen output, defaulting to pick. Raw: \"], \"iterations\": 1, \"qwen_reasoning\": \"Could not parse Qwen output, defaulting to pick. Raw: \"}\n\nRobot Execution Failed: MCP error -32001: Request timed out"
   },
   {
-    "timestamp": "2026-06-08T05:06:02.775Z",
+    "timestamp": "2026-06-08T09:26:40.107Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {

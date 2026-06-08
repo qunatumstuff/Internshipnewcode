@@ -1039,6 +1039,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
 
               try {
                 const parsed = JSON.parse(toolResultText);
+                console.log("RAW VISION MCP RESULT:", res);
+                console.log("PARSED VISION RESULT:", parsed);
 
                 if (parsed.status && parsed.status.startsWith("SUCCESS")) {
                   sendProgress(`Localized "${args.target_name}". Coordinates acquired.`);
@@ -1048,14 +1050,22 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                   if (robotMcpClient && parsed.coordinates) {
                     sendProgress(`Transferring coordinates to robot arm to pick up "${args.target_name}"...`);
                     try {
+                      const robotArgs = {
+                        object_name: args.target_name,
+                        x: parsed.coordinates.x,
+                        y: parsed.coordinates.y,
+                        z: parsed.coordinates.z,
+                        angle_deg: parsed.coordinates.angle_deg,
+                        detections: parsed.detections
+                      };
+
+                      if (parsed.coordinates.grasp_label) {
+                        robotArgs.grasp_label = parsed.coordinates.grasp_label;
+                      }
+
                       const robotRes = await robotMcpClient.callTool({ 
                         name: "pick_and_place_object", 
-                        arguments: {
-                          object_name: args.target_name,
-                          x: parsed.coordinates.x,
-                          y: parsed.coordinates.y,
-                          z: parsed.coordinates.z
-                        }
+                        arguments: robotArgs
                       });
                       toolResultText += `\n\nRobot Execution Status: ` + robotRes.content[0].text;
                       sendProgress(`Pick-and-place completed for "${args.target_name}".`);

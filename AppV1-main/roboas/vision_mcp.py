@@ -681,15 +681,26 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 "coordinates": None
             }))]
             
-        # Step 2: YOLO localization
-        # Wait a bit for the background YOLO thread to detect the object and update coords
-        await asyncio.sleep(0.8)
+        # Step 2: Detailed localization with angle and grasp points
+        detections = get_current_detections()
+        target_det = next((d for d in detections if d["object_name"] == target_name), None)
         
-        coords = camera.latest_3d_coords
-        
+        if not target_det:
+            return [TextContent(type="text", text=json.dumps({
+                "status": f"ERROR: Could not locate {target_name} in camera frame.",
+                "coordinates": None
+            }))]
+            
         return [TextContent(type="text", text=json.dumps({
             "status": f"SUCCESS: Localized {target_name}",
-            "coordinates": coords
+            "coordinates": {
+                "x": target_det["x"],
+                "y": target_det["y"],
+                "z": target_det["z"],
+                "angle_deg": target_det.get("angle_deg"),
+                "grasp_label": target_det.get("grasp_label")
+            },
+            "detections": detections
         }))]
 
     raise ValueError(f"Unknown tool: {name}")
