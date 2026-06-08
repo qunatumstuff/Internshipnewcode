@@ -1899,7 +1899,7 @@ def find_best_drop_slot(selected_object):
                 y = y_max - width / 2.0  # start higher Y first
                 while y >= y_min + width / 2.0 - 1e-9:
                     if _candidate_inside_placement_box(x, y, length, width, margin_x=margin_x, margin_y=margin_y):
-                        if not _candidate_overlaps_placed(x, y, length, width):
+                        if _candidate_overlaps_placed(x, y, length, width):
                                 y -= grid_step
                                 continue
                         
