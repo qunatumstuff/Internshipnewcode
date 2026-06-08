@@ -8,8 +8,7 @@ from mcp.server.fastmcp import FastMCP
 import threading
 import base64
 import time
-import inference
-import vision
+# Unused leftover imports (inference, vision) removed
 
 # -----------------------------------------------------------------------------
 # 1. Global State Variables (Shared between Vision Thread and MCP Server)
