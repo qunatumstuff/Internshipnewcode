@@ -811,6 +811,42 @@ async def sse_app(scope, receive, send):
             streams[0], streams[1], server.create_initialization_options()
         )
 
+async def handle_direct_rpc(scope, receive, send):
+    """Handle direct JSON-RPC tool calls without MCP SSE session (peer-to-peer)."""
+    body = b""
+    while True:
+        msg = await receive()
+        body += msg.get("body", b"")
+        if not msg.get("more_body", False):
+            break
+    try:
+        request = json.loads(body.decode("utf-8"))
+        tool_name = request.get("params", {}).get("name", "")
+        arguments = request.get("params", {}).get("arguments", {})
+        result = await handle_call_tool(tool_name, arguments)
+        response = json.dumps({
+            "jsonrpc": "2.0",
+            "result": {"content": [{"type": r.type, "text": r.text} for r in result]},
+            "id": request.get("id", 1)
+        }).encode("utf-8")
+        status = 200
+    except Exception as e:
+        response = json.dumps({
+            "jsonrpc": "2.0",
+            "error": {"code": -32603, "message": str(e)},
+            "id": 1
+        }).encode("utf-8")
+        status = 500
+    await send({
+        "type": "http.response.start",
+        "status": status,
+        "headers": [(b"content-type", b"application/json")]
+    })
+    await send({
+        "type": "http.response.body",
+        "body": response
+    })
+
 # Raw ASGI Routing App
 async def app(scope, receive, send):
     if scope["type"] == "lifespan":
@@ -830,7 +866,11 @@ async def app(scope, receive, send):
             await sse_app(scope, receive, send)
             return
         elif path == "/messages" and method == "POST":
-            await sse.handle_post_message(scope, receive, send)
+            query = scope.get("query_string", b"").decode()
+            if "session_id" in query:
+                await sse.handle_post_message(scope, receive, send)
+            else:
+                await handle_direct_rpc(scope, receive, send)
             return
 
     # Fallback for other paths / methods
