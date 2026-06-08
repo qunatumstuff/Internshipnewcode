@@ -8,7 +8,8 @@ from mcp.server.fastmcp import FastMCP
 import threading
 import base64
 import time
-# Unused leftover imports (inference, vision) removed
+import inference
+import vision
 
 # -----------------------------------------------------------------------------
 # 1. Global State Variables (Shared between Vision Thread and MCP Server)
@@ -16,22 +17,6 @@ import time
 current_rgb_frame = None
 current_target_class = None  # e.g., "cup", "bottle", "apple"
 latest_3d_coords = {"x": 0.0, "y": 0.0, "z": 0.0}
-current_depth_frame = None
-camera_intrinsics = None
-inference_lock = threading.Lock()
-
-# Tweak this value to add a global Z offset (in meters) to all detected objects.
-# E.g., setting it to 0.02 will raise the target pick point by 2 cm.
-Z_OFFSET = 0.0
-
-def smooth_coord(old_val, new_val, alpha=0.2, snap_thresh=0.05):
-    """
-    Applies Exponential Moving Average to stabilize flickering coordinates.
-    If the new value jumps significantly (> snap_thresh in meters), it snaps instantly.
-    """
-    if old_val == 0.0 or abs(old_val - new_val) > snap_thresh:
-        return new_val
-    return alpha * new_val + (1 - alpha) * old_val
 
 # Initialize F                                                                                                                                                          1`astMCP Server
 mcp = FastMCP("TIEFA_Module_B_Vision")
@@ -97,8 +82,9 @@ def rotationMatrixToEulerAngles(R):
 
 
 
-def _vision_loop_inner():
-    global current_rgb_frame, current_target_class, latest_3d_coords, last_click, spatial_coords, current_depth_frame, camera_intrinsics
+def vision_loop():
+    global current_rgb_frame, current_target_class, latest_3d_coords, last_click, spatial_coords
+
     # Configure Intel RealSense pipeline
     pipeline = rs.pipeline()
     config = rs.config()
@@ -120,7 +106,6 @@ def _vision_loop_inner():
     depth_table.disparityShift=20
     depth_scale = depth_sensor.get_depth_scale()
     intrinsics = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
-    camera_intrinsics = intrinsics
 
     print("[Vision Thread] D435i Camera Started. YOLO Inference Running...")
 
@@ -140,14 +125,12 @@ def _vision_loop_inner():
             # Convert images to numpy arrays
             color_image = np.asanyarray(color_frame.get_data())
             current_rgb_frame = color_image.copy() # Update global state for MCP snapshot
-            current_depth_frame = depth_frame
 
             if current_target_class is None:
                 print("No target")
 
             elif current_target_class=="sponge":
-                with inference_lock:
-                    sponge_detection = segment(color_image, verbose=False,agnostic_nms=True,iou=0.35,conf=0.35)
+                sponge_detection = segment(color_image, verbose=False,agnostic_nms=True,iou=0.35,conf=0.35)
 
                 print("Object is ",current_target_class)
                 for sponge in sponge_detection:
@@ -173,8 +156,7 @@ def _vision_loop_inner():
                                         x, y, w, h = cv2.boundingRect(largest_contour)
                                         cv2.putText(color_image,f"{cls_name} {conf:.2f}",(x, y - 10),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0),2)
             else:  
-                    with inference_lock:
-                        results = model(color_image, verbose=False,agnostic_nms=True,iou=0.35,conf=0.35)
+                    results = model(color_image, verbose=False,agnostic_nms=True,iou=0.35,conf=0.35)
                     current_boxes=[]
                     print("object is not pipe", current_target_class)                
                     for result in results:
@@ -220,10 +202,10 @@ def _vision_loop_inner():
                     # Deproject pixel to 3D spatial coordinates [X, Y, Z] relative to camera
                                spatial_coords = rs.rs2_deproject_pixel_to_point(intrinsics, [center_x, center_y], distance)
 
-                        # Update global 3D coordinates with smoothing to prevent flickering
-                               latest_3d_coords["x"] = smooth_coord(latest_3d_coords["x"], spatial_coords[0])
-                               latest_3d_coords["y"] = smooth_coord(latest_3d_coords["y"], spatial_coords[1])
-                               latest_3d_coords["z"] = smooth_coord(latest_3d_coords["z"], spatial_coords[2] + Z_OFFSET)
+                        # Update global 3D coordinates
+                               latest_3d_coords["x"] = spatial_coords[0]
+                               latest_3d_coords["y"] = spatial_coords[1]
+                               latest_3d_coords["z"] = spatial_coords[2]
                     
                                roll,pitch,yaw=rotationMatrixToEulerAngles(rotation_from_matrix @ rotation_from_camera)
                     
@@ -238,19 +220,8 @@ def _vision_loop_inner():
                 break
 
     finally:
-        try:
-            pipeline.stop()
-            cv2.destroyAllWindows()
-        except:
-            pass
-
-def vision_loop():
-    try:
-        _vision_loop_inner()
-    except Exception as e:
-        import traceback
-        print(f"[FATAL] Camera Vision Loop crashed: {e}")
-        traceback.print_exc()
+        pipeline.stop()
+        cv2.destroyAllWindows()
 
 # -----------------------------------------------------------------------------
 # 4. Main Execution

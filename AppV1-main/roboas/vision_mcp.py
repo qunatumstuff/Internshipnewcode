@@ -188,9 +188,10 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
     # segmentation pass can use the trained orientation angle.
     obb_angles = {}   # class_name → best OBB angle_rad (highest confidence)
 
-    obb_results = camera.model(
-        color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35
-    )
+    with camera.inference_lock:
+        obb_results = camera.model(
+            color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35
+        )
     for result in obb_results:
         if result.obb is None:
             continue
@@ -229,9 +230,10 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             })
 
     # ── Pass 2: Segmentation — pipe and sponge centre/endpoint positions ────────
-    seg_results = camera.segment(
-        color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35
-    )
+    with camera.inference_lock:
+        seg_results = camera.segment(
+            color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35
+        )
     for seg_result in seg_results:
         if seg_result.masks is None:
             continue
@@ -240,7 +242,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
         confs     = seg_result.boxes.conf.cpu().numpy()
 
         for mask, class_id, conf in zip(masks, class_ids, confs):
-            cls_name = camera.segment.names[class_id].lower()
+            cls_name = camera.model.names[class_id].lower()
             if cls_name not in ("pipe", "sponge"):
                 continue
 
@@ -556,34 +558,19 @@ async def call_robot_tool(tool_name: str, arguments: dict) -> dict:
 async def handle_list_tools() -> list[Tool]:
     return [
         Tool(
-            name="locate_and_pick_object",
-            description=(
-                "Full autonomous pick pipeline with Qwen agentic planning. "
-                "Reads the live camera frame from camera.py, runs YOLO OBB detection "
-                "and pipe segmentation internally, sends image and all detections to Qwen. "
-                "Qwen decides one action at a time: relocate a blocker, pick the target, "
-                "or abort. After each robot action the scene is re-read and Qwen re-plans. "
-                "Handles stacked objects by comparing detected Z heights against catalogue "
-                "heights. Pipe grasp endpoints computed from segmentation mask."
-            ),
+            name="locate_object",
+            description="Uses the robotic vision camera to identify an object and get its coordinates. Implements Qwen safety gate.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "target_name": {
-                        "type":        "string",
-                        "description": "The object to pick up.",
-                        "enum":        list(OBJECT_CATALOGUE.keys()),
-                    },
-                    "user_context": {
-                        "type":        "string",
-                        "description": (
-                            "Optional: what the user said about the scene, "
-                            "e.g. 'the cube is below the sponge'. Forwarded to Qwen."
-                        ),
-                    },
+                        "type": "string",
+                        "description": "Name of the object to locate.",
+                        "enum": list(OBJECT_CATALOGUE.keys())
+                    }
                 },
-                "required": ["target_name"],
-            },
+                "required": ["target_name"]
+            }
         ),
 
         Tool(
@@ -670,131 +657,39 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             return [TextContent(type="text", text=result)]
         return [TextContent(type="text", text=frame_b64)]
 
-    # ── locate_and_pick_object — Qwen agentic loop ────────────────────────────
-    if name == "locate_and_pick_object":
-        target       = args.get("target_name", "").strip().lower()
-        user_context = args.get("user_context", "").strip()
+    # ── locate_object ─────────────────────────────────────────────────────────
+    if name == "locate_object":
+        target_name = args.get("target_name")
+        if not target_name:
+            raise ValueError("target_name is required")
+            
+        # Update the camera target class so the pop-up window draws the bounding box!
+        camera.current_target_class = target_name
 
-        if target not in OBJECT_CATALOGUE:
+        # Step 1: VLM Feasibility / Safety check
+        image_b64 = get_frame_as_base64()
+        if image_b64 is None or image_b64.startswith("Error"):
+            return [TextContent(type="text", text=json.dumps({"status": f"ERROR: Camera frame not ready"}))]
+            
+        gate_prompt = f"Verify if it is safe and possible to pick up the '{target_name}' from the current workspace scene. Check for obstacles, safety hazards, or other blocking items. Respond starting with either 'SAFE' or 'BLOCKED: <reason>'."
+        gate_res = await ask_qwen_vision(gate_prompt, image_b64)
+        
+        if "BLOCKED" in gate_res.upper():
+            # Safety gate says blocked!
             return [TextContent(type="text", text=json.dumps({
-                "status":        "REJECTED",
-                "message":       f"'{target}' is not in the approved object catalogue.",
-                "allowed_items": list(OBJECT_CATALOGUE.keys()),
+                "status": f"BLOCKED: {gate_res}",
+                "coordinates": None
             }))]
-
-        action_history = []
-        iteration      = 0
-
-        while iteration < MAX_PLANNING_ITERATIONS:
-            iteration += 1
-            logger.info(f"[Qwen loop iteration {iteration}]")
-
-            # Fresh detection pass every iteration
-            detections = get_current_detections()
-            frame_b64  = get_frame_as_base64()
-
-            if not detections:
-                return [TextContent(type="text", text=json.dumps({
-                    "status":  "FAILED",
-                    "message": "No objects detected in current scene.",
-                    "history": action_history,
-                }))]
-
-            target_detections = [d for d in detections if d["object_name"] == target]
-            if not target_detections:
-                return [TextContent(type="text", text=json.dumps({
-                    "status":           "FAILED",
-                    "message":          f"'{target}' not found in current scene.",
-                    "detected_objects": [d["object_name"] for d in detections],
-                    "history":          action_history,
-                }))]
-
-            # Ask Qwen
-            if frame_b64 is None:
-                plan = {"next_action": "pick", "obstacle_name": None,
-                        "reasoning": "No frame available."}
-            else:
-                plan = await qwen_plan_next_action(
-                    target, frame_b64, detections, action_history, user_context
-                )
-
-            logger.info(f"[Qwen iteration {iteration}] Plan: {plan}")
-            next_action   = plan.get("next_action", "pick")
-            obstacle_name = (plan.get("obstacle_name") or "").strip().lower()
-            reasoning     = plan.get("reasoning", "")
-
-            if next_action == "abort":
-                return [TextContent(type="text", text=json.dumps({
-                    "status":    "ABORTED",
-                    "target":    target,
-                    "reasoning": reasoning,
-                    "history":   action_history,
-                }))]
-
-            elif next_action == "relocate":
-                if not obstacle_name:
-                    logger.warning("Qwen said relocate but gave no obstacle name. Attempting pick.")
-                    next_action = "pick"
-                else:
-                    obstacle_dets = [d for d in detections if d["object_name"] == obstacle_name]
-                    if not obstacle_dets:
-                        logger.warning(f"Qwen named '{obstacle_name}' as blocker but not detected. Attempting pick.")
-                        next_action = "pick"
-                    else:
-                        obs = obstacle_dets[0]
-                        logger.info(f"[iteration {iteration}] Relocating '{obstacle_name}'")
-
-                        reloc_result = await call_robot_tool("relocate_object", {
-                            "obstacle_name":      obs["object_name"],
-                            "obstacle_x":         obs["x"],
-                            "obstacle_y":         obs["y"],
-                            "obstacle_z":         obs["z"],
-                            "obstacle_angle_deg": obs.get("angle_deg"),
-                            "detections":         detections,
-                        })
-
-                        if reloc_result.get("error"):
-                            return [TextContent(type="text", text=json.dumps({
-                                "status":  "ERROR",
-                                "stage":   f"relocate iteration {iteration}",
-                                "message": reloc_result["error"],
-                                "history": action_history,
-                            }))]
-
-                        action_history.append(f"Relocated '{obstacle_name}' — {reasoning}")
-                        await asyncio.sleep(1.0)
-                        continue
-
-            if next_action == "pick":
-                target_det = target_detections[0]
-                logger.info(f"[iteration {iteration}] Picking '{target}'")
-
-                pick_args = {
-                    "object_name": target_det["object_name"],
-                    "x":           target_det["x"],
-                    "y":           target_det["y"],
-                    "z":           target_det["z"],
-                    "angle_deg":   target_det.get("angle_deg"),
-                    "detections":  detections,
-                }
-                if target_det["object_name"] == "pipe" and target_det.get("grasp_label"):
-                    pick_args["grasp_label"] = target_det["grasp_label"]
-
-                pick_result = await call_robot_tool("pick_and_place_object", pick_args)
-                action_history.append(f"Picked '{target}' — {reasoning}")
-
-                return [TextContent(type="text", text=json.dumps({
-                    "status":      "SUCCESS" if not pick_result.get("error") else "ERROR",
-                    "target":      target,
-                    "pick_result": pick_result,
-                    "history":     action_history,
-                    "iterations":  iteration,
-                }))]
-
+            
+        # Step 2: YOLO localization
+        # Wait a bit for the background YOLO thread to detect the object and update coords
+        await asyncio.sleep(0.8)
+        
+        coords = camera.latest_3d_coords
+        
         return [TextContent(type="text", text=json.dumps({
-            "status":  "FAILED",
-            "message": f"Reached maximum planning iterations ({MAX_PLANNING_ITERATIONS}).",
-            "history": action_history,
+            "status": f"SUCCESS: Localized {target_name}",
+            "coordinates": coords
         }))]
 
     raise ValueError(f"Unknown tool: {name}")

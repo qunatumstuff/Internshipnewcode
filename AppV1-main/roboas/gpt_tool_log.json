@@ -1,6 +1,6 @@
 [
   {
-    "timestamp": "2026-06-08T02:40:34.976Z",
+    "timestamp": "2026-06-08T03:15:57.183Z",
     "userQuestion": "System Command",
     "toolName": "switch_avatar",
     "args": {
@@ -9,7 +9,7 @@
     "result": "switched to john"
   },
   {
-    "timestamp": "2026-06-08T02:40:34.985Z",
+    "timestamp": "2026-06-08T03:15:57.191Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -18,7 +18,7 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-08T02:40:34.994Z",
+    "timestamp": "2026-06-08T03:15:57.199Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -27,8 +27,35 @@
     "result": "updated to 🤗"
   },
   {
-    "timestamp": "2026-06-08T02:41:04.182Z",
-    "userQuestion": "Can you pick up the cube?",
+    "timestamp": "2026-06-08T03:16:34.722Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-06-08T03:16:34.727Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-08T03:16:34.733Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "idle"
+    },
+    "result": "updated to 🤗"
+  },
+  {
+    "timestamp": "2026-06-08T03:17:31.107Z",
+    "userQuestion": "Can you pick up the cube? Is it showing it? Oh.",
     "toolName": "locate_object",
     "args": {
       "target_name": "cube"
@@ -36,16 +63,16 @@
     "result": "Calling Remote Vision MCP..."
   },
   {
-    "timestamp": "2026-06-08T02:41:51.040Z",
-    "userQuestion": "Can you pick up the cube?",
+    "timestamp": "2026-06-08T03:18:17.399Z",
+    "userQuestion": "Can you pick up the cube? Is it showing it? Oh.",
     "toolName": "locate_object",
     "args": {
       "target_name": "cube"
     },
-    "result": "{\"status\": \"ERROR\", \"target\": \"cube\", \"pick_result\": {\"error\": \"HTTP Error 400: Bad Request\"}, \"history\": [\"Picked 'cube' \\u2014 Could not parse Qwen response: \"], \"iterations\": 1}"
+    "result": "{\"status\": \"ERROR\", \"target\": \"cube\", \"pick_result\": {\"error\": \"HTTP Error 500: Internal Server Error\"}, \"history\": [\"Picked 'cube' \\u2014 Could not parse Qwen response: \"], \"iterations\": 1}"
   },
   {
-    "timestamp": "2026-06-08T02:41:52.849Z",
+    "timestamp": "2026-06-08T03:18:19.436Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {

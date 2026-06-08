@@ -1032,47 +1032,21 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               sendProgress(`Capturing frame on Laptop B & sending to Qwen for scene analysis...`);
               console.log("=================================");
               console.log("RAW LOCATE TOOL CALL");
-              console.log("Tool:", "locate_and_pick_object");
+              console.log("Tool:", "locate_object");
               console.log("Args:", JSON.stringify(args, null, 2));
               console.log("=================================");
 
-              // Build args for locate_and_pick_object.
-              // Pass user_context if GPT extracted it — Qwen uses it as a planning hint
-              // for stacking scenarios ("cube is below the sponge" etc).
               const visionArgs = { target_name: args.target_name };
-              if (args.user_context) {
-                visionArgs.user_context = args.user_context;
-                console.log(`[locate_object] Forwarding user context to Qwen: "${args.user_context}"`);
-              }
 
-              // Vision MCP now calls locate_and_pick_object — Qwen decides whether
-              // to relocate blockers first or pick directly. The full pick cycle
-              // (including robot MCP calls) happens inside the vision MCP.
-              const res = await visionMcpClient.callTool({ name: "locate_and_pick_object", arguments: visionArgs });
+              const res = await visionMcpClient.callTool({ name: "locate_object", arguments: visionArgs });
               toolResultText = res.content[0].text;
 
               try {
                 const parsed = JSON.parse(toolResultText);
 
-                if (parsed.status === "SUCCESS") {
-                  const historyNote = parsed.history && parsed.history.length > 1
-                    ? ` Took ${parsed.iterations} planning step(s).` : "";
-                  const graspNote = parsed.pick_result && parsed.pick_result.chosen_grasp
-                    ? ` Pipe grasp: ${parsed.pick_result.chosen_grasp}.` : "";
-                  sendProgress(`Success! "${args.target_name}" picked and placed.${historyNote}${graspNote}`);
-                  await new Promise(resolve => setTimeout(resolve, 2500));
-
-                } else if (parsed.status === "ABORTED") {
-                  sendProgress(`Aborted: ${parsed.reasoning || 'Qwen could not resolve the scene.'}`);
-                  await new Promise(resolve => setTimeout(resolve, 3000));
-
-                } else if (parsed.status === "FAILED") {
-                  sendProgress(`Failed: ${parsed.message || parsed.status}`);
-                  await new Promise(resolve => setTimeout(resolve, 2500));
-
-                } else if (parsed.status === "ERROR") {
-                  sendProgress(`Error during ${parsed.stage || 'execution'}: ${parsed.message || ''}`);
-                  await new Promise(resolve => setTimeout(resolve, 2500));
+                if (parsed.status && parsed.status.startsWith("SUCCESS")) {
+                  sendProgress(`Localized "${args.target_name}". Coordinates acquired.`);
+                  await new Promise(resolve => setTimeout(resolve, 1500));
 
                 } else if (parsed.status && parsed.status.startsWith("BLOCKED")) {
                   sendProgress(`Blocked: Qwen determined pickup is not safe.`);
