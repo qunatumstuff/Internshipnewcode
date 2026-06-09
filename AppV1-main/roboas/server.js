@@ -1044,6 +1044,12 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                 console.log("RAW VISION MCP RESULT:", res);
                 console.log("PARSED VISION RESULT:", parsed);
 
+                if (parsed.qwen_raw_output) {
+                  console.log("\n🧠 \x1b[35m[QWEN RAW OUTPUT]:\x1b[0m");
+                  console.log(parsed.qwen_raw_output);
+                  console.log("=".repeat(50) + "\n");
+                }
+
                 if (parsed.status && parsed.status.startsWith("SUCCESS")) {
                   sendProgress(`Localized "${args.target_name}". Coordinates acquired.`);
                   await new Promise(resolve => setTimeout(resolve, 1500));
@@ -1142,6 +1148,11 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               const res = await visionMcpClient.callTool({ name: "get_camera_snapshot", arguments: args });
               toolResultText = res.content[0].text;
               logToolCall(question, "get_camera_snapshot", args, toolResultText);
+              if (args && args.question) {
+                console.log("\n🧠 \x1b[35m[QWEN RAW OUTPUT]:\x1b[0m");
+                console.log(toolResultText);
+                console.log("=".repeat(50) + "\n");
+              }
               sendProgress("Snapshot retrieved successfully.");
               await new Promise(resolve => setTimeout(resolve, 1500));
             } catch (e) {
@@ -1167,6 +1178,9 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               const res = await visionMcpClient.callTool({ name: "analyse_surroundings", arguments: args });
               toolResultText = res.content[0].text;
               logToolCall(question, "analyse_surroundings", args, toolResultText);
+              console.log("\n🧠 \x1b[35m[QWEN RAW OUTPUT]:\x1b[0m");
+              console.log(toolResultText);
+              console.log("=".repeat(50) + "\n");
               sendProgress("Analysis complete.");
               await new Promise(resolve => setTimeout(resolve, 1500));
             } catch (e) {

@@ -690,6 +690,7 @@ async def qwen_plan_next_action(
         
     print("PARSED QWEN ACTION:", plan)
     
+    plan["raw_output"] = raw
     return plan
 
 # ==========================================
@@ -882,18 +883,21 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 "next_action": "pick",
                 "obstacle_name": None,
                 "reasoning": "No frame, defaulting to pick.",
+                "raw_output": "No camera frame available, did not run Qwen."
             }
             print("AFTER QWEN:", plan)
 
             next_action = plan.get("next_action", "pick")
             obstacle_name = (plan.get("obstacle_name") or "").strip().lower()
             reasoning = plan.get("reasoning", "")
+            raw_output = plan.get("raw_output", "")
 
             if next_action == "abort":
                 return [TextContent(type="text", text=json.dumps({
                     "status": "ABORTED",
                     "reasoning": reasoning,
                     "history": action_history,
+                    "qwen_raw_output": raw_output,
                 }))]
 
             if next_action == "relocate":
@@ -919,6 +923,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                             "status": "ERROR",
                             "message": reloc_result["error"],
                             "history": action_history,
+                            "qwen_raw_output": raw_output,
                         }))]
 
                     action_history.append(f"Relocated '{obstacle_name}' — {reasoning}")
@@ -955,6 +960,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         "history": action_history,
                         "iterations": iteration,
                         "qwen_reasoning": reasoning,
+                        "qwen_raw_output": raw_output,
                     })
                 )]
 
@@ -962,6 +968,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             "status": "FAILED",
             "message": "Maximum planning iterations reached.",
             "history": action_history,
+            "qwen_raw_output": raw_output,
         }))]
 
     raise ValueError(f"Unknown tool: {name}")
