@@ -126,7 +126,7 @@ except ImportError:
     sys.path.append(r"C:\Module-A\PythonAPI")
     from neurapy.robot import Robot
 
-r = Robot("192.168.2.13")
+r = Robot()
 
 # =================================================================
 # SMART LEBAI GRIPPER GEOMETRY + MODBUS CONTROL

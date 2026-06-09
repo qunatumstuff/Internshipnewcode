@@ -22,7 +22,7 @@ inference_lock = threading.Lock()
 
 # Tweak this value to add a global Z offset (in meters) to all detected objects.
 # E.g., setting it to 0.02 will raise the target pick point by 2 cm.
-Z_OFFSET = 0.0
+Z_OFFSET = 0.025
 
 def smooth_coord(old_val, new_val, alpha=0.2, snap_thresh=0.05):
     """
@@ -143,7 +143,7 @@ def _vision_loop_inner():
             current_depth_frame = depth_frame
 
             if current_target_class is None:
-                print("No target")
+                pass
 
             elif current_target_class=="sponge":
                 with inference_lock:

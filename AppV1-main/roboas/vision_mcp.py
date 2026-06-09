@@ -7,6 +7,7 @@ import os
 import math
 import threading
 import base64
+import re
 
 import cv2
 import numpy as np
@@ -188,10 +189,17 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
     # segmentation pass can use the trained orientation angle.
     obb_angles = {}   # class_name → best OBB angle_rad (highest confidence)
 
-    with camera.inference_lock:
-        obb_results = camera.model(
+    if camera.inference_lock.acquire(timeout=2.0):
+        try:
+            obb_results = camera.model(
             color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35
         )
+        finally:
+            camera.inference_lock.release()
+    else:
+        logger.warning("Could not acquire inference lock for OBB, skipping detection")
+        return []
+
     for result in obb_results:
         if result.obb is None:
             continue
@@ -230,10 +238,17 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             })
 
     # ── Pass 2: Segmentation — pipe and sponge centre/endpoint positions ────────
-    with camera.inference_lock:
-        seg_results = camera.segment(
+    if camera.inference_lock.acquire(timeout=2.0):
+        try:
+            seg_results = camera.segment(
             color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35
         )
+        finally:
+            camera.inference_lock.release()
+    else:
+        logger.warning("Could not acquire inference lock for segmentation, skipping")
+        seg_results = []
+
     for seg_result in seg_results:
         if seg_result.masks is None:
             continue
@@ -359,11 +374,17 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
             raw_b64 = parts[1]
 
     payload = {
-        "model":  QWEN_MODEL,
+        "model": QWEN_MODEL,
         "prompt": prompt,
         "stream": False,
         "images": [raw_b64],
+        "format": "json",
+        "options": {
+            "temperature": 0,
+            "num_predict": 80
+            }
     }
+
     url = f"http://{LAPTOP_A_IP}:11434/api/generate"
     req = urllib.request.Request(
         url,
@@ -372,10 +393,12 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
     )
     loop = asyncio.get_running_loop()
     def fetch():
-        with urllib.request.urlopen(req, timeout=45) as response:
+        logger.info("SENDING TO QWEN...")
+        with urllib.request.urlopen(req, timeout=120) as response:
             return json.loads(response.read().decode("utf-8"))
     try:
         result = await loop.run_in_executor(None, fetch)
+        logger.info("QWEN RESPONSE RECEIVED")
         response_text = result.get("response", "No response from Qwen")
         logger.info(f"[Qwen] {response_text[:120]}")
         return response_text
@@ -387,6 +410,58 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
 # ==========================================
 # QWEN PLANNING
 # ==========================================
+def extract_qwen_json(raw: str) -> dict:
+    raw = raw.strip()
+
+    # Remove XML-style thinking
+    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+
+    # If Qwen prints "Thinking... ...done thinking.", remove everything before final JSON
+    start = raw.find("{")
+    end = raw.rfind("}")
+
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError(f"No JSON object found in Qwen response: {raw[:300]}")
+
+    json_text = raw[start:end + 1].strip()
+
+    return json.loads(json_text)
+
+def parse_qwen_action(raw: str) -> dict:
+    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    final = lines[-1].upper() if lines else ""
+
+    if final.startswith("PICK"):
+        return {
+            "next_action": "pick",
+            "obstacle_name": None,
+            "reasoning": "Qwen chose PICK"
+        }
+
+    if final.startswith("RELOCATE:"):
+        obstacle = final.split(":", 1)[1].strip().lower()
+        return {
+            "next_action": "relocate",
+            "obstacle_name": obstacle,
+            "reasoning": f"Qwen chose to relocate {obstacle}"
+        }
+
+    if final.startswith("ABORT:"):
+        reason = final.split(":", 1)[1].strip()
+        return {
+            "next_action": "abort",
+            "obstacle_name": None,
+            "reasoning": reason
+        }
+
+    return {
+        "next_action": "pick",
+        "obstacle_name": None,
+        "reasoning": f"Could not parse Qwen output, defaulting to pick. Raw: {raw[:100]}"
+    }
+
 async def qwen_plan_next_action(
     target: str,
     base64_image: str,
@@ -497,30 +572,31 @@ async def qwen_plan_next_action(
         f"  - relocate: move one blocking object to a safe workspace spot.\n"
         f"  - pick: pick the target — path is clear.\n"
         f"  - abort: cannot safely reach the target.\n\n"
-        f"Reply ONLY with valid JSON, no extra text:\n"
-        f"{{\n"
-        f'  "next_action": "pick" or "relocate" or "abort",\n'
-        f'  "obstacle_name": "name of object to relocate, or null",\n'
-        f'  "reasoning": "one sentence"\n'
-        f"}}"
+        f"Reply ONLY with one valid JSON object. Do not explain. Do not write thinking.\n"
+        f"Use exactly one of these formats:\n\n"
+        f"Pick format:\n"
+        f'{{"next_action":"pick","obstacle_name":null,"reasoning":"target is visible and safe"}}\n\n'
+        f"Relocate format:\n"
+        f'{{"next_action":"relocate","obstacle_name":"cube","reasoning":"cube is blocking the target"}}\n\n'
+        f"Abort format:\n"
+        f'{{"next_action":"abort","obstacle_name":null,"reasoning":"target cannot be safely reached"}}'
+
     )
-
     raw = await ask_qwen_vision(prompt, base64_image)
+    print("RAW QWEN PLAN:", repr(raw))
     try:
-        clean = raw.strip()
-        if clean.startswith("```"):
-            clean = clean.split("```")[1]
-            if clean.startswith("json"):
-                clean = clean[4:]
-        return json.loads(clean.strip())
+        plan = extract_qwen_json(raw)
     except Exception as e:
-        logger.warning(f"Qwen non-JSON ({e}). Defaulting to pick.")
-        return {
-            "next_action":   "pick",
+        logger.error(f"Failed to parse Qwen JSON: {e}")
+        plan = {
+            "next_action": "pick",
             "obstacle_name": None,
-            "reasoning":     f"Could not parse Qwen response: {raw[:100]}",
+            "reasoning": f"Could not parse Qwen JSON, defaulting to pick. Raw: {raw[:100]}"
         }
-
+        
+    print("PARSED QWEN ACTION:", plan)
+    
+    return plan
 
 # ==========================================
 # ROBOT MCP COMMUNICATION
@@ -658,49 +734,140 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         return [TextContent(type="text", text=frame_b64)]
 
     # ── locate_object ─────────────────────────────────────────────────────────
+        # ── locate_object ─────────────────────────────────────────────────────────
     if name == "locate_object":
-        target_name = args.get("target_name")
-        if not target_name:
-            raise ValueError("target_name is required")
-            
-        # Update the camera target class so the pop-up window draws the bounding box!
-        camera.current_target_class = target_name
+        target = (args.get("target_name") or "").strip().lower()
+        user_context = args.get("user_context", "").strip()
 
-        # Step 1: VLM Feasibility / Safety check
-        image_b64 = get_frame_as_base64()
-        if image_b64 is None or image_b64.startswith("Error"):
-            return [TextContent(type="text", text=json.dumps({"status": f"ERROR: Camera frame not ready"}))]
-            
-        gate_prompt = f"Verify if it is safe and possible to pick up the '{target_name}' from the current workspace scene. Check for obstacles, safety hazards, or other blocking items. Respond starting with either 'SAFE' or 'BLOCKED: <reason>'."
-        gate_res = await ask_qwen_vision(gate_prompt, image_b64)
-        
-        if "BLOCKED" in gate_res.upper():
-            # Safety gate says blocked!
+        if target not in OBJECT_CATALOGUE:
             return [TextContent(type="text", text=json.dumps({
-                "status": f"BLOCKED: {gate_res}",
-                "coordinates": None
+                "status": "REJECTED",
+                "message": f"'{target}' not in catalogue.",
             }))]
+
+        action_history = []
+        iteration = 0
+
+        while iteration < MAX_PLANNING_ITERATIONS:
+            iteration += 1
+            camera.current_target_class = target
+            await asyncio.sleep(1.0)
+
+            detections = get_current_detections()
+            frame_b64 = get_frame_as_base64()
+
+            if not detections:
+                return [TextContent(type="text", text=json.dumps({
+                    "status": "FAILED",
+                    "message": "No objects detected.",
+                    "history": action_history,
+                }))]
+
+            target_detections = [
+                d for d in detections
+                if d.get("object_name") == target
+            ]
+
+            if not target_detections:
+                return [TextContent(type="text", text=json.dumps({
+                    "status": "FAILED",
+                    "message": f"'{target}' not found.",
+                    "detected_objects": [d.get("object_name") for d in detections],
+                    "history": action_history,
+                }))]
             
-        # Step 2: Detailed localization with angle and grasp points
-        detections = get_current_detections()
-        target_det = next((d for d in detections if d["object_name"] == target_name), None)
-        
-        if not target_det:
-            return [TextContent(type="text", text=json.dumps({
-                "status": f"ERROR: Could not locate {target_name} in camera frame.",
-                "coordinates": None
-            }))]
-            
+            print("BEFORE QWEN")
+
+            plan = await qwen_plan_next_action(
+                target,
+                frame_b64,
+                detections,
+                action_history,
+                user_context,
+            ) if frame_b64 else {
+                "next_action": "pick",
+                "obstacle_name": None,
+                "reasoning": "No frame, defaulting to pick.",
+            }
+            print("AFTER QWEN:", plan)
+
+            next_action = plan.get("next_action", "pick")
+            obstacle_name = (plan.get("obstacle_name") or "").strip().lower()
+            reasoning = plan.get("reasoning", "")
+
+            if next_action == "abort":
+                return [TextContent(type="text", text=json.dumps({
+                    "status": "ABORTED",
+                    "reasoning": reasoning,
+                    "history": action_history,
+                }))]
+
+            if next_action == "relocate":
+                obstacle_dets = [
+                    d for d in detections
+                    if d.get("object_name") == obstacle_name
+                ]
+
+                if obstacle_name and obstacle_dets:
+                    obs = obstacle_dets[0]
+
+                    reloc_result = await call_robot_tool("relocate_object", {
+                        "obstacle_name": obs["object_name"],
+                        "obstacle_x": obs["x"],
+                        "obstacle_y": obs["y"],
+                        "obstacle_z": obs["z"],
+                        "obstacle_angle_deg": obs.get("angle_deg"),
+                        "detections": detections,
+                    })
+
+                    if reloc_result.get("error"):
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "ERROR",
+                            "message": reloc_result["error"],
+                            "history": action_history,
+                        }))]
+
+                    action_history.append(f"Relocated '{obstacle_name}' — {reasoning}")
+                    await asyncio.sleep(1.0)
+                    continue
+
+                next_action = "pick"
+
+            if next_action == "pick":
+                target_det = target_detections[0]
+
+                if target_det["object_name"] == "pipe" and target_det.get("grasp_label"):
+                    grasp_label = target_det["grasp_label"]
+                else:
+                    grasp_label = target_det.get("grasp_label")
+
+                action_history.append(f"Vision located '{target}' — {reasoning}")
+
+                print("RETURNING COORDINATES:", target_det)
+
+                return [TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "status": "SUCCESS",
+                        "target": target,
+                        "coordinates": {
+                            "x": target_det["x"],
+                            "y": target_det["y"],
+                            "z": target_det["z"],
+                            "angle_deg": target_det.get("angle_deg"),
+                            "grasp_label": grasp_label,
+                        },
+                        "detections": detections,
+                        "history": action_history,
+                        "iterations": iteration,
+                        "qwen_reasoning": reasoning,
+                    })
+                )]
+
         return [TextContent(type="text", text=json.dumps({
-            "status": f"SUCCESS: Localized {target_name}",
-            "coordinates": {
-                "x": target_det["x"],
-                "y": target_det["y"],
-                "z": target_det["z"],
-                "angle_deg": target_det.get("angle_deg"),
-                "grasp_label": target_det.get("grasp_label")
-            },
-            "detections": detections
+            "status": "FAILED",
+            "message": "Maximum planning iterations reached.",
+            "history": action_history,
         }))]
 
     raise ValueError(f"Unknown tool: {name}")

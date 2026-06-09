@@ -469,7 +469,6 @@ app.post('/clear-pdf', async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 // Get current PDF status
 app.get('/pdf-status', (req, res) => {
   res.json({ loaded: !!currentPdfName, filename: currentPdfName || null });

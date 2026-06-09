@@ -1,6 +1,6 @@
 [
   {
-    "timestamp": "2026-06-08T09:24:31.387Z",
+    "timestamp": "2026-06-09T01:27:22.411Z",
     "userQuestion": "System Command",
     "toolName": "switch_avatar",
     "args": {
@@ -9,7 +9,7 @@
     "result": "switched to john"
   },
   {
-    "timestamp": "2026-06-08T09:24:31.394Z",
+    "timestamp": "2026-06-09T01:27:22.416Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -18,7 +18,7 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-08T09:24:31.401Z",
+    "timestamp": "2026-06-09T01:27:22.420Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -27,7 +27,7 @@
     "result": "updated to 🤗"
   },
   {
-    "timestamp": "2026-06-08T09:24:52.071Z",
+    "timestamp": "2026-06-09T01:27:57.383Z",
     "userQuestion": "Can you pick up the cube?",
     "toolName": "locate_object",
     "args": {
@@ -36,16 +36,52 @@
     "result": "Calling Remote Vision MCP..."
   },
   {
-    "timestamp": "2026-06-08T09:26:37.721Z",
+    "timestamp": "2026-06-09T01:29:47.456Z",
     "userQuestion": "Can you pick up the cube?",
     "toolName": "locate_object",
     "args": {
       "target_name": "cube"
     },
-    "result": "{\"status\": \"SUCCESS\", \"target\": \"cube\", \"coordinates\": {\"x\": 0.3996, \"y\": -0.1881, \"z\": 0.0238, \"angle_deg\": -37.77, \"grasp_label\": null}, \"detections\": [{\"object_name\": \"cube\", \"x\": 0.3996, \"y\": -0.1881, \"z\": 0.0238, \"angle_deg\": -37.77, \"confidence\": 0.901}, {\"object_name\": \"medicine\", \"x\": 0.4999, \"y\": -0.2695, \"z\": 0.0125, \"angle_deg\": 40.29, \"confidence\": 0.89}, {\"object_name\": \"pipe\", \"x\": 0.261, \"y\": -0.1648, \"z\": -0.0077, \"angle_deg\": 64.13, \"confidence\": 0.932, \"grasp_label\": \"grasp_A\"}], \"history\": [\"Vision located 'cube' \\u2014 Could not parse Qwen output, defaulting to pick. Raw: \"], \"iterations\": 1, \"qwen_reasoning\": \"Could not parse Qwen output, defaulting to pick. Raw: \"}\n\nRobot Execution Failed: MCP error -32001: Request timed out"
+    "result": "{\"status\": \"SUCCESS\", \"target\": \"cube\", \"coordinates\": {\"x\": 0.3981, \"y\": -0.1868, \"z\": 0.0214, \"angle_deg\": -37.18, \"grasp_label\": null}, \"detections\": [{\"object_name\": \"cube\", \"x\": 0.3981, \"y\": -0.1868, \"z\": 0.0214, \"angle_deg\": -37.18, \"confidence\": 0.878}, {\"object_name\": \"pipe\", \"x\": 0.2581, \"y\": -0.1624, \"z\": -0.0103, \"angle_deg\": 64.01, \"confidence\": 0.937, \"grasp_label\": \"grasp_A\"}], \"history\": [\"Vision located 'cube' \\u2014 Could not parse Qwen JSON, defaulting to pick. Raw: Qwen Network Error: timed out\"], \"iterations\": 1, \"qwen_reasoning\": \"Could not parse Qwen JSON, defaulting to pick. Raw: Qwen Network Error: timed out\"}\n\nRobot Execution Failed: MCP error -32001: Request timed out"
   },
   {
-    "timestamp": "2026-06-08T09:26:40.107Z",
+    "timestamp": "2026-06-09T01:29:49.363Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-09T01:32:32.976Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-09T01:32:42.037Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-06-09T01:32:42.043Z",
+    "userQuestion": "Oh, set up John.",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-06-09T01:32:42.896Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
