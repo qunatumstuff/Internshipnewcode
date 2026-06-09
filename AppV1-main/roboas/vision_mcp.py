@@ -8,6 +8,7 @@ import math
 import threading
 import base64
 import re
+import traceback
 
 import cv2
 import numpy as np
@@ -405,13 +406,7 @@ def get_frame_as_base64():
 # QWEN COMMUNICATION
 # ==========================================
 async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
-    """Send image + prompt to Qwen3-VL via Ollama API.
-    
-    Qwen3 models have 'thinking mode' enabled by default. The model
-    generates <think>...</think> tags internally which can consume all
-    tokens, leaving the actual content field empty. We disable thinking
-    via /no_think suffix AND extract from thinking content as fallback.
-    """
+    """Send image + prompt to Qwen3-VL via Ollama API."""
     logger.info(f"Connecting to Qwen at {OLLAMA_IP} with model {QWEN_MODEL}...")
 
     raw_b64 = base64_image
@@ -420,30 +415,21 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         if len(parts) > 1:
             raw_b64 = parts[1]
 
-    # Append /no_think to disable Qwen3's internal thinking mode
-    prompt_no_think = prompt + "\n/no_think"
-
     payload = {
         "model": QWEN_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are a JSON-only robot planner. Respond with a single JSON object. No thinking, no explanation, no markdown."
-            },
-            {
-                "role": "user",
-                "content": prompt_no_think,
-                "images": [raw_b64]
-            }
-        ],
+        "prompt": prompt,
         "stream": False,
+        "images": [raw_b64],
+        "format": "json",
         "options": {
-            "temperature": 0.1,
-            "num_predict": 512
+            "temperature": 0,
+            "num_predict": 128
+            }
         }
-    }
 
-    url = f"http://{OLLAMA_IP}:11434/api/chat"
+    print("IMAGE SIZE:", len(raw_b64))
+
+    url = f"http://{OLLAMA_IP}:11434/api/generate"
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -453,63 +439,31 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
     def fetch():
         logger.info("SENDING TO QWEN...")
         with urllib.request.urlopen(req, timeout=120) as response:
+            print("Qwen http received")
             return json.loads(response.read().decode("utf-8"))
     try:
         result = await loop.run_in_executor(None, fetch)
         logger.info("QWEN RESPONSE RECEIVED")
-        print("RAW OLLAMA RESULT:", json.dumps(result, indent=2)[:2000])
+        print("RAW OLLAMA RESULT:", result)
 
         if "error" in result:
-            logger.error(f"Ollama API Error: {result['error']}")
-            return f"Ollama API Error: {result['error']}"
+           traceback.print_exc()
+           print("FULL OLLAMA ERROR RESULT:", json.dumps(result, indent=2))
+           print(f"Ollama API Error: {result['error']}")
+           return f"Ollama API Error: {result['error']}"
 
-        message = result.get("message", {})
-        response_text = message.get("content", "")
-        thinking_text = message.get("thinking", "")
-
-        # If content is empty but thinking field is populated, use thinking field
-        if not response_text.strip() and thinking_text:
-            logger.info("Content field is empty but found thinking field, using it.")
-            response_text = thinking_text
-
-        # Validate if we have a JSON object in response_text
-        has_json = False
-        if response_text.strip():
-            try:
-                extract_qwen_json(response_text)
-                has_json = True
-            except Exception:
-                pass
-
-        # If no JSON found in response_text, check if thinking_text has it
-        if not has_json and thinking_text and response_text != thinking_text:
-            try:
-                extract_qwen_json(thinking_text)
-                response_text = thinking_text
-                has_json = True
-                logger.info("Found valid JSON in thinking field.")
-            except Exception:
-                pass
-
-        # If still no JSON, try parsing the whole JSON-dump of the response for next_action
-        if not has_json:
-            raw_str = json.dumps(result)
-            json_start = raw_str.find('{"next_action"')
-            if json_start != -1:
-                json_end = raw_str.find('}', json_start) + 1
-                if json_end > json_start:
-                    response_text = raw_str[json_start:json_end]
-                    has_json = True
-                    logger.info(f"Extracted JSON from raw response object: {response_text}")
-
+        response_text = result.get("response", "")
+        
         if not response_text.strip():
-            logger.error("Ollama returned completely empty output even after fallback checks.")
+            logger.error("Ollama returned an empty string.")
             return "Ollama API Error: Model returned empty string."
             
-        logger.info(f"[Qwen] {response_text[:200]}")
+        logger.info(f"[Qwen] {response_text[:120]}")
         return response_text
     except Exception as e:
-        logger.error(f"Qwen network error: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"Qwen network error: {e}")
         return f"Qwen Network Error: {e}"
 
 
@@ -517,40 +471,21 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
 # QWEN PLANNING
 # ==========================================
 def extract_qwen_json(raw: str) -> dict:
-    raw_strip = raw.strip()
+    raw = raw.strip()
 
-    # 1. Try to find JSON in the complete string first (handles JSON inside <think> tags)
-    start = raw_strip.find("{")
-    end = raw_strip.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        try:
-            return json.loads(raw_strip[start:end + 1])
-        except Exception:
-            pass
+    # Remove XML-style thinking
+    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
 
-    # 2. Try removing <think>...</think> tags and finding JSON
-    cleaned = re.sub(r"<think>.*?</think>", "", raw_strip, flags=re.DOTALL).strip()
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        try:
-            return json.loads(cleaned[start:end + 1])
-        except Exception:
-            pass
+    # If Qwen prints "Thinking... ...done thinking.", remove everything before final JSON
+    start = raw.find("{")
+    end = raw.rfind("}")
 
-    # 3. Try to extract JSON specifically from inside <think> tags
-    think_matches = re.findall(r"<think>(.*?)</think>", raw_strip, flags=re.DOTALL)
-    for match in think_matches:
-        start = match.find("{")
-        end = match.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            try:
-                return json.loads(match[start:end + 1])
-            except Exception:
-                pass
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError(f"No JSON object found in Qwen response: {raw[:300]}")
 
-    raise ValueError(f"No JSON object found in Qwen response: {raw[:300]}")
+    json_text = raw[start:end + 1].strip()
 
+    return json.loads(json_text)
 
 def parse_qwen_action(raw: str) -> dict:
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
@@ -724,8 +659,8 @@ async def qwen_plan_next_action(
         }
         
     print("PARSED QWEN ACTION:", plan)
+    plan["raw_output"]=raw
     
-    plan["raw_output"] = raw
     return plan
 
 # ==========================================
@@ -918,14 +853,14 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 "next_action": "pick",
                 "obstacle_name": None,
                 "reasoning": "No frame, defaulting to pick.",
-                "raw_output": "No camera frame available, did not run Qwen."
+                "raw_output": "No camera frame available, did not run qwen",
             }
             print("AFTER QWEN:", plan)
 
             next_action = plan.get("next_action", "pick")
             obstacle_name = (plan.get("obstacle_name") or "").strip().lower()
             reasoning = plan.get("reasoning", "")
-            raw_output = plan.get("raw_output", "")
+            raw_output=plan.get("raw_output","")
 
             if next_action == "abort":
                 return [TextContent(type="text", text=json.dumps({
@@ -958,7 +893,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                             "status": "ERROR",
                             "message": reloc_result["error"],
                             "history": action_history,
-                            "qwen_raw_output": raw_output,
+                            "output": raw_output,
                         }))]
 
                     action_history.append(f"Relocated '{obstacle_name}' — {reasoning}")
@@ -993,9 +928,9 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         },
                         "detections": detections,
                         "history": action_history,
+                        "qwen_raw_output": raw_output,
                         "iterations": iteration,
                         "qwen_reasoning": reasoning,
-                        "qwen_raw_output": raw_output,
                     })
                 )]
 
@@ -1003,7 +938,6 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             "status": "FAILED",
             "message": "Maximum planning iterations reached.",
             "history": action_history,
-            "qwen_raw_output": raw_output,
         }))]
 
     raise ValueError(f"Unknown tool: {name}")
