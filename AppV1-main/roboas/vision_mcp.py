@@ -452,7 +452,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
            print(f"Ollama API Error: {result['error']}")
            return f"Ollama API Error: {result['error']}"
 
-        response_text = result.get("response", "")
+        response_text = result.get("thinking", "")
         
         if not response_text.strip():
             logger.error("Ollama returned an empty string.")
