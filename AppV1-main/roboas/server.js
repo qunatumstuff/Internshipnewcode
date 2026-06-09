@@ -1030,7 +1030,6 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               console.log("Tool:", "locate_object");
               console.log("Args:", JSON.stringify(args, null, 2));
               console.log("=================================");
-
               const visionArgs = { target_name: args.target_name };
 
               const res = await visionMcpClient.callTool({ 
@@ -1041,16 +1040,32 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
 
               try {
                 const parsed = JSON.parse(toolResultText);
-                console.log("RAW VISION MCP RESULT:", res);
-                console.log("PARSED VISION RESULT:", parsed);
+                console.log("RAW VISION MCP RESULT:", JSON.stringify(res, null, 2));
+                console.log("PARSED VISION RESULT:", JSON.stringify(parsed, null, 2));
 
-                if (parsed.qwen_raw_output) {
-                  console.log("\n🧠 \x1b[35m[QWEN RAW OUTPUT]:\x1b[0m");
-                  console.log(parsed.qwen_raw_output);
-                  console.log("=".repeat(50) + "\n");
+                // === QWEN OUTPUT LOGGING (supports both old and new vision_mcp.py formats) ===
+                const qwenRaw = parsed.qwen_raw_output                          // NEW format
+                  || (parsed.qwen_safety_gate && parsed.qwen_safety_gate.raw_response)  // OLD format
+                  || null;
+                const qwenReasoning = parsed.qwen_reasoning || "";
+
+                console.log("\n" + "=".repeat(50));
+                console.log("🧠 \x1b[35m[QWEN SAFETY GATE RESULT]:\x1b[0m");
+                console.log("  Reasoning:", qwenReasoning || "(none)");
+                console.log("  Raw Output:", qwenRaw === "" ? "\x1b[31m(EMPTY STRING — Qwen returned nothing!)\x1b[0m" 
+                  : qwenRaw === null ? "\x1b[33m(not present in response)\x1b[0m"
+                  : qwenRaw);
+                if (parsed.qwen_safety_gate) {
+                  console.log("  Model:", parsed.qwen_safety_gate.model || "unknown");
+                  console.log("  Gate Status:", parsed.qwen_safety_gate.status || "unknown");
+                  console.log("  Parsed Response:", JSON.stringify(parsed.qwen_safety_gate.parsed_response));
                 }
+                console.log("=".repeat(50) + "\n");
 
-                if (parsed.status && parsed.status.startsWith("SUCCESS")) {
+                // Normalize status to uppercase for comparison
+                const statusUpper = (parsed.status || "").toUpperCase();
+
+                if (statusUpper.startsWith("SUCCESS")) {
                   sendProgress(`Localized "${args.target_name}". Coordinates acquired.`);
                   await new Promise(resolve => setTimeout(resolve, 1500));
                   
@@ -1085,7 +1100,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                     }
                   }
 
-                } else if (parsed.status && parsed.status.startsWith("BLOCKED")) {
+                } else if (statusUpper.startsWith("BLOCKED")) {
                   sendProgress(`Blocked: Qwen determined pickup is not safe.`);
                   await new Promise(resolve => setTimeout(resolve, 3000));
 
