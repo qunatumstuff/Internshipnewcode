@@ -375,17 +375,21 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
 
     payload = {
         "model": QWEN_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "images": [raw_b64],
-        "format": "json",
-        "options": {
-            "temperature": 0,
-            "num_predict": 80
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+                "images": [raw_b64]
             }
+        ],
+        "stream": False,
+        "options": {
+            "temperature": 0.1,
+            "num_predict": 1024
+        }
     }
 
-    url = f"http://{LAPTOP_A_IP}:11434/api/generate"
+    url = f"http://{LAPTOP_A_IP}:11434/api/chat"
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -399,7 +403,19 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
     try:
         result = await loop.run_in_executor(None, fetch)
         logger.info("QWEN RESPONSE RECEIVED")
-        response_text = result.get("response", "No response from Qwen")
+        print("RAW OLLAMA RESULT:", result)
+
+        if "error" in result:
+            logger.error(f"Ollama API Error: {result['error']}")
+            return f"Ollama API Error: {result['error']}"
+
+        message = result.get("message", {})
+        response_text = message.get("content", "")
+        
+        if not response_text.strip():
+            logger.error("Ollama returned an empty string.")
+            return "Ollama API Error: Model returned empty string."
+            
         logger.info(f"[Qwen] {response_text[:120]}")
         return response_text
     except Exception as e:
@@ -588,10 +604,14 @@ async def qwen_plan_next_action(
         plan = extract_qwen_json(raw)
     except Exception as e:
         logger.error(f"Failed to parse Qwen JSON: {e}")
+        
+        # Clean fallback message for the UI
+        clean_reason = raw[:100] if "Ollama API Error" in raw else "JSON Parse Error"
+        
         plan = {
             "next_action": "pick",
             "obstacle_name": None,
-            "reasoning": f"Could not parse Qwen JSON, defaulting to pick. Raw: {raw[:100]}"
+            "reasoning": f"Safety check bypassed: {clean_reason}"
         }
         
     print("PARSED QWEN ACTION:", plan)

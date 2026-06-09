@@ -1433,7 +1433,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({'question': text}),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 120));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

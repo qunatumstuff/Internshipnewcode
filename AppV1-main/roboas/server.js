@@ -1033,7 +1033,10 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
 
               const visionArgs = { target_name: args.target_name };
 
-              const res = await visionMcpClient.callTool({ name: "locate_object", arguments: visionArgs });
+              const res = await visionMcpClient.callTool({ 
+                name: "locate_object", 
+                arguments: visionArgs 
+              }, undefined, { timeout: 300000 });
               toolResultText = res.content[0].text;
 
               try {
@@ -1065,7 +1068,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                       const robotRes = await robotMcpClient.callTool({ 
                         name: "pick_and_place_object", 
                         arguments: robotArgs
-                      });
+                      }, undefined, { timeout: 300000 });
                       toolResultText += `\n\nRobot Execution Status: ` + robotRes.content[0].text;
                       sendProgress(`Pick-and-place completed for "${args.target_name}".`);
                       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1211,7 +1214,10 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           sendProgress(`Relocating obstacle "${args.obstacle_name}"...`);
           if (robotMcpClient) {
             try {
-              const res = await robotMcpClient.callTool({ name: "relocate_object", arguments: args });
+              const res = await robotMcpClient.callTool({ 
+                name: "relocate_object", 
+                arguments: args 
+              }, undefined, { timeout: 300000 });
               toolResultText = res.content[0].text;
               logToolCall(question, "relocate_object", args, toolResultText);
               sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`);

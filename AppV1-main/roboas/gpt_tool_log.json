@@ -1,6 +1,6 @@
 [
   {
-    "timestamp": "2026-06-09T01:27:22.411Z",
+    "timestamp": "2026-06-09T03:05:55.283Z",
     "userQuestion": "System Command",
     "toolName": "switch_avatar",
     "args": {
@@ -9,7 +9,7 @@
     "result": "switched to john"
   },
   {
-    "timestamp": "2026-06-09T01:27:22.416Z",
+    "timestamp": "2026-06-09T03:05:55.290Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -18,7 +18,7 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-09T01:27:22.420Z",
+    "timestamp": "2026-06-09T03:05:55.305Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -27,8 +27,8 @@
     "result": "updated to 🤗"
   },
   {
-    "timestamp": "2026-06-09T01:27:57.383Z",
-    "userQuestion": "Can you pick up the cube?",
+    "timestamp": "2026-06-09T03:06:36.253Z",
+    "userQuestion": "Get the cube. Get the cube.",
     "toolName": "locate_object",
     "args": {
       "target_name": "cube"
@@ -36,57 +36,10 @@
     "result": "Calling Remote Vision MCP..."
   },
   {
-    "timestamp": "2026-06-09T01:29:47.456Z",
-    "userQuestion": "Can you pick up the cube?",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
-    },
-    "result": "{\"status\": \"SUCCESS\", \"target\": \"cube\", \"coordinates\": {\"x\": 0.3981, \"y\": -0.1868, \"z\": 0.0214, \"angle_deg\": -37.18, \"grasp_label\": null}, \"detections\": [{\"object_name\": \"cube\", \"x\": 0.3981, \"y\": -0.1868, \"z\": 0.0214, \"angle_deg\": -37.18, \"confidence\": 0.878}, {\"object_name\": \"pipe\", \"x\": 0.2581, \"y\": -0.1624, \"z\": -0.0103, \"angle_deg\": 64.01, \"confidence\": 0.937, \"grasp_label\": \"grasp_A\"}], \"history\": [\"Vision located 'cube' \\u2014 Could not parse Qwen JSON, defaulting to pick. Raw: Qwen Network Error: timed out\"], \"iterations\": 1, \"qwen_reasoning\": \"Could not parse Qwen JSON, defaulting to pick. Raw: Qwen Network Error: timed out\"}\n\nRobot Execution Failed: MCP error -32001: Request timed out"
-  },
-  {
-    "timestamp": "2026-06-09T01:29:49.363Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-09T01:32:32.976Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-09T01:32:42.037Z",
-    "userQuestion": "System Command",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "john"
-    },
-    "result": "switched to john"
-  },
-  {
-    "timestamp": "2026-06-09T01:32:42.043Z",
-    "userQuestion": "Oh, set up John.",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "john"
-    },
-    "result": "switched to john"
-  },
-  {
-    "timestamp": "2026-06-09T01:32:42.896Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
+    "timestamp": "2026-06-09T03:08:16.846Z",
+    "userQuestion": "System Emergency Button",
+    "toolName": "emergency_stop",
+    "args": {},
+    "result": "Failed: MCP error -32001: Request timed out"
   }
 ]
