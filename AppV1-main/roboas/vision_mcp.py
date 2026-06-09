@@ -30,9 +30,50 @@ logger = logging.getLogger("vision-mcp")
 # ==========================================
 # CONFIGURATION
 # ==========================================
-LAPTOP_A_IP            = os.environ.get("LAPTOP_A_IP",   "127.0.0.1")
-QWEN_MODEL             = os.environ.get("QWEN_MODEL",    "qwen3-vl:2b")
-ROBOT_MCP_URL          = os.environ.get("ROBOT_MCP_URL", "http://localhost:8002/messages")
+# ==========================================
+# OLLAMA AUTO-DISCOVERY
+# ==========================================
+def auto_detect_ollama():
+    """Scans for an active Ollama instance and automatically selects the best vision model."""
+    ips_to_try = [
+        os.environ.get("LAPTOP_A_IP"),
+        "127.0.0.1",
+        "192.168.2.99",
+        "192.168.2.13" # Or whatever Laptop A's IP is
+    ]
+    
+    for ip in ips_to_try:
+        if not ip: continue
+        try:
+            req = urllib.request.Request(f"http://{ip}:11434/api/tags")
+            with urllib.request.urlopen(req, timeout=3) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                models = [m["name"] for m in data.get("models", [])]
+                logger.info(f"Ollama found at {ip}! Models: {models}")
+                
+                # Priority 1: Any Qwen Vision model
+                for m in models:
+                    if "qwen" in m.lower() and "vl" in m.lower():
+                        return ip, m
+                
+                # Priority 2: LLaVA or other vision models
+                for m in models:
+                    if "llava" in m.lower() or "vision" in m.lower() or "pixtral" in m.lower():
+                        return ip, m
+                
+                # Fallback: Just return the first available model
+                if models:
+                    return ip, models[0]
+        except Exception:
+            continue
+            
+    logger.error("Could not find any Ollama instance running!")
+    return "127.0.0.1", "qwen2.5-vl:7b"
+
+OLLAMA_IP, QWEN_MODEL = auto_detect_ollama()
+logger.info(f"Using Ollama at {OLLAMA_IP} with model {QWEN_MODEL}")
+
+ROBOT_MCP_URL = os.environ.get("ROBOT_MCP_URL", "http://localhost:8002/messages")
 MAX_PLANNING_ITERATIONS = 5
 
 # ==========================================
@@ -365,7 +406,7 @@ def get_frame_as_base64():
 # ==========================================
 async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
     """Send image + prompt to Qwen3-VL via Ollama API."""
-    logger.info(f"Connecting to Qwen at {LAPTOP_A_IP}...")
+    logger.info(f"Connecting to Qwen at {OLLAMA_IP} with model {QWEN_MODEL}...")
 
     raw_b64 = base64_image
     if raw_b64.startswith("data:"):
@@ -389,7 +430,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         }
     }
 
-    url = f"http://{LAPTOP_A_IP}:11434/api/chat"
+    url = f"http://{OLLAMA_IP}:11434/api/chat"
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
