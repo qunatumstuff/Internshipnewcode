@@ -405,7 +405,13 @@ def get_frame_as_base64():
 # QWEN COMMUNICATION
 # ==========================================
 async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
-    """Send image + prompt to Qwen3-VL via Ollama API."""
+    """Send image + prompt to Qwen3-VL via Ollama API.
+    
+    Qwen3 models have 'thinking mode' enabled by default. The model
+    generates <think>...</think> tags internally which can consume all
+    tokens, leaving the actual content field empty. We disable thinking
+    via /no_think suffix AND extract from thinking content as fallback.
+    """
     logger.info(f"Connecting to Qwen at {OLLAMA_IP} with model {QWEN_MODEL}...")
 
     raw_b64 = base64_image
@@ -414,19 +420,26 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         if len(parts) > 1:
             raw_b64 = parts[1]
 
+    # Append /no_think to disable Qwen3's internal thinking mode
+    prompt_no_think = prompt + "\n/no_think"
+
     payload = {
         "model": QWEN_MODEL,
         "messages": [
             {
+                "role": "system",
+                "content": "You are a JSON-only robot planner. Respond with a single JSON object. No thinking, no explanation, no markdown."
+            },
+            {
                 "role": "user",
-                "content": prompt,
+                "content": prompt_no_think,
                 "images": [raw_b64]
             }
         ],
         "stream": False,
         "options": {
             "temperature": 0.1,
-            "num_predict": 1024
+            "num_predict": 512
         }
     }
 
@@ -444,7 +457,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
     try:
         result = await loop.run_in_executor(None, fetch)
         logger.info("QWEN RESPONSE RECEIVED")
-        print("RAW OLLAMA RESULT:", result)
+        print("RAW OLLAMA RESULT:", json.dumps(result, indent=2)[:2000])
 
         if "error" in result:
             logger.error(f"Ollama API Error: {result['error']}")
@@ -452,12 +465,32 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
 
         message = result.get("message", {})
         response_text = message.get("content", "")
-        
+
+        # Qwen3 thinking fallback: if content is empty, check if the
+        # model put everything inside <think> tags or a 'thinking' field
         if not response_text.strip():
-            logger.error("Ollama returned an empty string.")
+            logger.warning("Content field is empty — checking for thinking content...")
+            
+            # Check for thinking field (some Ollama versions use this)
+            thinking_text = message.get("thinking", "")
+            if thinking_text:
+                logger.info(f"Found thinking content ({len(thinking_text)} chars), extracting JSON...")
+                response_text = thinking_text
+            
+            # Check raw response string for any JSON buried anywhere
+            if not response_text.strip():
+                raw_str = json.dumps(result)
+                json_start = raw_str.find('{"next_action"')
+                if json_start != -1:
+                    json_end = raw_str.find('}', json_start) + 1
+                    response_text = raw_str[json_start:json_end]
+                    logger.info(f"Extracted JSON from raw response: {response_text}")
+
+        if not response_text.strip():
+            logger.error("Ollama returned completely empty output even after fallback checks.")
             return "Ollama API Error: Model returned empty string."
             
-        logger.info(f"[Qwen] {response_text[:120]}")
+        logger.info(f"[Qwen] {response_text[:200]}")
         return response_text
     except Exception as e:
         logger.error(f"Qwen network error: {e}")
