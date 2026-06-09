@@ -465,26 +465,42 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
 
         message = result.get("message", {})
         response_text = message.get("content", "")
+        thinking_text = message.get("thinking", "")
 
-        # Qwen3 thinking fallback: if content is empty, check if the
-        # model put everything inside <think> tags or a 'thinking' field
-        if not response_text.strip():
-            logger.warning("Content field is empty — checking for thinking content...")
-            
-            # Check for thinking field (some Ollama versions use this)
-            thinking_text = message.get("thinking", "")
-            if thinking_text:
-                logger.info(f"Found thinking content ({len(thinking_text)} chars), extracting JSON...")
+        # If content is empty but thinking field is populated, use thinking field
+        if not response_text.strip() and thinking_text:
+            logger.info("Content field is empty but found thinking field, using it.")
+            response_text = thinking_text
+
+        # Validate if we have a JSON object in response_text
+        has_json = False
+        if response_text.strip():
+            try:
+                extract_qwen_json(response_text)
+                has_json = True
+            except Exception:
+                pass
+
+        # If no JSON found in response_text, check if thinking_text has it
+        if not has_json and thinking_text and response_text != thinking_text:
+            try:
+                extract_qwen_json(thinking_text)
                 response_text = thinking_text
-            
-            # Check raw response string for any JSON buried anywhere
-            if not response_text.strip():
-                raw_str = json.dumps(result)
-                json_start = raw_str.find('{"next_action"')
-                if json_start != -1:
-                    json_end = raw_str.find('}', json_start) + 1
+                has_json = True
+                logger.info("Found valid JSON in thinking field.")
+            except Exception:
+                pass
+
+        # If still no JSON, try parsing the whole JSON-dump of the response for next_action
+        if not has_json:
+            raw_str = json.dumps(result)
+            json_start = raw_str.find('{"next_action"')
+            if json_start != -1:
+                json_end = raw_str.find('}', json_start) + 1
+                if json_end > json_start:
                     response_text = raw_str[json_start:json_end]
-                    logger.info(f"Extracted JSON from raw response: {response_text}")
+                    has_json = True
+                    logger.info(f"Extracted JSON from raw response object: {response_text}")
 
         if not response_text.strip():
             logger.error("Ollama returned completely empty output even after fallback checks.")
@@ -501,21 +517,40 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
 # QWEN PLANNING
 # ==========================================
 def extract_qwen_json(raw: str) -> dict:
-    raw = raw.strip()
+    raw_strip = raw.strip()
 
-    # Remove XML-style thinking
-    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+    # 1. Try to find JSON in the complete string first (handles JSON inside <think> tags)
+    start = raw_strip.find("{")
+    end = raw_strip.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(raw_strip[start:end + 1])
+        except Exception:
+            pass
 
-    # If Qwen prints "Thinking... ...done thinking.", remove everything before final JSON
-    start = raw.find("{")
-    end = raw.rfind("}")
+    # 2. Try removing <think>...</think> tags and finding JSON
+    cleaned = re.sub(r"<think>.*?</think>", "", raw_strip, flags=re.DOTALL).strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(cleaned[start:end + 1])
+        except Exception:
+            pass
 
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError(f"No JSON object found in Qwen response: {raw[:300]}")
+    # 3. Try to extract JSON specifically from inside <think> tags
+    think_matches = re.findall(r"<think>(.*?)</think>", raw_strip, flags=re.DOTALL)
+    for match in think_matches:
+        start = match.find("{")
+        end = match.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(match[start:end + 1])
+            except Exception:
+                pass
 
-    json_text = raw[start:end + 1].strip()
+    raise ValueError(f"No JSON object found in Qwen response: {raw[:300]}")
 
-    return json.loads(json_text)
 
 def parse_qwen_action(raw: str) -> dict:
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
