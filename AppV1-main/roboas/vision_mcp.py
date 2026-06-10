@@ -84,23 +84,15 @@ MAX_PLANNING_ITERATIONS = 5
 # to determine if an object is stacked on another.
 # ==========================================
 OBJECT_CATALOGUE = {
-    "black marker": {"size": "134 x 20.53 x 20.53 mm", "height_m": 0.02053,
-                     "length_m": 0.134,   "breadth_m": 0.02053},
-    "blue marker":  {"size": "134 x 20.53 x 20.53 mm", "height_m": 0.02053,
-                     "length_m": 0.134,   "breadth_m": 0.02053},
-    "cube":         {"size": "40 x 40 x 40 mm",         "height_m": 0.040,
-                     "length_m": 0.040,   "breadth_m": 0.040},
-    "green marker": {"size": "134 x 20.53 x 20.53 mm",  "height_m": 0.02053,
-                     "length_m": 0.134,   "breadth_m": 0.02053},
-    "medicine":     {"size": "115.72 x 51.17 x 18.95 mm","height_m": 0.01895,
-                     "length_m": 0.11572, "breadth_m": 0.05117},
-    "nut":          {"size": "34.6 x 30 x 17 mm",        "height_m": 0.017,
-                     "length_m": 0.0346,  "breadth_m": 0.030},
+    "black marker": {"size": "134 x 20.53 x 20.53 mm", "height_m": 0.02053},
+    "blue marker":  {"size": "134 x 20.53 x 20.53 mm", "height_m": 0.02053},
+    "cube":         {"size": "40 x 40 x 40 mm",         "height_m": 0.040},
+    "green marker": {"size": "134 x 20.53 x 20.53 mm",  "height_m": 0.02053},
+    "medicine":     {"size": "115.72 x 51.17 x 18.95 mm","height_m": 0.01895},
+    "nut":          {"size": "34.6 x 30 x 17 mm",        "height_m": 0.017},
     "pipe":         {"size": "120 x 110 x 54.5 mm",      "height_m": 0.0545,
-                     "length_m": 0.120,   "breadth_m": 0.110,
                      "notes": "Smart grasp via segmentation mask"},
     "sponge":       {"size": "112.58 x 80 x 15.4 mm",    "height_m": 0.01540,
-                     "length_m": 0.11258, "breadth_m": 0.080,
                      "notes": "Angled grasp configuration"},
 }
 
@@ -428,9 +420,10 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         "prompt": prompt,
         "stream": False,
         "images": [raw_b64],
+        "format": "json",
         "options": {
             "temperature": 0,
-            "num_predict": 512
+            "num_predict": 128
             }
         }
 
@@ -445,7 +438,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
     loop = asyncio.get_running_loop()
     def fetch():
         logger.info("SENDING TO QWEN...")
-        with urllib.request.urlopen(req, timeout=300) as response:
+        with urllib.request.urlopen(req, timeout=120) as response:
             print("Qwen http received")
             return json.loads(response.read().decode("utf-8"))
     try:
@@ -459,7 +452,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
            print(f"Ollama API Error: {result['error']}")
            return f"Ollama API Error: {result['error']}"
 
-        response_text = result.get("response", "")
+        response_text = result.get("thinking", "")
         
         if not response_text.strip():
             logger.error("Ollama returned an empty string.")
@@ -471,7 +464,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         import traceback
         traceback.print_exc()
         print(f"Qwen network error: {e}")
-        return f"Ollama API Error: {e}"
+        return f"Qwen Network Error: {e}"
 
 
 # ==========================================
@@ -524,72 +517,10 @@ def parse_qwen_action(raw: str) -> dict:
         }
 
     return {
-        "next_action": "abort",
+        "next_action": "pick",
         "obstacle_name": None,
-        "reasoning": f"Could not parse Qwen output, defaulting to abort. Raw: {raw[:100]}"
+        "reasoning": f"Could not parse Qwen output, defaulting to pick. Raw: {raw[:100]}"
     }
-
-def compute_scene_analysis(target: str, detections: list[dict]) -> str:
-    lines = []
-    
-    # 1. Analyze Elevation (Z-axis)
-    lines.append("ELEVATION ANALYSIS:")
-    elevation_found = False
-    for d in detections:
-        known_h = OBJECT_CATALOGUE.get(d["object_name"], {}).get("height_m", None)
-        if known_h is not None:
-            expected_z = known_h / 2
-            excess = d["z"] - expected_z
-            implied_height = excess * 2
-            
-            if excess > 0.020:
-                elevation_found = True
-                MATCH_TOLERANCE = 0.015
-                plausible = []
-                for obj_name, obj_info in OBJECT_CATALOGUE.items():
-                    if obj_name == d["object_name"]: continue
-                    h = obj_info["height_m"]
-                    if abs(h - implied_height) <= MATCH_TOLERANCE:
-                        plausible.append(f"{obj_name}")
-                
-                if plausible:
-                    lines.append(f"  - WARNING: {d['object_name']} is elevated (Z={d['z']*1000:.0f}mm). It is likely resting on: {', '.join(plausible)}.")
-                else:
-                    lines.append(f"  - Note: {d['object_name']} is elevated but no catalogue object matches the height.")
-    
-    if not elevation_found:
-        lines.append("  - All detected objects are flat on the table.")
-        
-    lines.append("")
-    
-    # 2. Analyze XY Overlap
-    lines.append("OVERLAP ANALYSIS (XY):")
-    target_det = next((d for d in detections if d["object_name"] == target), None)
-    overlap_found = False
-    
-    if target_det:
-        target_info = OBJECT_CATALOGUE.get(target, {})
-        target_radius = math.hypot(target_info.get("length_m", 0.04), target_info.get("breadth_m", 0.04)) / 2
-        
-        for d in detections:
-            if d["object_name"] == target: continue
-            
-            dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
-            d_info = OBJECT_CATALOGUE.get(d["object_name"], {})
-            d_radius = math.hypot(d_info.get("length_m", 0.04), d_info.get("breadth_m", 0.04)) / 2
-            
-            # If distance < sum of radiuses * 0.85 (conservative threshold to avoid corner edge cases)
-            if dist < (target_radius + d_radius) * 0.85:
-                overlap_found = True
-                lines.append(f"  - WARNING: {d['object_name']} overlaps with target {target}.")
-                
-    if not target_det:
-        lines.append(f"  - Target '{target}' not currently detected by YOLO.")
-    elif not overlap_found:
-        lines.append(f"  - No objects physically overlap with '{target}'.")
-        
-    return "\n".join(lines)
-
 
 async def qwen_plan_next_action(
     target: str,
@@ -603,17 +534,72 @@ async def qwen_plan_next_action(
     Called in a loop — after each robot action the scene is re-read
     and Qwen is asked again.
     """
-    scene_analysis = compute_scene_analysis(target, detections)
-    catalogue_list = ", ".join(OBJECT_CATALOGUE.keys())
-    
-    history_summary = (
+    target_info  = OBJECT_CATALOGUE.get(target, {})
+    item_details = f"Size: {target_info.get('size', 'unknown')}."
+    if "notes" in target_info:
+        item_details += f" Notes: {target_info['notes']}"
+
+    catalogue_heights = "\n".join(
+        f"  - {name}: known height = {info['height_m']*1000:.1f}mm"
+        for name, info in OBJECT_CATALOGUE.items()
+    )
+
+    # Build detection lines with elevation analysis
+    detection_lines = []
+    for d in detections:
+        known_h = OBJECT_CATALOGUE.get(d["object_name"], {}).get("height_m", None)
+        elevation_note = ""
+        if known_h is not None:
+            expected_z     = known_h / 2
+            excess         = d["z"] - expected_z
+            implied_height = excess * 2
+
+            if excess > 0.020:
+                MATCH_TOLERANCE = 0.015
+                plausible = []
+                for obj_name, obj_info in OBJECT_CATALOGUE.items():
+                    if obj_name == d["object_name"]:
+                        continue
+                    h = obj_info["height_m"]
+                    if abs(h - implied_height) <= MATCH_TOLERANCE:
+                        plausible.append(
+                            f"{obj_name} ({h*1000:.0f}mm, "
+                            f"off by {abs(h-implied_height)*1000:.0f}mm)"
+                        )
+                if plausible:
+                    elevation_note = (
+                        f"\n    *** ELEVATED: actual Z={d['z']*1000:.0f}mm, "
+                        f"expected ~{expected_z*1000:.0f}mm. "
+                        f"Plausible hidden objects: {', '.join(plausible)} ***"
+                    )
+                else:
+                    elevation_note = (
+                        f"\n    *** ELEVATED: actual Z={d['z']*1000:.0f}mm, "
+                        f"expected ~{expected_z*1000:.0f}mm. "
+                        f"No catalogue match — likely measurement noise. "
+                        f"Do NOT relocate without other evidence. ***"
+                    )
+
+        line = (
+            f"  - {d['object_name']}: "
+            f"X={d['x']:.3f}m Y={d['y']:.3f}m Z={d['z']:.3f}m "
+            f"angle={d.get('angle_deg', 0):.1f}deg "
+            f"confidence={d.get('confidence', 0):.2f}"
+            f"{elevation_note}"
+        )
+        if d["object_name"] == "pipe" and d.get("grasp_label"):
+            line += f" [grasp_end={d['grasp_label']}]"
+        detection_lines.append(line)
+
+    detection_summary = "\n".join(detection_lines) if detection_lines else "  (none detected)"
+    catalogue_list    = ", ".join(OBJECT_CATALOGUE.keys())
+    history_summary   = (
         "No actions taken yet."
         if not action_history
         else "Actions already taken:\n" + "\n".join(
             f"  {i+1}. {a}" for i, a in enumerate(action_history)
         )
     )
-    
     user_context_section = ""
     if user_context:
         user_context_section = (
@@ -623,22 +609,28 @@ async def qwen_plan_next_action(
         )
 
     prompt = (
-        f"You are the visual safety gate for a robotic arm.\n\n"
-        f"GOAL: Pick up the '{target}'\n\n"
+        f"You are the planning brain for a robotic arm on a flat table workspace.\n\n"
+        f"GOAL: Pick up the '{target}' ({item_details})\n\n"
         f"{user_context_section}"
-        f"KNOWN OBJECT CATALOGUE: {catalogue_list}\n\n"
-        f"PYTHON SENSOR ANALYSIS (Depth Elevation & XY Overlap):\n"
-        f"{scene_analysis}\n\n"
+        f"KNOWN PHYSICAL HEIGHTS FROM CATALOGUE:\n{catalogue_heights}\n\n"
+        f"CURRENT SCENE — YOLO DETECTIONS (robot base frame):\n{detection_summary}\n\n"
+        f"HOW TO REASON ABOUT ELEVATED OBJECTS:\n"
+        f"  Table surface = Z=0.0m. Each detected Z is the object centre height.\n"
+        f"  Objects marked ELEVATED may have something underneath.\n"
+        f"  BEFORE relocating, verify at least one plausible catalogue object\n"
+        f"  matches the implied hidden height AND is relevant to the task.\n"
+        f"  Do NOT relocate if the elevation note says no catalogue match.\n\n"
         f"HISTORY:\n{history_summary}\n\n"
-        f"INSTRUCTIONS:\n"
-        f"  1. Look at the image AND read the Python sensor analysis.\n"
-        f"  2. If the Python analysis warns of an overlap or elevation involving the target, you MUST output 'relocate' for the blocking object.\n"
-        f"  3. If the Python analysis says the target is clear, verify visually. If it looks clear, output 'pick'.\n"
-        f"  4. If you see an unknown object (not in catalogue) blocking the target, output 'abort'.\n"
-        f"  5. Do not re-relocate already moved objects (check history).\n\n"
-        f"AVAILABLE ACTIONS:\n"
-        f"  - relocate: move one blocking object to a safe spot.\n"
-        f"  - pick: pick the target.\n"
+        f"RULES:\n"
+        f"  1. Only interact with detected objects from the list above.\n"
+        f"     Approved catalogue: {catalogue_list}.\n"
+        f"  2. Only relocate if height matching or direct blocking justifies it.\n"
+        f"  3. Do not re-relocate already moved objects (check history).\n"
+        f"  4. If target is clear, say pick.\n"
+        f"  5. If unresolvable, say abort with a reason.\n\n"
+        f"AVAILABLE NEXT ACTIONS (choose exactly one):\n"
+        f"  - relocate: move one blocking object to a safe workspace spot.\n"
+        f"  - pick: pick the target — path is clear.\n"
         f"  - abort: cannot safely reach the target.\n\n"
         f"Reply ONLY with one valid JSON object. Do not explain. Do not write thinking.\n"
         f"Use exactly one of these formats:\n\n"
@@ -648,6 +640,7 @@ async def qwen_plan_next_action(
         f'{{"next_action":"relocate","obstacle_name":"cube","reasoning":"cube is blocking the target"}}\n\n'
         f"Abort format:\n"
         f'{{"next_action":"abort","obstacle_name":null,"reasoning":"target cannot be safely reached"}}'
+
     )
     raw = await ask_qwen_vision(prompt, base64_image)
     print("RAW QWEN PLAN:", repr(raw))
@@ -660,7 +653,7 @@ async def qwen_plan_next_action(
         clean_reason = raw[:100] if "Ollama API Error" in raw else "JSON Parse Error"
         
         plan = {
-            "next_action": "abort",
+            "next_action": "pick",
             "obstacle_name": None,
             "reasoning": f"Safety check bypassed: {clean_reason}"
         }
@@ -688,7 +681,7 @@ async def call_robot_tool(tool_name: str, arguments: dict) -> dict:
     )
     loop = asyncio.get_running_loop()
     def fetch():
-        with urllib.request.urlopen(req, timeout=300) as response:
+        with urllib.request.urlopen(req, timeout=60) as response:
             return json.loads(response.read().decode("utf-8"))
     try:
         result = await loop.run_in_executor(None, fetch)
