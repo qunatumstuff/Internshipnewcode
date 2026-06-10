@@ -429,15 +429,19 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         if len(parts) > 1:
             raw_b64 = parts[1]
 
+    # Prepend /no_think to disable Qwen3's internal thinking mode.
+    # Without this, Qwen3 burns all tokens on <think> chains and
+    # the "response" field comes back empty.
+    prompt_with_directive = f"/no_think\n{prompt}"
+
     payload = {
         "model": QWEN_MODEL,
-        "prompt": prompt,
+        "prompt": prompt_with_directive,
         "stream": False,
         "images": [raw_b64],
-        "format": "json",        
         "options": {
             "temperature": 0,
-            "num_predict": 512
+            "num_predict": 1024
             }
         }
 
@@ -471,9 +475,21 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
 
         response_text = result.get("response", "")
         
+        # Qwen3 thinking mode fallback: Ollama splits output into
+        # "thinking" + "response". If the model spent all tokens
+        # thinking, "response" is empty but the answer may be
+        # inside the "thinking" field.
         if not response_text.strip():
-            logger.error("Ollama returned an empty string.")
-            return "Ollama API Error: Model returned empty string."
+            thinking_text = result.get("thinking", "")
+            if thinking_text.strip():
+                logger.warning("Qwen 'response' empty but 'thinking' has content — using it.")
+                print("QWEN THINKING FIELD:", thinking_text[:500])
+                response_text = thinking_text
+            else:
+                logger.error("Ollama returned empty in both 'response' and 'thinking'.")
+                print("FULL OLLAMA RESULT KEYS:", list(result.keys()))
+                print("FULL OLLAMA RESULT:", json.dumps(result, indent=2)[:2000])
+                return "Ollama API Error: Model returned empty string."
             
         logger.info(f"[Qwen] {response_text[:120]}")
         return response_text
@@ -540,64 +556,104 @@ def parse_qwen_action(raw: str) -> dict:
     }
 
 def compute_scene_analysis(target: str, detections: list[dict]) -> str:
+    """Deterministic spatial analysis using YOLO coordinates + catalogue dimensions.
+    Distinguishes between:
+      - TARGET elevated (sitting on something) → still accessible, safe to pick
+      - BLOCKER elevated by target's height → likely on top of target, must relocate
+    """
     lines = []
-    
+    target_det = next((d for d in detections if d["object_name"] == target), None)
+
     # 1. Analyze Elevation (Z-axis)
     lines.append("ELEVATION ANALYSIS:")
     elevation_found = False
     for d in detections:
         known_h = OBJECT_CATALOGUE.get(d["object_name"], {}).get("height_m", None)
-        if known_h is not None:
-            expected_z = known_h / 2
-            excess = d["z"] - expected_z
-            implied_height = excess * 2
-            
-            if excess > 0.020:
-                elevation_found = True
-                MATCH_TOLERANCE = 0.015
-                plausible = []
-                for obj_name, obj_info in OBJECT_CATALOGUE.items():
-                    if obj_name == d["object_name"]: continue
-                    h = obj_info["height_m"]
-                    if abs(h - implied_height) <= MATCH_TOLERANCE:
-                        plausible.append(f"{obj_name}")
-                
-                if plausible:
-                    lines.append(f"  - WARNING: {d['object_name']} is elevated (Z={d['z']*1000:.0f}mm). It is likely resting on: {', '.join(plausible)}.")
-                else:
-                    lines.append(f"  - Note: {d['object_name']} is elevated but no catalogue object matches the height.")
-    
+        if known_h is None:
+            continue
+        expected_z = known_h / 2
+        excess = d["z"] - expected_z
+        if excess <= 0.020:
+            continue
+
+        elevation_found = True
+        implied_height = excess * 2
+        MATCH_TOLERANCE = 0.015
+        plausible = []
+        for obj_name, obj_info in OBJECT_CATALOGUE.items():
+            if obj_name == d["object_name"]:
+                continue
+            h = obj_info["height_m"]
+            if abs(h - implied_height) <= MATCH_TOLERANCE:
+                plausible.append(obj_name)
+
+        if d["object_name"] == target:
+            # TARGET is elevated — it is sitting ON something (still reachable from above)
+            if plausible:
+                lines.append(
+                    f"  - INFO: Target '{target}' is elevated (Z={d['z']*1000:.0f}mm), "
+                    f"likely sitting ON TOP of: {', '.join(plausible)}. "
+                    f"Target is accessible from above — safe to pick."
+                )
+            else:
+                lines.append(
+                    f"  - CAUTION: Target '{target}' is elevated (Z={d['z']*1000:.0f}mm) "
+                    f"but no known support detected underneath. Unknown object may be below."
+                )
+        else:
+            # NON-TARGET is elevated — check if it might be sitting ON the target
+            if target in plausible:
+                lines.append(
+                    f"  - WARNING: {d['object_name']} is elevated (Z={d['z']*1000:.0f}mm) "
+                    f"and is likely sitting ON TOP OF target '{target}'. "
+                    f"MUST relocate {d['object_name']} first."
+                )
+            elif plausible:
+                lines.append(
+                    f"  - INFO: {d['object_name']} is elevated (Z={d['z']*1000:.0f}mm). "
+                    f"Likely resting on: {', '.join(plausible)}."
+                )
+            else:
+                lines.append(
+                    f"  - Note: {d['object_name']} is elevated but no catalogue "
+                    f"object matches the implied support height."
+                )
+
     if not elevation_found:
         lines.append("  - All detected objects are flat on the table.")
-        
+
     lines.append("")
-    
+
     # 2. Analyze XY Overlap
     lines.append("OVERLAP ANALYSIS (XY):")
-    target_det = next((d for d in detections if d["object_name"] == target), None)
     overlap_found = False
-    
+
     if target_det:
         target_info = OBJECT_CATALOGUE.get(target, {})
-        target_radius = math.hypot(target_info.get("length_m", 0.04), target_info.get("breadth_m", 0.04)) / 2
-        
+        target_radius = math.hypot(
+            target_info.get("length_m", 0.04),
+            target_info.get("breadth_m", 0.04),
+        ) / 2
+
         for d in detections:
-            if d["object_name"] == target: continue
-            
+            if d["object_name"] == target:
+                continue
             dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
             d_info = OBJECT_CATALOGUE.get(d["object_name"], {})
-            d_radius = math.hypot(d_info.get("length_m", 0.04), d_info.get("breadth_m", 0.04)) / 2
-            
-            # If distance < sum of radiuses * 0.85 (conservative threshold to avoid corner edge cases)
+            d_radius = math.hypot(
+                d_info.get("length_m", 0.04),
+                d_info.get("breadth_m", 0.04),
+            ) / 2
+
             if dist < (target_radius + d_radius) * 0.85:
                 overlap_found = True
                 lines.append(f"  - WARNING: {d['object_name']} overlaps with target {target}.")
-                
+
     if not target_det:
         lines.append(f"  - Target '{target}' not currently detected by YOLO.")
     elif not overlap_found:
         lines.append(f"  - No objects physically overlap with '{target}'.")
-        
+
     return "\n".join(lines)
 
 
@@ -642,10 +698,12 @@ async def qwen_plan_next_action(
         f"HISTORY:\n{history_summary}\n\n"
         f"INSTRUCTIONS:\n"
         f"  1. Look at the image AND read the Python sensor analysis.\n"
-        f"  2. If the Python analysis warns of an overlap or elevation involving the target, you MUST output 'relocate' for the blocking object.\n"
-        f"  3. If the Python analysis says the target is clear, verify visually. If it looks clear, output 'pick'.\n"
-        f"  4. If you see an unknown object (not in catalogue) blocking the target, output 'abort'.\n"
-        f"  5. Do not re-relocate already moved objects (check history).\n\n"
+        f"  2. If the analysis shows a WARNING that another object is ON TOP of or overlapping with the target, output 'relocate' for that blocking object.\n"
+        f"  3. If the analysis shows INFO that the target is sitting on top of something, the target is accessible from above — output 'pick'.\n"
+        f"  4. If the analysis shows CAUTION about unknown support under the target, output 'abort'.\n"
+        f"  5. If the analysis says the target is clear, verify visually. If it looks clear, output 'pick'.\n"
+        f"  6. If you see an unknown object (not in catalogue) blocking the target, output 'abort'.\n"
+        f"  7. Do not re-relocate already moved objects (check history).\n\n"
         f"AVAILABLE ACTIONS:\n"
         f"  - relocate: move one blocking object to a safe spot.\n"
         f"  - pick: pick the target.\n"
@@ -851,30 +909,65 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             ]
 
             if not target_detections:
-                return [TextContent(type="text", text=json.dumps({
-                    "status": "FAILED",
-                    "message": f"'{target}' not found.",
-                    "detected_objects": [d.get("object_name") for d in detections],
-                    "history": action_history,
-                }))]
-            
-            print("BEFORE QWEN")
+                # ── Hidden-target inference ──────────────────────────────
+                # Target not visible. Check if any detected object is
+                # elevated by approximately the target's height — if so,
+                # the target is likely hidden underneath that object.
+                target_height = OBJECT_CATALOGUE.get(target, {}).get("height_m", None)
+                inferred_blocker = None
+                if target_height:
+                    for d in detections:
+                        known_h = OBJECT_CATALOGUE.get(d["object_name"], {}).get("height_m", None)
+                        if known_h is None:
+                            continue
+                        expected_z = known_h / 2
+                        excess = d["z"] - expected_z
+                        implied_support = excess * 2
+                        if excess > 0.020 and abs(implied_support - target_height) <= 0.015:
+                            inferred_blocker = d
+                            break
 
-            plan = await qwen_plan_next_action(
-                target,
-                frame_b64,
-                detections,
-                action_history,
-                user_context,
-            ) if frame_b64 else {
-                "next_action": "pick",
-                "obstacle_name": None,
-                "reasoning": "No frame, defaulting to pick.",
-                "raw_output": "No camera frame available, did not run qwen",
-            }
-            print("AFTER QWEN:", plan)
+                if inferred_blocker is None:
+                    return [TextContent(type="text", text=json.dumps({
+                        "status": "FAILED",
+                        "message": f"'{target}' not found.",
+                        "detected_objects": [d.get("object_name") for d in detections],
+                        "history": action_history,
+                    }))]
 
-            next_action = plan.get("next_action", "pick")
+                # Target is hidden — skip Qwen, go straight to relocate
+                blocker_name = inferred_blocker["object_name"]
+                logger.info(
+                    f"Target '{target}' not visible but '{blocker_name}' is elevated "
+                    f"by ~{target_height*1000:.0f}mm — inferring target is hidden underneath."
+                )
+                plan = {
+                    "next_action": "relocate",
+                    "obstacle_name": blocker_name,
+                    "reasoning": (
+                        f"Target '{target}' not visible. '{blocker_name}' is elevated, "
+                        f"matching target height. Target likely hidden underneath."
+                    ),
+                    "raw_output": "Python inference — target not visible, Qwen not consulted",
+                }
+            else:
+                # ── Normal flow: Qwen safety gate ────────────────────────
+                print("BEFORE QWEN")
+                plan = await qwen_plan_next_action(
+                    target,
+                    frame_b64,
+                    detections,
+                    action_history,
+                    user_context,
+                ) if frame_b64 else {
+                    "next_action": "abort",
+                    "obstacle_name": None,
+                    "reasoning": "No camera frame — aborting for safety.",
+                    "raw_output": "No camera frame available, did not run qwen",
+                }
+                print("AFTER QWEN:", plan)
+
+            next_action = plan.get("next_action", "abort")
             obstacle_name = (plan.get("obstacle_name") or "").strip().lower()
             reasoning = plan.get("reasoning", "")
             raw_output=plan.get("raw_output","")
@@ -917,7 +1010,14 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     await asyncio.sleep(1.0)
                     continue
 
-                next_action = "pick"
+                # Qwen said relocate but obstacle not found in detections — abort for safety
+                logger.warning(f"Qwen requested relocate '{obstacle_name}' but it was not found in YOLO detections.")
+                return [TextContent(type="text", text=json.dumps({
+                    "status": "ABORTED",
+                    "reasoning": f"Cannot relocate '{obstacle_name}' — not found in current detections.",
+                    "history": action_history,
+                    "qwen_raw_output": raw_output,
+                }))]
 
             if next_action == "pick":
                 target_det = target_detections[0]
