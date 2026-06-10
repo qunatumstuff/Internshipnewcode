@@ -1048,6 +1048,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
     }
 
     // 3. Process the tool calls
+    let skipSecondCompletion = false;
+    
     if (toolCallsToProcess.length > 0) {
       if (!isTextBasedCall) {
         messages.push(responseMessage); // Push the native assistant message
@@ -1259,76 +1261,79 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           }
         }
         else if (toolCall.name === "pick_and_place_object") {
-          logToolCall(question, "pick_and_place_object", args, "Calling Robot MCP...");
+          logToolCall(question, "pick_and_place_object", args, "Calling Robot MCP in background...");
           sendProgress(`Executing pick-and-place for "${args.object_name}"...`);
           if (robotMcpClient) {
-            try {
-              const completionPromise = waitForRobotEvent(300000);
-              const res = await robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args }, undefined, { timeout: 300000 });
-              toolResultText = res.content[0].text;
-              logToolCall(question, "pick_and_place_object", args, toolResultText);
-              sendProgress(`Waiting for robot to complete pick-and-place...`);
-              await completionPromise;
-              sendProgress(`Pick-and-place completed for "${args.object_name}".`);
-            } catch (e) {
-              toolResultText = `Error calling Robot MCP pick_and_place_object: ${e.message}`;
-              sendProgress(`Error: ${e.message}`);
-              logToolCall(question, "pick_and_place_object", args, `Failed: ${e.message}`);
-              isRobotConnected = false;
-              robotMcpClient = null;
-              await new Promise(resolve => setTimeout(resolve, 2000));
-            }
+            // Fire and forget to prevent frontend timeout
+            robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args }, undefined, { timeout: 300000 })
+              .then(async res => {
+                logToolCall(question, "pick_and_place_object", args, res.content[0].text);
+                const completionPromise = waitForRobotEvent(300000);
+                await completionPromise;
+                sendProgress(`Pick-and-place completed for "${args.object_name}".`);
+                setTimeout(() => sendProgress(null), 3000);
+              })
+              .catch(e => {
+                logToolCall(question, "pick_and_place_object", args, `Failed: ${e.message}`);
+                sendProgress(`Error: ${e.message}`);
+                isRobotConnected = false;
+                robotMcpClient = null;
+                setTimeout(() => sendProgress(null), 5000);
+              });
           } else {
-            toolResultText = "Error: Robot MCP is not connected.";
             sendProgress("Error: Robot MCP is not connected.");
             logToolCall(question, "pick_and_place_object", args, "Failed: Not Connected");
-            await new Promise(resolve => setTimeout(resolve, 2000));
           }
+          
+          answerText = `I am picking up the ${args.object_name} right now.`;
+          skipSecondCompletion = true;
         }
         else if (toolCall.name === "relocate_object") {
-          logToolCall(question, "relocate_object", args, "Calling Robot MCP...");
+          logToolCall(question, "relocate_object", args, "Calling Robot MCP in background...");
           sendProgress(`Relocating obstacle "${args.obstacle_name}"...`);
           if (robotMcpClient) {
-            try {
-              const completionPromise = waitForRobotEvent(300000);
-              const res = await robotMcpClient.callTool({ 
-                name: "relocate_object", 
-                arguments: args 
-              }, undefined, { timeout: 300000 });
-              toolResultText = res.content[0].text;
-              logToolCall(question, "relocate_object", args, toolResultText);
-              sendProgress(`Waiting for robot to complete relocation...`);
-              await completionPromise;
-              sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`);
-            } catch (e) {
-              toolResultText = `Error calling Robot MCP relocate_object: ${e.message}`;
-              sendProgress(`Error: ${e.message}`);
-              logToolCall(question, "relocate_object", args, `Failed: ${e.message}`);
-              isRobotConnected = false;
-              robotMcpClient = null;
-              await new Promise(resolve => setTimeout(resolve, 2000));
-            }
+            // Fire and forget to prevent frontend timeout
+            robotMcpClient.callTool({ name: "relocate_object", arguments: args }, undefined, { timeout: 300000 })
+              .then(async res => {
+                logToolCall(question, "relocate_object", args, res.content[0].text);
+                const completionPromise = waitForRobotEvent(300000);
+                await completionPromise;
+                sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`);
+                setTimeout(() => sendProgress(null), 3000);
+              })
+              .catch(e => {
+                logToolCall(question, "relocate_object", args, `Failed: ${e.message}`);
+                sendProgress(`Error: ${e.message}`);
+                isRobotConnected = false;
+                robotMcpClient = null;
+                setTimeout(() => sendProgress(null), 5000);
+              });
           } else {
-            toolResultText = "Error: Robot MCP is not connected.";
             sendProgress("Error: Robot MCP is not connected.");
             logToolCall(question, "relocate_object", args, "Failed: Not Connected");
-            await new Promise(resolve => setTimeout(resolve, 2000));
           }
+          
+          answerText = `I am moving the ${args.obstacle_name} out of the way for you.`;
+          skipSecondCompletion = true;
         }
 
-        messages.push({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: toolResultText
-        });
+        if (!skipSecondCompletion) {
+          messages.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: toolResultText
+          });
+        }
       }
 
-      const secondCompletion = await openai.createChatCompletion({
-        model: "gpt-5.4-mini",
-        messages: messages,
-        reasoning_effort: reasoningLevel
-      });
-      answerText = secondCompletion.data.choices[0].message.content;
+      if (!skipSecondCompletion) {
+        const secondCompletion = await openai.createChatCompletion({
+          model: "gpt-5.4-mini",
+          messages: messages,
+          reasoning_effort: reasoningLevel
+        });
+        answerText = secondCompletion.data.choices[0].message.content;
+      }
     } else {
       answerText = responseMessage.content;
     }

@@ -1358,6 +1358,40 @@ def is_in_workspace(pose):
 # SECTION 2b — PRE-FLIGHT TRAJECTORY VALIDATION
 # -----------------------------------------------------------------
 
+def validate_kinematics(waypoints, label="trajectory"):
+    """
+    Attempt to use neurapy's IK to validate reachability before moving.
+    If the API supports calculate_ik or inverse_kinematics, it will raise an error here rather than mid-motion.
+    """
+    global r
+    if r is None:
+        return True
+    
+    ik_func = getattr(r, 'inverse_kinematics', getattr(r, 'calculate_ik', getattr(r, 'get_inverse_kinematics', None)))
+
+    if ik_func is None:
+        return True
+
+    for i, wp in enumerate(waypoints):
+        try:
+            res = ik_func(wp)
+            # Some APIs return (angles, is_reachable) tuple
+            if isinstance(res, tuple) and len(res) > 1 and isinstance(res[1], bool):
+                if not res[1]:
+                    raise RuntimeError("IK Returned Unreachable Status")
+        except Exception as e:
+            raise RuntimeError(
+                f"\n  {'='*62}\n"
+                f"  PRE-FLIGHT IK ABORT\n"
+                f"  Waypoint {i} in {label} is unreachable (IK Failed).\n"
+                f"    Target Pose: {wp}\n"
+                f"    Reason: {e}\n"
+                f"  {'='*62}\n"
+                f"  No motion has been sent to the robot.\n"
+            )
+    return True
+
+
 def validate_trajectory(waypoints, label="trajectory", bypass_extra_obs=False):
     """
     Final gate before any move_linear command is issued.
@@ -1370,17 +1404,23 @@ def validate_trajectory(waypoints, label="trajectory", bypass_extra_obs=False):
         tip_z = tcp_z - get_active_gripper_length()
 
         if not gripper_in_transit_bounds(tcp_x, tcp_y, tcp_z):
-            raise RuntimeError(
-                f"\n  {'='*62}\n"
-                f"  PRE-FLIGHT ABORT\n"
-                f"  Waypoint {i} in {label} violates Z limits.\n"
-                f"    TCP   X={tcp_x:.3f}  Y={tcp_y:.3f}  Z={tcp_z:.3f}\n"
-                f"    Fingertip Z={tip_z:.3f}  (must be >= {Z_MIN:.3f})\n"
-                f"    Validation gripper length={get_active_gripper_length():.4f} m\n"
-                f"    Z range: [{Z_MIN:.3f} -> {Z_MAX:.3f}]\n"
-                f"  {'='*62}\n"
-                f"  No motion has been sent to the robot.\n"
-            )
+            if i == 0:
+                logger.warning(
+                    f"Waypoint 0 in {label} violates Z limits (Tip Z={tip_z:.3f}). "
+                    f"Bypassing because it is the starting pose."
+                )
+            else:
+                raise RuntimeError(
+                    f"\n  {'='*62}\n"
+                    f"  PRE-FLIGHT ABORT\n"
+                    f"  Waypoint {i} in {label} violates Z limits.\n"
+                    f"    TCP   X={tcp_x:.3f}  Y={tcp_y:.3f}  Z={tcp_z:.3f}\n"
+                    f"    Fingertip Z={tip_z:.3f}  (must be >= {Z_MIN:.3f})\n"
+                    f"    Validation gripper length={get_active_gripper_length():.4f} m\n"
+                    f"    Z range: [{Z_MIN:.3f} -> {Z_MAX:.3f}]\n"
+                    f"  {'='*62}\n"
+                    f"  No motion has been sent to the robot.\n"
+                )
 
         if gripper_in_stand(tcp_x, tcp_y, tcp_z):
             raise RuntimeError(
@@ -1420,6 +1460,9 @@ def validate_trajectory(waypoints, label="trajectory", bypass_extra_obs=False):
                 f"  {'='*62}\n"
                 f"  No motion has been sent to the robot.\n"
             )
+            
+    # Final kinematic reachability check
+    validate_kinematics(waypoints, label)
     return True
 
 # -----------------------------------------------------------------
@@ -1574,18 +1617,30 @@ def release_percent_for_object(selected_object):
     release_width_m = object_grip_width_m * (1.0 + PRE_PICK_EXTRA_RATIO)
     return object_width_to_percent(release_width_m)
 
-def planned_rz_for_object(selected_object, placement_angle_deg=None):
+def planned_rz_for_object(selected_object, placement_angle_deg=None, reference_angle_deg=None):
     """
     Return TCP RZ angle for this object.
     If placement_angle_deg is given, use that for placement packing.
+    reference_angle_deg is used to choose the nearest symmetric rotation (+/- 180).
     """
     if placement_angle_deg is not None:
-        return _normalise_angle_deg(placement_angle_deg)
+        angle = _normalise_angle_deg(placement_angle_deg)
+    else:
+        preferred = float(
+            selected_object.get("preferred_grasp_angle_deg", DEFAULT_PREFERRED_GRASP_ANGLE_DEG)
+        )
+        angle = _normalise_angle_deg(HOME_RZ + preferred)
 
-    preferred = float(
-        selected_object.get("preferred_grasp_angle_deg", DEFAULT_PREFERRED_GRASP_ANGLE_DEG)
-    )
-    return _normalise_angle_deg(HOME_RZ + preferred)
+    # Use reference_angle_deg as the normalization base, default to HOME_RZ
+    base = HOME_RZ if reference_angle_deg is None else reference_angle_deg
+    
+    diff = _normalise_angle_deg(angle - base)
+    if diff > 90.0:
+        angle = _normalise_angle_deg(angle - 180.0)
+    elif diff < -90.0:
+        angle = _normalise_angle_deg(angle + 180.0)
+        
+    return angle
 
 
 def rotated_rectangle_half_extents(length_m, width_m, angle_deg):
@@ -2671,9 +2726,16 @@ def resolve_object_runtime_variables(selected_object, move_x, move_y, drop_slot)
     if isinstance(drop_slot, dict):
         placement_angle_deg = drop_slot.get("placement_angle_deg")
 
-    planned_rz_deg = planned_rz_for_object(
+    pick_rz_deg = planned_rz_for_object(
+        selected_object,
+        placement_angle_deg=None,
+        reference_angle_deg=HOME_RZ,
+    )
+
+    drop_rz_deg = planned_rz_for_object(
         selected_object,
         placement_angle_deg=placement_angle_deg,
+        reference_angle_deg=pick_rz_deg,
     )
 
     if not isinstance(drop_slot, dict):
@@ -2704,7 +2766,9 @@ def resolve_object_runtime_variables(selected_object, move_x, move_y, drop_slot)
         "OBJECT_GRIP_WIDTH_M": object_grip_width_m,
         "OBJECT_ORIENTATION_DEG": object_orientation_deg,
         "PREFERRED_GRASP_ANGLE_DEG": preferred_grasp_angle_deg,
-        "PLANNED_RZ_DEG": planned_rz_deg,
+        "PLANNED_RZ_DEG": pick_rz_deg,
+        "PICK_RZ_DEG": pick_rz_deg,
+        "DROP_RZ_DEG": drop_rz_deg,
 
         "DROP_X": drop_x,
         "DROP_Y": drop_y,
@@ -2720,7 +2784,7 @@ def set_active_pick_item(seq_item, cycle_index=1, total_cycles=1):
     global GRASP_LENGTH_M, GRASP_WIDTH_M, GRASP_BREADTH_M, GRASP_HEIGHT_M
     global GRASP_OFFSET_X, GRASP_OFFSET_Y, GRASP_OFFSET_Z
     global PICK_TARGET_X, PICK_TARGET_Y, OBJECT_GRIP_WIDTH_M
-    global OBJECT_ORIENTATION_DEG, PREFERRED_GRASP_ANGLE_DEG, PLANNED_RZ_DEG
+    global OBJECT_ORIENTATION_DEG, PREFERRED_GRASP_ANGLE_DEG, PLANNED_RZ_DEG, PICK_RZ_DEG, DROP_RZ_DEG
     global DROP_X, DROP_Y
     global PRE_PICK_OPEN_PERCENT, PICK_CLOSE_PERCENT
     global PRE_PICK_GRIPPER_LENGTH, CLOSED_GRIPPER_LENGTH, ACTIVE_GRIPPER_LENGTH
@@ -2764,6 +2828,8 @@ def set_active_pick_item(seq_item, cycle_index=1, total_cycles=1):
     OBJECT_ORIENTATION_DEG = _RUNTIME["OBJECT_ORIENTATION_DEG"]
     PREFERRED_GRASP_ANGLE_DEG = _RUNTIME["PREFERRED_GRASP_ANGLE_DEG"]
     PLANNED_RZ_DEG = _RUNTIME["PLANNED_RZ_DEG"]
+    PICK_RZ_DEG = _RUNTIME["PICK_RZ_DEG"]
+    DROP_RZ_DEG = _RUNTIME["DROP_RZ_DEG"]
 
     DROP_X = _RUNTIME["DROP_X"]
     DROP_Y = _RUNTIME["DROP_Y"]
@@ -2856,7 +2922,7 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
     lift_pick_forward[5] = math.radians(HOME_RZ)
 
     lift_pick = copy.deepcopy(lift_pick_forward)
-    lift_pick[5] = math.radians(PLANNED_RZ_DEG)
+    lift_pick[5] = math.radians(PICK_RZ_DEG)
 
     pick_pose = copy.deepcopy(lift_pick)
     pick_pose[2] = PICK_Z_DYNAMIC
@@ -2872,9 +2938,9 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
     drop_pose = copy.deepcopy(lift_drop)
     drop_pose[2] = DROP_RELEASE_Z
     lift_drop_grip = copy.deepcopy(lift_drop)
-    lift_drop_grip[5] = math.radians(PLANNED_RZ_DEG)
+    lift_drop_grip[5] = math.radians(DROP_RZ_DEG)
     drop_pose_grip = copy.deepcopy(drop_pose)
-    drop_pose_grip[5] = math.radians(PLANNED_RZ_DEG)
+    drop_pose_grip[5] = math.radians(DROP_RZ_DEG)
 
     phase1_rotate = [lift_pick_forward, lift_pick]
     phase1_approach = build_full_trajectory([lift_pick, pick_pose])
@@ -2957,12 +3023,9 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
     execute_trajectory(r,[lift_drop_grip, lift_drop],label="Phase 3 reorient — grip angle -> forward")
 
     if MCP_IS_RELOCATING:
+        execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
         if ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("relocate_placed")
-        threading.Thread(
-            target=lambda: execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home"),
-            daemon=True
-        ).start()
         return
 
     execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
