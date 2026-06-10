@@ -438,6 +438,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         "model": QWEN_MODEL,
         "prompt": prompt_with_directive,
         "stream": False,
+        "format": "json",
         "images": [raw_b64],
         "options": {
             "temperature": 0.2,
@@ -701,8 +702,8 @@ async def qwen_plan_next_action(
         f"  - relocate: move one blocking object to a safe spot.\n"
         f"  - pick: pick the target.\n"
         f"  - abort: cannot safely reach the target.\n\n"
-        f"Reply ONLY with one valid JSON object. Do not explain. Do not write thinking.\n"
-        f"Use exactly one of these formats:\n\n"
+        f"CRITICAL INSTRUCTION: You MUST start your response immediately with the '{{' character.\n"
+        f"NO INTRODUCTIONS. NO EXPLANATIONS. NO RAMBLING. ONLY OUTPUT JSON.\n\n"
         f"Pick format:\n"
         f'{{"next_action":"pick","obstacle_name":null,"reasoning":"target is visible and safe"}}\n\n'
         f"Relocate format:\n"
