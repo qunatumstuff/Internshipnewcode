@@ -110,14 +110,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   String _currentPersona = 'john';
   String get _pName => _currentPersona == 'linda' ? 'Linda' : 'John';
   bool get _isInteractionBlocked {
-    bool isMoving = false;
-    try {
-      isMoving = js.context['isRobotMoving'] == true;
-    } catch (_) {}
     return _isTtsInProgress ||
         _avatarState == AvatarState.thinking ||
-        (_messages.isNotEmpty && _messages.last.text == '__THINKING__') ||
-        isMoving;
+        (_messages.isNotEmpty && _messages.last.text == '__THINKING__');
   }
 
   String get _visibleStateText {
@@ -1341,25 +1336,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     if (eventName.startsWith('robot_moving_status:')) {
       final isMoving = eventName.substring('robot_moving_status:'.length) == 'true';
-      _addUiLog('[OWW] Robot moving status updated: $isMoving');
-      if (isMoving) {
-        // Stop manual mic recording immediately if listening!
-        if (_isListening) {
-          _addUiLog('[MIC] Robot started moving. Aborting active manual recording.');
-          setState(() {
-            _isListening = false;
-            _textController.clear();
-          });
-          _stopSilenceDetection();
-          try {
-            _webMediaRecorder?.stop();
-          } catch (_) {}
-          _abortAndRestartWakeWord();
-        }
-      }
-      if (mounted) {
-        setState(() {}); // trigger rebuild so UI disables the manual record button
-      }
+      _addUiLog('[OWW] Robot moving status updated: $isMoving (mic stays active)');
+      // Mic and wakeword remain active during robot movement
       return;
     }
 
@@ -1416,8 +1394,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _addUiLog('[WAKE] Ignored $keyword because current persona is $_currentPersona');
       return;
     }
-    if (_isTtsInProgress || _isListening || _isInteractionBlocked) {
-      _addUiLog('[WAKE] blocked: tts=$_isTtsInProgress, listen=$_isListening, blocked=$_isInteractionBlocked');
+    if (_isTtsInProgress || _isListening) {
+      _addUiLog('[WAKE] blocked: tts=$_isTtsInProgress, listen=$_isListening');
       _showStatusSnackBar('Wakeword heard, but recording did not start.', isError: true);
       return;
     }
