@@ -1405,8 +1405,8 @@ def validate_trajectory(waypoints, label="trajectory", bypass_extra_obs=False):
 
         if not gripper_in_transit_bounds(tcp_x, tcp_y, tcp_z):
             if i == 0:
-                logger.warning(
-                    f"Waypoint 0 in {label} violates Z limits (Tip Z={tip_z:.3f}). "
+                print(
+                    f"WARNING: Waypoint 0 in {label} violates Z limits (Tip Z={tip_z:.3f}). "
                     f"Bypassing because it is the starting pose."
                 )
             else:
@@ -3009,9 +3009,9 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
 
     execute_trajectory(r, phase2_depart, label="Phase 2 depart — pick_pose -> lift_pick")
     
-    
-    execute_joint_transit(r,lift_pick,lift_drop_grip,label= "Phase 2 transit — lift_pick_grip -> lift_drop_grip")
-
+    execute_trajectory(r, phase2_reorient, label="Phase 2 reorient — pick angle -> forward")
+    execute_joint_transit(r, lift_pick_forward_after, lift_drop, label="Phase 2 transit — pick_forward -> drop_forward")
+    execute_trajectory(r, [lift_drop, lift_drop_grip], label="Phase 2 reorient — forward -> drop angle")
     
     execute_trajectory(r, phase2_approach, label="Phase 2 approach — lift_drop -> drop_pose")
     gripper_release_object(OBJECT_GRIP_WIDTH_M)

@@ -429,10 +429,8 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         if len(parts) > 1:
             raw_b64 = parts[1]
 
-    # Prepend /no_think to disable Qwen3's internal thinking mode.
-    # Without this, Qwen3 burns all tokens on <think> chains and
-    # the "response" field comes back empty.
-    prompt_with_directive = f"/no_think\n{prompt}"
+    # Removed /no_think because it caused qwen3-vl:2b to return empty responses.
+    prompt_with_directive = prompt
 
     payload = {
         "model": QWEN_MODEL,

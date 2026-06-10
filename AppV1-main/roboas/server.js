@@ -466,11 +466,11 @@ app.get('/progress', (req, res) => {
   });
 });
 
-function sendProgress(status) {
-  console.log(`📡 [SSE Progress Broadcast]: "${status}"`);
+function sendProgress(status, isRobotMoving = false) {
+  console.log(`📡 [SSE Progress Broadcast]: "${status}" (isRobotMoving: ${isRobotMoving})`);
   progressClients.forEach(client => {
     try {
-      client.write(`data: ${JSON.stringify({ status })}\n\n`);
+      client.write(`data: ${JSON.stringify({ status, isRobotMoving })}\n\n`);
     } catch (e) {
       console.error('❌ SSE write error:', e.message);
     }
@@ -1065,115 +1065,65 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           toolResultText = `Switched to ${currentPersona}. Now greeting the user warmly as ${currentPersona === 'linda' ? 'Linda' : 'John'}.`;
         } 
         else if (toolCall.name === "locate_object") {
-          logToolCall(question, "locate_object", args, "Calling Remote Vision MCP...");
-          sendProgress(`Initiating workspace scan for "${args.target_name}"...`);
+          logToolCall(question, "locate_object", args, "Orchestrating autonomous scan & pick in background...");
+          sendProgress(`Initiating workspace scan for "${args.target_name}"...`, true);
+          
           if (visionMcpClient) {
-            try {
-              sendProgress(`Capturing frame on Laptop B & sending to Qwen for scene analysis...`);
-              console.log("=================================");
-              console.log("RAW LOCATE TOOL CALL");
-              console.log("Tool:", "locate_object");
-              console.log("Args:", JSON.stringify(args, null, 2));
-              console.log("=================================");
-              const visionArgs = { target_name: args.target_name };
-
-              const res = await visionMcpClient.callTool({ 
-                name: "locate_object", 
-                arguments: visionArgs 
-              }, undefined, { timeout: 300000 });
-              toolResultText = res.content[0].text;
-
-              try {
-                const parsed = JSON.parse(toolResultText);
-                console.log("RAW VISION MCP RESULT:", JSON.stringify(res, null, 2));
-                console.log("PARSED VISION RESULT:", JSON.stringify(parsed, null, 2));
-
-                // === QWEN OUTPUT LOGGING (supports both old and new vision_mcp.py formats) ===
-                const qwenRaw = parsed.qwen_raw_output                          // NEW format
-                  || (parsed.qwen_safety_gate && parsed.qwen_safety_gate.raw_response)  // OLD format
-                  || null;
-                const qwenReasoning = parsed.qwen_reasoning || "";
-
-                console.log("\n" + "=".repeat(50));
-                console.log("🧠 \x1b[35m[QWEN SAFETY GATE RESULT]:\x1b[0m");
-                console.log("  Reasoning:", qwenReasoning || "(none)");
-                console.log("  Raw Output:", qwenRaw === "" ? "\x1b[31m(EMPTY STRING — Qwen returned nothing!)\x1b[0m" 
-                  : qwenRaw === null ? "\x1b[33m(not present in response)\x1b[0m"
-                  : qwenRaw);
-                if (parsed.qwen_safety_gate) {
-                  console.log("  Model:", parsed.qwen_safety_gate.model || "unknown");
-                  console.log("  Gate Status:", parsed.qwen_safety_gate.status || "unknown");
-                  console.log("  Parsed Response:", JSON.stringify(parsed.qwen_safety_gate.parsed_response));
-                }
-                console.log("=".repeat(50) + "\n");
-
-                // Normalize status to uppercase for comparison
-                const statusUpper = (parsed.status || "").toUpperCase();
-
-                if (statusUpper.startsWith("SUCCESS")) {
-                  sendProgress(`Localized "${args.target_name}". Coordinates acquired.`);
-                  await new Promise(resolve => setTimeout(resolve, 1500));
-                  
-                  // AUTOMATICALLY TRANSFER TO ROBOT ARM
-                  if (robotMcpClient && parsed.coordinates) {
-                    sendProgress(`Transferring coordinates to robot arm to pick up "${args.target_name}"...`);
-                    try {
-                      const robotArgs = {
-                        object_name: args.target_name,
-                        x: parsed.coordinates.x,
-                        y: parsed.coordinates.y,
-                        z: parsed.coordinates.z,
-                        angle_deg: parsed.coordinates.angle_deg,
-                        detections: parsed.detections
-                      };
-
-                      if (parsed.coordinates.grasp_label) {
-                        robotArgs.grasp_label = parsed.coordinates.grasp_label;
-                      }
-
-                      const completionPromise = waitForRobotEvent(300000);
-                      const robotRes = await robotMcpClient.callTool({ 
-                        name: "pick_and_place_object", 
-                        arguments: robotArgs
-                      }, undefined, { timeout: 300000 });
-                      toolResultText += `\n\nRobot Execution Status: ` + robotRes.content[0].text;
-                      sendProgress(`Waiting for robot to complete pick-and-place...`);
-                      await completionPromise;
-                      sendProgress(`Pick-and-place completed for "${args.target_name}".`);
-                    } catch (robotErr) {
-                      toolResultText += `\n\nRobot Execution Failed: ${robotErr.message}`;
-                      sendProgress(`Robot Error: ${robotErr.message}`);
-                      await new Promise(resolve => setTimeout(resolve, 2000));
-                    }
-                  }
-
-                } else if (statusUpper.startsWith("BLOCKED")) {
-                  sendProgress(`Blocked: Qwen determined pickup is not safe.`);
-                  await new Promise(resolve => setTimeout(resolve, 3000));
-
-                } else if (parsed.status) {
-                  sendProgress(parsed.status);
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                }
-              } catch (jsonErr) {
-                sendProgress(`Target scan completed. Generating final response...`);
-              }
+            // Fire-and-forget background pipeline
+            visionMcpClient.callTool({ 
+              name: "locate_object", 
+              arguments: { target_name: args.target_name, user_context: question } 
+            }, undefined, { timeout: 300000 })
+            .then(async res => {
+              const parsed = JSON.parse(res.content[0].text);
+              logToolCall(question, "locate_object", args, parsed.status === "SUCCESS" ? "Target located" : "Scan failed");
               
-              logToolCall(question, "locate_object", args, toolResultText);
-            } catch (e) {
-              toolResultText = `Error calling Vision MCP: ${e.message}`;
-              sendProgress(`Error: ${e.message}`);
-              logToolCall(question, "locate_object", args, `Failed: ${e.message}`);
-              isVisionConnected = false;
-              visionMcpClient = null;
-              await new Promise(resolve => setTimeout(resolve, 2000));
-            }
+              if (parsed.status === "SUCCESS") {
+                sendProgress(`Target "${args.target_name}" clear! Instructing robot to pick it up...`, true);
+                if (robotMcpClient) {
+                  try {
+                    const robotArgs = {
+                      object_name: parsed.target,
+                      x: parsed.coordinates.x,
+                      y: parsed.coordinates.y,
+                      z: parsed.coordinates.z,
+                      angle_deg: parsed.coordinates.angle_deg,
+                      detections: parsed.detections
+                    };
+                    if (parsed.coordinates.grasp_label) {
+                      robotArgs.grasp_label = parsed.coordinates.grasp_label;
+                    }
+                    
+                    const completionPromise = waitForRobotEvent(300000);
+                    robotMcpClient.callTool({
+                      name: "pick_and_place_object",
+                      arguments: robotArgs
+                    }, undefined, { timeout: 300000 }).catch(e => console.error("Background robot pick failed:", e));
+                    
+                    await completionPromise;
+                    sendProgress(`Successfully picked up the ${args.target_name}!`, true);
+                    setTimeout(() => sendProgress(null, false), 3000);
+                  } catch (e) {
+                    sendProgress(`Robot pick error: ${e.message}`, false);
+                    setTimeout(() => sendProgress(null, false), 5000);
+                  }
+                } else {
+                  sendProgress("Error: Robot MCP is not connected for pickup.", false);
+                }
+              } else {
+                sendProgress(`Scan stopped: ${parsed.message || parsed.reasoning || "Obstacle blockage"}`, false);
+                setTimeout(() => sendProgress(null, false), 5000);
+              }
+            }).catch(e => {
+              sendProgress(`Vision MCP Error: ${e.message}`, false);
+              setTimeout(() => sendProgress(null, false), 5000);
+            });
           } else {
-            toolResultText = "Error: Vision MCP is not connected.";
-            sendProgress("Error: Remote Vision MCP is not connected.");
-            logToolCall(question, "locate_object", args, "Failed: Not Connected");
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            sendProgress("Error: Vision MCP is not connected.");
           }
+
+          answerText = `I am checking the workspace for the ${args.target_name}. Once the path is clear, I will pick it up for you.`;
+          skipSecondCompletion = true;
         }
         else if (toolCall.name === "search_web") {
           logToolCall(question, "search_web", args, "Searching web...");
@@ -1262,26 +1212,23 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
         }
         else if (toolCall.name === "pick_and_place_object") {
           logToolCall(question, "pick_and_place_object", args, "Calling Robot MCP in background...");
-          sendProgress(`Executing pick-and-place for "${args.object_name}"...`);
+          sendProgress(`Executing pick-and-place for "${args.object_name}"...`, true);
+          
           if (robotMcpClient) {
-            // Fire and forget to prevent frontend timeout
+            const completionPromise = waitForRobotEvent(300000);
             robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args }, undefined, { timeout: 300000 })
-              .then(async res => {
-                logToolCall(question, "pick_and_place_object", args, res.content[0].text);
-                const completionPromise = waitForRobotEvent(300000);
-                await completionPromise;
-                sendProgress(`Pick-and-place completed for "${args.object_name}".`);
-                setTimeout(() => sendProgress(null), 3000);
+              .catch(e => console.error("Background robot pick failed:", e));
+            
+            completionPromise.then(() => {
+                sendProgress(`Pick-and-place completed for "${args.object_name}".`, true);
+                setTimeout(() => sendProgress(null, false), 3000);
               })
               .catch(e => {
-                logToolCall(question, "pick_and_place_object", args, `Failed: ${e.message}`);
-                sendProgress(`Error: ${e.message}`);
-                isRobotConnected = false;
-                robotMcpClient = null;
-                setTimeout(() => sendProgress(null), 5000);
+                sendProgress(`Error: ${e.message}`, false);
+                setTimeout(() => sendProgress(null, false), 5000);
               });
           } else {
-            sendProgress("Error: Robot MCP is not connected.");
+            sendProgress("Error: Robot MCP is not connected.", false);
             logToolCall(question, "pick_and_place_object", args, "Failed: Not Connected");
           }
           
@@ -1290,23 +1237,19 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
         }
         else if (toolCall.name === "relocate_object") {
           logToolCall(question, "relocate_object", args, "Calling Robot MCP in background...");
-          sendProgress(`Relocating obstacle "${args.obstacle_name}"...`);
+          sendProgress(`Relocating obstacle "${args.obstacle_name}"...`, true);
           if (robotMcpClient) {
-            // Fire and forget to prevent frontend timeout
+            const completionPromise = waitForRobotEvent(300000);
             robotMcpClient.callTool({ name: "relocate_object", arguments: args }, undefined, { timeout: 300000 })
-              .then(async res => {
-                logToolCall(question, "relocate_object", args, res.content[0].text);
-                const completionPromise = waitForRobotEvent(300000);
-                await completionPromise;
-                sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`);
-                setTimeout(() => sendProgress(null), 3000);
+              .catch(e => console.error("Background robot relocation failed:", e));
+            
+            completionPromise.then(() => {
+                sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`, true);
+                setTimeout(() => sendProgress(null, false), 3000);
               })
               .catch(e => {
-                logToolCall(question, "relocate_object", args, `Failed: ${e.message}`);
-                sendProgress(`Error: ${e.message}`);
-                isRobotConnected = false;
-                robotMcpClient = null;
-                setTimeout(() => sendProgress(null), 5000);
+                sendProgress(`Error: ${e.message}`, false);
+                setTimeout(() => sendProgress(null, false), 5000);
               });
           } else {
             sendProgress("Error: Robot MCP is not connected.");
