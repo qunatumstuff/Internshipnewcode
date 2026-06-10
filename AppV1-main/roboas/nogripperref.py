@@ -2954,10 +2954,16 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
 
     execute_trajectory(r, phase3_depart, label="Phase 3 depart — drop_pose -> lift_drop")
     
-    if MCP_IS_RELOCATING and ROBOT_EVENT_CALLBACK:
-        ROBOT_EVENT_CALLBACK("relocate_placed")
-    
     execute_trajectory(r,[lift_drop_grip, lift_drop],label="Phase 3 reorient — grip angle -> forward")
+
+    if MCP_IS_RELOCATING:
+        if ROBOT_EVENT_CALLBACK:
+            ROBOT_EVENT_CALLBACK("relocate_placed")
+        threading.Thread(
+            target=lambda: execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home"),
+            daemon=True
+        ).start()
+        return
 
     execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
 

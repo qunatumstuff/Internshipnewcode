@@ -1078,7 +1078,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               const res = await visionMcpClient.callTool({ 
                 name: "locate_object", 
                 arguments: visionArgs 
-              }, { timeout: 300000 });
+              }, undefined, { timeout: 300000 });
               toolResultText = res.content[0].text;
 
               try {
@@ -1133,7 +1133,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                       const robotRes = await robotMcpClient.callTool({ 
                         name: "pick_and_place_object", 
                         arguments: robotArgs
-                      }, { timeout: 300000 });
+                      }, undefined, { timeout: 300000 });
                       toolResultText += `\n\nRobot Execution Status: ` + robotRes.content[0].text;
                       sendProgress(`Waiting for robot to complete pick-and-place...`);
                       await completionPromise;
@@ -1264,7 +1264,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           if (robotMcpClient) {
             try {
               const completionPromise = waitForRobotEvent(300000);
-              const res = await robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args });
+              const res = await robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args }, undefined, { timeout: 300000 });
               toolResultText = res.content[0].text;
               logToolCall(question, "pick_and_place_object", args, toolResultText);
               sendProgress(`Waiting for robot to complete pick-and-place...`);
@@ -1294,7 +1294,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               const res = await robotMcpClient.callTool({ 
                 name: "relocate_object", 
                 arguments: args 
-              }, { timeout: 300000 });
+              }, undefined, { timeout: 300000 });
               toolResultText = res.content[0].text;
               logToolCall(question, "relocate_object", args, toolResultText);
               sendProgress(`Waiting for robot to complete relocation...`);
@@ -1656,8 +1656,9 @@ app.get('/', (req, res) => {
 
 // Start server with WebSocket proxy for wake word
 const server = http.createServer(app);
-// WebSocket proxy for Python wake word is disabled in browser-based OWW flow.
-// const wss = new WebSocket.Server({ server, path: '/wakeword' });
+server.timeout = 300000; // 5 minutes
+server.headersTimeout = 300000; // 5 minutes
+server.keepAliveTimeout = 300000; // 5 minutes
 
 server.listen(port, async () => {
   console.log(`🚀 Server running at http://localhost:${port}`);
