@@ -3415,7 +3415,7 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
     }
 
 
-def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections):
+def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, target_name=None):
     """
     Find a safe XY drop position for an obstacle being relocated within the
     pick workspace (NOT the placement box).
@@ -3424,19 +3424,28 @@ def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections):
       - Stay inside the camera scan zone (CAM_X_MIN/MAX, CAM_Y_MIN/MAX) so
         YOLO can re-detect the object after relocation.
       - Stay away from all other detected objects by at least RELOCATION_CLEARANCE_M.
+      - Stay away from the target object specifically by at least TARGET_CLEARANCE_M.
       - Stay away from the conveyor and camera stand no-go zones.
       - Stay away from the current obstacle position itself.
 
     Returns [x, y] or raises RuntimeError if no spot found.
     """
-    RELOCATION_CLEARANCE_M = 0.12   # minimum gap from other objects
-    GRID_STEP_M            = 0.05   # search grid resolution
-    BORDER_M               = 0.04   # minimum distance from workspace edge
+    RELOCATION_CLEARANCE_M = 0.08   # minimum gap from other objects (reduced from 0.12 to find more central options)
+    TARGET_CLEARANCE_M     = 0.15   # extra clearance from target specifically (prevents overlap warning trigger)
+    GRID_STEP_M            = 0.02   # search grid resolution (finer grid)
+    BORDER_M               = 0.07   # minimum distance from workspace edge (increased from 0.04 to avoid boundary singularities/joint limits)
 
     # Build list of positions to avoid: all detections + obstacle's own position.
     avoid = []
+    target_positions = []
     for det in (detections or []):
-        avoid.append((float(det.get("x", 0)), float(det.get("y", 0))))
+        det_name = det.get("object_name")
+        det_x = float(det.get("x", 0))
+        det_y = float(det.get("y", 0))
+        if target_name and det_name == target_name:
+            target_positions.append((det_x, det_y))
+        else:
+            avoid.append((det_x, det_y))
     avoid.append((float(obstacle_x), float(obstacle_y)))
 
     x = CAM_X_MIN + BORDER_M
@@ -3451,12 +3460,19 @@ def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections):
                 y += GRID_STEP_M
                 continue
 
-            # Check clearance from all objects.
+            # Check clearance from all regular objects.
             too_close = False
             for (ox, oy) in avoid:
                 if math.hypot(x - ox, y - oy) < RELOCATION_CLEARANCE_M:
                     too_close = True
                     break
+
+            # Check clearance from target specifically.
+            if not too_close:
+                for (tx, ty) in target_positions:
+                    if math.hypot(x - tx, y - ty) < TARGET_CLEARANCE_M:
+                        too_close = True
+                        break
 
             if not too_close:
                 return [x, y]
@@ -3477,6 +3493,7 @@ def run_mcp_relocate_object(
     obstacle_z=0.0,
     obstacle_angle=None,
     detections=None,
+    target_name=None,
 ):
     """
     MCP entry point: pick an obstacle object and drop it at a safe empty
@@ -3504,7 +3521,7 @@ def run_mcp_relocate_object(
 
     # Step 1: find a safe drop spot in the workspace.
     reloc_xy = _find_relocation_spot(
-        obstacle_name, obstacle_x, obstacle_y, detections
+        obstacle_name, obstacle_x, obstacle_y, detections, target_name=target_name
     )
     reloc_x, reloc_y = reloc_xy
 

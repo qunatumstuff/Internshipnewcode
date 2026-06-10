@@ -945,21 +945,88 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     "raw_output": "Python inference — target not visible, Qwen not consulted",
                 }
             else:
-                # ── Normal flow: Qwen safety gate ────────────────────────
-                print("BEFORE QWEN")
-                plan = await qwen_plan_next_action(
-                    target,
-                    frame_b64,
-                    detections,
-                    action_history,
-                    user_context,
-                ) if frame_b64 else {
-                    "next_action": "abort",
-                    "obstacle_name": None,
-                    "reasoning": "No camera frame — aborting for safety.",
-                    "raw_output": "No camera frame available, did not run qwen",
-                }
-                print("AFTER QWEN:", plan)
+                # ── Deterministic obstacle detection ─────────────────────
+                target_info = OBJECT_CATALOGUE.get(target, {})
+                expected_h = target_info.get("height_m")
+                sensor_obstacle = None
+                sensor_reasoning = ""
+
+                # Check 1: Z-axis elevation mismatch (Stacked target)
+                if expected_h is not None and target_detections:
+                    expected_z = expected_h / 2
+                    excess = target_detections[0]["z"] - expected_z
+                    if excess > 0.020:
+                        # Find overlapping or closest detected obstacle to target
+                        target_x = target_detections[0]["x"]
+                        target_y = target_detections[0]["y"]
+                        best_obstacle = None
+                        min_dist = 9999.0
+                        for d in detections:
+                            if d is target_detections[0]:
+                                continue
+                            dx = d["x"] - target_x
+                            dy = d["y"] - target_y
+                            dist = (dx*dx + dy*dy)**0.5
+                            if dist < 0.080 and dist < min_dist:
+                                min_dist = dist
+                                best_obstacle = d.get("object_name")
+                        sensor_obstacle = best_obstacle if best_obstacle else "cube"
+                        sensor_reasoning = f"Depth sensor override: Target '{target}' surface is {excess*1000:.0f}mm higher than expected, indicating overlapping object '{sensor_obstacle}' is on top."
+
+                # Check 2: XY overlap
+                if not sensor_obstacle and target_detections:
+                    target_det = target_detections[0]
+                    target_radius = math.hypot(
+                        target_info.get("length_m", 0.04),
+                        target_info.get("breadth_m", 0.04),
+                    ) / 2
+
+                    overlapping_obstacle = None
+                    min_overlap_dist = 9999.0
+
+                    for d in detections:
+                        if d["object_name"] == target:
+                            continue
+                        dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
+                        d_info = OBJECT_CATALOGUE.get(d["object_name"], {})
+                        d_radius = math.hypot(
+                            d_info.get("length_m", 0.04),
+                            d_info.get("breadth_m", 0.04),
+                        ) / 2
+
+                        if dist < (target_radius + d_radius) * 0.85:
+                            if dist < min_overlap_dist:
+                                min_overlap_dist = dist
+                                overlapping_obstacle = d["object_name"]
+
+                    if overlapping_obstacle:
+                        sensor_obstacle = overlapping_obstacle
+                        sensor_reasoning = f"XY overlap override: Target '{target}' is physically overlapping with '{overlapping_obstacle}' (distance {min_overlap_dist*1000:.1f}mm), requiring relocation."
+
+                if sensor_obstacle:
+                    logger.warning(f"SENSOR OVERRIDE: Bypassing Qwen due to deterministic block '{sensor_obstacle}'.")
+                    plan = {
+                        "next_action": "relocate",
+                        "obstacle_name": sensor_obstacle,
+                        "reasoning": sensor_reasoning,
+                        "raw_output": "Sensor detection override — bypassed Qwen",
+                    }
+                else:
+                    # ── Normal flow: Qwen safety gate ────────────────────────
+                    print("BEFORE QWEN")
+                    plan = await qwen_plan_next_action(
+                        target,
+                        frame_b64,
+                        detections,
+                        action_history,
+                        user_context,
+                    ) if frame_b64 else {
+                        "next_action": "abort",
+                        "obstacle_name": None,
+                        "reasoning": "No camera frame — aborting for safety.",
+                        "raw_output": "No camera frame available, did not run qwen",
+                    }
+                print("AFTER QWEN/SENSOR PLAN:", plan)
 
                 if plan.get("next_action") == "pick":
                     # Failsafe: If Qwen hallucinated that the path is clear, but depth sensor knows there is an anomaly.
@@ -1045,6 +1112,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 }))]
 
             if next_action == "relocate":
+                camera.current_target_class = obstacle_name
                 obstacle_dets = [
                     d for d in detections
                     if d.get("object_name") == obstacle_name
@@ -1078,6 +1146,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     "obstacle_z": obs["z"],
                     "obstacle_angle_deg": obs.get("angle_deg"),
                     "detections": detections,
+                    "target_name": target,
                 })
 
                 if reloc_result.get("error"):

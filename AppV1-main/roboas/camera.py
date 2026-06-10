@@ -23,6 +23,7 @@ inference_lock = threading.Lock()
 # Tweak this value to add a global Z offset (in meters) to all detected objects.
 # E.g., setting it to 0.02 will raise the target pick point by 2 cm.
 Z_OFFSET = 0.025
+DISPLAY_ONLY_TARGET = True
 
 def smooth_coord(old_val, new_val, alpha=0.2, snap_thresh=0.05):
     """
@@ -164,9 +165,14 @@ def _vision_loop_inner():
                 confidences = sponge.boxes.conf.cpu().numpy()
 
                 for mask, class_id, conf in zip(masks, class_ids, confidences):
-                    cls_name = model.names[class_id].lower()
+                    cls_name = segment.names[class_id].lower()
 
-                    if cls_name not in ["sponge", "pipe"]:
+                    is_target = (
+                        current_target_class is not None and
+                        cls_name == current_target_class.lower()
+                    )
+
+                    if DISPLAY_ONLY_TARGET and current_target_class is not None and not is_target:
                         continue
 
                     mask_binary = cv2.resize(mask, (color_image.shape[1], color_image.shape[0]))
@@ -205,6 +211,14 @@ def _vision_loop_inner():
                     (x1, y1), (x2, y2), (x3, y3), (x4, y4) = obb.xyxyxyxy[0].cpu().numpy().astype(int)
 
                     current_boxes.append((x1, y1, x2, y2, x3, y3, x4, y4, cls_name, confidence))
+
+                    is_target = (
+                        current_target_class is not None and
+                        cls_name == current_target_class.lower()
+                    )
+
+                    if DISPLAY_ONLY_TARGET and current_target_class is not None and not is_target:
+                        continue
 
                     cv2.polylines(
                         color_image,

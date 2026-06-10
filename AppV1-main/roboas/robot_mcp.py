@@ -163,6 +163,10 @@ async def handle_list_tools() -> list[Tool]:
                             "drop spot. Each item must have object_name, x, y, z fields."
                         ),
                         "items": {"type": "object"}
+                    },
+                    "target_name": {
+                        "type": "string",
+                        "description": "Name of the target object being cleared. Used to ensure extra clearance."
                     }
                 },
                 "required": ["obstacle_name", "obstacle_x", "obstacle_y", "obstacle_z"]
@@ -218,10 +222,11 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         obstacle_z     = float(args.get("obstacle_z", 0.0))
         obstacle_angle = float(args["obstacle_angle_deg"]) if "obstacle_angle_deg" in args else None
         detections     = args.get("detections", None)
+        target_name    = args.get("target_name", None)
 
         logger.info(
             f"MCP relocate_object: {obstacle_name} at "
-            f"({obstacle_x}, {obstacle_y}, {obstacle_z}) angle={obstacle_angle}"
+            f"({obstacle_x}, {obstacle_y}, {obstacle_z}) angle={obstacle_angle} target={target_name}"
         )
 
         result = robot_control.run_mcp_relocate_object(
@@ -231,6 +236,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             obstacle_z     = obstacle_z,
             obstacle_angle = obstacle_angle,
             detections     = detections,
+            target_name    = target_name,
         )
 
         # Robot signals it needs a fresh detection before Qwen plans next action.
@@ -328,9 +334,6 @@ async def handle_direct_rpc(scope, receive, send):
 # 5. Raw ASGI Routing App
 async def app(scope, receive, send):
     global CLIENT_IP
-    client = scope.get("client")
-    if client:
-        CLIENT_IP = client[0]
 
     if scope["type"] == "lifespan":
         while True:
@@ -346,6 +349,9 @@ async def app(scope, receive, send):
         path = scope.get("path", "")
         method = scope.get("method", "")
         if path == "/sse" and method == "GET":
+            client = scope.get("client")
+            if client:
+                CLIENT_IP = client[0]
             await sse_app(scope, receive, send)
             return
         elif path == "/messages" and method == "POST":
