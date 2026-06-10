@@ -150,8 +150,8 @@ def _vision_loop_inner():
             # Run inference every 4th frame to conserve GPU/VRAM resources for Qwen/Ollama
             if frame_counter % 4 == 0:
                 with inference_lock:
-                    results = model(color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35)
-                    sponge_detection = segment(color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35)
+                    results = model(color_image, verbose=False, agnostic_nms=False, iou=0.35, conf=0.35)
+                    sponge_detection = segment(color_image, verbose=False, agnostic_nms=False, iou=0.35, conf=0.35)
 
             current_boxes = []
 

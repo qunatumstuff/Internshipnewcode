@@ -248,7 +248,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
     if camera.inference_lock.acquire(timeout=2.0):
         try:
             obb_results = camera.model(
-            color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35
+            color_image, verbose=False, agnostic_nms=False, iou=0.35, conf=0.35
         )
         finally:
             camera.inference_lock.release()
@@ -297,7 +297,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
     if camera.inference_lock.acquire(timeout=2.0):
         try:
             seg_results = camera.segment(
-            color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35
+            color_image, verbose=False, agnostic_nms=False, iou=0.35, conf=0.35
         )
         finally:
             camera.inference_lock.release()
@@ -436,12 +436,10 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         "model": QWEN_MODEL,
         "prompt": prompt_with_directive,
         "stream": False,
-        "format": "json",
         "images": [raw_b64],
         "options": {
-            "temperature": 0.2,
-            "repeat_penalty": 1.2,
-            "num_predict": -1
+            "temperature": 0.1,
+            "num_predict": 1024
         }
     }
 
@@ -509,14 +507,19 @@ def extract_qwen_json(raw: str) -> dict:
     # Remove XML-style thinking
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
 
-    # If Qwen prints "Thinking... ...done thinking.", remove everything before final JSON
-    start = raw.find("{")
-    end = raw.rfind("}")
+    # Try extracting from ```json blocks first
+    json_match = re.search(r"```json\s*(.*?)\s*```", raw, re.DOTALL)
+    if json_match:
+        json_text = json_match.group(1).strip()
+    else:
+        # Fallback to finding the first { and last }
+        start = raw.find("{")
+        end = raw.rfind("}")
 
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError(f"No JSON object found in Qwen response: {raw[:300]}")
+        if start == -1 or end == -1 or end <= start:
+            raise ValueError(f"No JSON object found in Qwen response: {raw[:300]}")
 
-    json_text = raw[start:end + 1].strip()
+        json_text = raw[start:end + 1].strip()
 
     return json.loads(json_text)
 
@@ -700,8 +703,8 @@ async def qwen_plan_next_action(
         f"  - relocate: move one blocking object to a safe spot.\n"
         f"  - pick: pick the target.\n"
         f"  - abort: cannot safely reach the target.\n\n"
-        f"CRITICAL INSTRUCTION: You MUST start your response immediately with the '{{' character.\n"
-        f"NO INTRODUCTIONS. NO EXPLANATIONS. NO RAMBLING. ONLY OUTPUT JSON.\n\n"
+        f"CRITICAL INSTRUCTION: You may think first, but your final output MUST be a valid JSON block enclosed in '```json' and '```' markers.\n"
+        f"NO EXPLANATIONS AFTER THE JSON. ONLY OUTPUT JSON AS THE FINAL RESULT.\n\n"
         f"Pick format:\n"
         f'{{"next_action":"pick","obstacle_name":null,"reasoning":"target is visible and safe"}}\n\n'
         f"Relocate format:\n"
