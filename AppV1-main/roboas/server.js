@@ -808,6 +808,7 @@ app.post('/ask-gpt', async (req, res) => {
 
   // Mute wake word during thinking/processing
   await sendWakewordCommand('mute');
+  let hasRobotMovement = false;
 
   try {
     let visualContext = "";
@@ -1065,6 +1066,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           toolResultText = `Switched to ${currentPersona}. Now greeting the user warmly as ${currentPersona === 'linda' ? 'Linda' : 'John'}.`;
         } 
         else if (toolCall.name === "locate_object") {
+          hasRobotMovement = true;
           logToolCall(question, "locate_object", args, "Orchestrating autonomous scan & pick in background...");
           sendProgress(`Initiating workspace scan for "${args.target_name}"...`, true);
           
@@ -1102,24 +1104,44 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                     
                     await completionPromise;
                     sendProgress(`Successfully picked up the ${args.target_name}!`, true);
-                    setTimeout(() => sendProgress(null, false), 3000);
+                    setTimeout(async () => {
+                      sendProgress(null, false);
+                      await sendWakewordCommand('unmute');
+                    }, 3000);
                   } catch (e) {
                     sendProgress(`Robot pick error: ${e.message}`, false);
-                    setTimeout(() => sendProgress(null, false), 5000);
+                    setTimeout(async () => {
+                      sendProgress(null, false);
+                      await sendWakewordCommand('unmute');
+                    }, 5000);
                   }
                 } else {
                   sendProgress("Error: Robot MCP is not connected for pickup.", false);
+                  setTimeout(async () => {
+                    sendProgress(null, false);
+                    await sendWakewordCommand('unmute');
+                  }, 5000);
                 }
               } else {
                 sendProgress(`Scan stopped: ${parsed.message || parsed.reasoning || "Obstacle blockage"}`, false);
-                setTimeout(() => sendProgress(null, false), 5000);
+                setTimeout(async () => {
+                  sendProgress(null, false);
+                  await sendWakewordCommand('unmute');
+                }, 5000);
               }
             }).catch(e => {
               sendProgress(`Vision MCP Error: ${e.message}`, false);
-              setTimeout(() => sendProgress(null, false), 5000);
+              setTimeout(async () => {
+                sendProgress(null, false);
+                await sendWakewordCommand('unmute');
+              }, 5000);
             });
           } else {
-            sendProgress("Error: Vision MCP is not connected.");
+            sendProgress("Error: Vision MCP is not connected.", false);
+            setTimeout(async () => {
+              sendProgress(null, false);
+              await sendWakewordCommand('unmute');
+            }, 5000);
           }
 
           answerText = `I am checking the workspace for the ${args.target_name}. Once the path is clear, I will pick it up for you.`;
@@ -1211,6 +1233,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           }
         }
         else if (toolCall.name === "pick_and_place_object") {
+          hasRobotMovement = true;
           logToolCall(question, "pick_and_place_object", args, "Calling Robot MCP in background...");
           sendProgress(`Executing pick-and-place for "${args.object_name}"...`, true);
           
@@ -1221,21 +1244,32 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             
             completionPromise.then(() => {
                 sendProgress(`Pick-and-place completed for "${args.object_name}".`, true);
-                setTimeout(() => sendProgress(null, false), 3000);
+                setTimeout(async () => {
+                  sendProgress(null, false);
+                  await sendWakewordCommand('unmute');
+                }, 3000);
               })
               .catch(e => {
                 sendProgress(`Error: ${e.message}`, false);
-                setTimeout(() => sendProgress(null, false), 5000);
+                setTimeout(async () => {
+                  sendProgress(null, false);
+                  await sendWakewordCommand('unmute');
+                }, 5000);
               });
           } else {
             sendProgress("Error: Robot MCP is not connected.", false);
             logToolCall(question, "pick_and_place_object", args, "Failed: Not Connected");
+            setTimeout(async () => {
+              sendProgress(null, false);
+              await sendWakewordCommand('unmute');
+            }, 5000);
           }
           
           answerText = `I am picking up the ${args.object_name} right now.`;
           skipSecondCompletion = true;
         }
         else if (toolCall.name === "relocate_object") {
+          hasRobotMovement = true;
           logToolCall(question, "relocate_object", args, "Calling Robot MCP in background...");
           sendProgress(`Relocating obstacle "${args.obstacle_name}"...`, true);
           if (robotMcpClient) {
@@ -1245,15 +1279,25 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             
             completionPromise.then(() => {
                 sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`, true);
-                setTimeout(() => sendProgress(null, false), 3000);
+                setTimeout(async () => {
+                  sendProgress(null, false);
+                  await sendWakewordCommand('unmute');
+                }, 3000);
               })
               .catch(e => {
                 sendProgress(`Error: ${e.message}`, false);
-                setTimeout(() => sendProgress(null, false), 5000);
+                setTimeout(async () => {
+                  sendProgress(null, false);
+                  await sendWakewordCommand('unmute');
+                }, 5000);
               });
           } else {
-            sendProgress("Error: Robot MCP is not connected.");
+            sendProgress("Error: Robot MCP is not connected.", false);
             logToolCall(question, "relocate_object", args, "Failed: Not Connected");
+            setTimeout(async () => {
+              sendProgress(null, false);
+              await sendWakewordCommand('unmute');
+            }, 5000);
           }
           
           answerText = `I am moving the ${args.obstacle_name} out of the way for you.`;
@@ -1291,13 +1335,17 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
     chatHistory.push({ role: "assistant", content: answerText });
     if (chatHistory.length > 10) chatHistory = chatHistory.slice(-10);
 
-    sendProgress(null); // Clear progress overlay
-    await sendWakewordCommand('unmute');
+    if (!hasRobotMovement) {
+      sendProgress(null); // Clear progress overlay
+      await sendWakewordCommand('unmute');
+    }
     res.json({ success: true, answer: answerText, emoji, persona: currentPersona });
 
   } catch (err) {
-    sendProgress(null); // Clear progress overlay on error
-    await sendWakewordCommand('unmute');
+    if (!hasRobotMovement) {
+      sendProgress(null); // Clear progress overlay on error
+      await sendWakewordCommand('unmute');
+    }
     const errorDetails = err.response ? JSON.stringify(err.response.data) : err.message;
     console.error('❌ AI Chat Error:', errorDetails);
     res.status(500).json({ success: false, message: 'AI failed to respond.', error: errorDetails });
@@ -1583,6 +1631,9 @@ app.post('/emergency-stop', async (req, res) => {
 
   // Log the emergency stop event
   logToolCall("System Emergency Button", "emergency_stop", {}, robotSuccess ? "Robot halted" : `Failed: ${robotError}`);
+
+  sendProgress(null, false);
+  await sendWakewordCommand('unmute');
 
   res.json({
     success: robotSuccess,

@@ -84,6 +84,9 @@
           window.isRobotMoving = data.isRobotMoving;
           window.wakewordDetectionMuted = window.ttsMuted || window.isRobotMoving;
           console.log(`[JS] Progress SSE update. WakeWord detection muted: ${window.wakewordDetectionMuted} (tts: ${window.ttsMuted}, robot: ${window.isRobotMoving})`);
+          if (onEventCallback) {
+            onEventCallback('robot_moving_status:' + data.isRobotMoving);
+          }
         }
       } catch (e) {}
     };

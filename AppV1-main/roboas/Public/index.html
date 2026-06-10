@@ -67,9 +67,28 @@
 
     window.wakewordDetectionMuted = false;
 
+    window.isRobotMoving = false;
+    window.ttsMuted = false;
+
     window.setWakeWordMuted = function(muted) {
-      window.wakewordDetectionMuted = !!muted;
-      console.log(`[JS] WakeWord detection muted: ${window.wakewordDetectionMuted}`);
+      window.ttsMuted = !!muted;
+      window.wakewordDetectionMuted = window.ttsMuted || window.isRobotMoving;
+      console.log(`[JS] WakeWord detection muted: ${window.wakewordDetectionMuted} (tts: ${window.ttsMuted}, robot: ${window.isRobotMoving})`);
+    };
+
+    const progressSource = new EventSource('/progress');
+    progressSource.onmessage = function(event) {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.isRobotMoving !== undefined) {
+          window.isRobotMoving = data.isRobotMoving;
+          window.wakewordDetectionMuted = window.ttsMuted || window.isRobotMoving;
+          console.log(`[JS] Progress SSE update. WakeWord detection muted: ${window.wakewordDetectionMuted} (tts: ${window.ttsMuted}, robot: ${window.isRobotMoving})`);
+          if (onEventCallback) {
+            onEventCallback('robot_moving_status:' + data.isRobotMoving);
+          }
+        }
+      } catch (e) {}
     };
 
     let engine = null;

@@ -109,10 +109,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ── Persona ──
   String _currentPersona = 'john';
   String get _pName => _currentPersona == 'linda' ? 'Linda' : 'John';
-  bool get _isInteractionBlocked =>
-      _isTtsInProgress ||
-      _avatarState == AvatarState.thinking ||
-      (_messages.isNotEmpty && _messages.last.text == '__THINKING__');
+  bool get _isInteractionBlocked {
+    bool isMoving = false;
+    try {
+      isMoving = js.context['isRobotMoving'] == true;
+    } catch (_) {}
+    return _isTtsInProgress ||
+        _avatarState == AvatarState.thinking ||
+        (_messages.isNotEmpty && _messages.last.text == '__THINKING__') ||
+        isMoving;
+  }
 
   String get _visibleStateText {
     switch (_currentState) {
@@ -1330,6 +1336,30 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       }
       
       _addUiLog('[OWW] Active | RMS: $rms | J: ${jPercent.toStringAsFixed(1)}% (V2: ${jV2Percent.toStringAsFixed(1)}%) | L: ${lPercent.toStringAsFixed(1)}% (V2: ${lV2Percent.toStringAsFixed(1)}%)');
+      return;
+    }
+
+    if (eventName.startsWith('robot_moving_status:')) {
+      final isMoving = eventName.substring('robot_moving_status:'.length) == 'true';
+      _addUiLog('[OWW] Robot moving status updated: $isMoving');
+      if (isMoving) {
+        // Stop manual mic recording immediately if listening!
+        if (_isListening) {
+          _addUiLog('[MIC] Robot started moving. Aborting active manual recording.');
+          setState(() {
+            _isListening = false;
+            _textController.clear();
+          });
+          _stopSilenceDetection();
+          try {
+            _webMediaRecorder?.stop();
+          } catch (_) {}
+          _abortAndRestartWakeWord();
+        }
+      }
+      if (mounted) {
+        setState(() {}); // trigger rebuild so UI disables the manual record button
+      }
       return;
     }
 
