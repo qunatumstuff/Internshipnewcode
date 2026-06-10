@@ -993,6 +993,43 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                                 "raw_output": plan.get("raw_output", "") + f"\n\n(OVERRIDDEN BY DEPTH SENSOR FAILSAFE: Relocating {obstacle_name})"
                             }
 
+                    # XY Overlap Failsafe: If Qwen hallucinated that it is clear, but YOLO detects an overlap
+                    if plan.get("next_action") == "pick" and target_detections:
+                        target_det = target_detections[0]
+                        target_info = OBJECT_CATALOGUE.get(target, {})
+                        target_radius = math.hypot(
+                            target_info.get("length_m", 0.04),
+                            target_info.get("breadth_m", 0.04),
+                        ) / 2
+
+                        overlapping_obstacle = None
+                        min_overlap_dist = 9999.0
+
+                        for d in detections:
+                            if d["object_name"] == target:
+                                continue
+                            dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
+                            d_info = OBJECT_CATALOGUE.get(d["object_name"], {})
+                            d_radius = math.hypot(
+                                d_info.get("length_m", 0.04),
+                                d_info.get("breadth_m", 0.04),
+                            ) / 2
+
+                            if dist < (target_radius + d_radius) * 0.85:
+                                # Overlaps! Find the closest overlapping object
+                                if dist < min_overlap_dist:
+                                    min_overlap_dist = dist
+                                    overlapping_obstacle = d["object_name"]
+
+                        if overlapping_obstacle:
+                            logger.warning(f"QWEN FAILSAFE OVERRIDE: Overlapping object '{overlapping_obstacle}' detected in XY. Forcing relocate.")
+                            plan = {
+                                "next_action": "relocate",
+                                "obstacle_name": overlapping_obstacle,
+                                "reasoning": f"XY overlap failsafe: Target '{target}' is physically overlapping with '{overlapping_obstacle}' (distance {min_overlap_dist*1000:.1f}mm), requiring relocation.",
+                                "raw_output": plan.get("raw_output", "") + f"\n\n(OVERRIDDEN BY XY OVERLAP FAILSAFE: Relocating {overlapping_obstacle})"
+                            }
+
 
             next_action = plan.get("next_action", "abort")
             obstacle_name = (plan.get("obstacle_name") or "").strip().lower()

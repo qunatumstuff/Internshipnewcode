@@ -126,6 +126,10 @@ def _vision_loop_inner():
 
     clicked=""
 
+    frame_counter = 0
+    results = []
+    sponge_detection = []
+
     try:
         while True:
             frames = pipeline.wait_for_frames()
@@ -142,100 +146,133 @@ def _vision_loop_inner():
             current_rgb_frame = color_image.copy() # Update global state for MCP snapshot
             current_depth_frame = depth_frame
 
-            if current_target_class is None:
-                pass
-
-            elif current_target_class=="sponge":
+            # Run inference every 4th frame to conserve GPU/VRAM resources for Qwen/Ollama
+            if frame_counter % 4 == 0:
                 with inference_lock:
-                    sponge_detection = segment(color_image, verbose=False,agnostic_nms=True,iou=0.35,conf=0.35)
+                    results = model(color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35)
+                    sponge_detection = segment(color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35)
 
-                print("Object is ",current_target_class)
-                for sponge in sponge_detection:
-                    if sponge.masks is not None:
-                        masks = sponge.masks.data.cpu().numpy()
-                        class_ids = sponge.boxes.cls.cpu().numpy().astype(int)
-                        confidences = sponge.boxes.conf.cpu().numpy()
+            current_boxes = []
 
-                        for mask, class_id, conf in zip(masks, class_ids, confidences):
-                                cls_name = model.names[class_id]
+            # Draw segmentation masks for sponge/pipe
+            for sponge in sponge_detection:
+                if sponge.masks is None:
+                    continue
 
-                                if cls_name==current_target_class.lower():
-                                    mask_binary = cv2.resize(mask,(color_image.shape[1], color_image.shape[0]))
-                                    mask_binary = ((mask_binary > 0.5) * 255).astype(np.uint8)
-                                    colored_mask = color_image.copy()
-                                    colored_mask[mask_binary > 0] = [215,215,218]
-                                    color_image = cv2.addWeighted(color_image,0.7,colored_mask,0.3,0)
-                                    contours, _ = cv2.findContours(mask_binary,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
-                                    cv2.drawContours(color_image,contours,-1,(0,255,0),2)
-                            
-                                    if len(contours) > 0:
-                                        largest_contour = max(contours, key=cv2.contourArea)
-                                        x, y, w, h = cv2.boundingRect(largest_contour)
-                                        cv2.putText(color_image,f"{cls_name} {conf:.2f}",(x, y - 10),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0),2)
-            else:  
-                    with inference_lock:
-                        results = model(color_image, verbose=False,agnostic_nms=True,iou=0.35,conf=0.35)
-                    current_boxes=[]
-                    print("object is not pipe", current_target_class)                
-                    for result in results:
-                        if result.obb is None:
-                            continue
+                masks = sponge.masks.data.cpu().numpy()
+                class_ids = sponge.boxes.cls.cpu().numpy().astype(int)
+                confidences = sponge.boxes.conf.cpu().numpy()
 
-                        for obb in result.obb:
-                            cls_id = int(obb.cls[0])
-                            cls_name = model.names[cls_id]
-                            confidence=float(obb.conf[0])
+                for mask, class_id, conf in zip(masks, class_ids, confidences):
+                    cls_name = model.names[class_id].lower()
 
-                            if cls_name == current_target_class.lower():
-                               (x1, y1), (x2, y2), (x3, y3), (x4, y4) = obb.xyxyxyxy[0].cpu().numpy().astype(int)
-                               current_boxes.append((x1,y1,x2,y2,x3,y3,x4,y4,cls_name, confidence))
+                    if cls_name not in ["sponge", "pipe"]:
+                        continue
 
+                    mask_binary = cv2.resize(mask, (color_image.shape[1], color_image.shape[0]))
+                    mask_binary = ((mask_binary > 0.5) * 255).astype(np.uint8)
 
-                    # Draw bounding box
-                               cv2.polylines(color_image, [np.array([(x1, y1), (x2, y2), (x3, y3), (x4, y4)], dtype=np.int32)], True, (0, 255, 0), 2)
-                               cv2.putText(color_image, f"{cls_name} {confidence:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    colored_mask = color_image.copy()
+                    colored_mask[mask_binary > 0] = [215, 215, 218]
+                    color_image = cv2.addWeighted(color_image, 0.7, colored_mask, 0.3, 0)
 
+                    contours, _ = cv2.findContours(mask_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    cv2.drawContours(color_image, contours, -1, (0, 255, 0), 2)
 
-                               CAM_TO_ROBOT_T = np.array([
-                             [0.7337634310,  0.6126652048, -0.2936538341,  0.7173839756],
-                             [0.6785283256, -0.6388791698, 0.3625365054, -0.4903506740],
-                             [0.0345041846, -0.4652684744, -0.8844968672, 0.7880605490],
-                             [0.0, 0.0, 0.0, 1.0]
-                            ], dtype=np.float64)
-                    
-                               rotation_from_matrix=CAM_TO_ROBOT_T[:3,:3]
-                    
-                    # Calculate center pixel of the bounding box
-                               center_x = int(obb.xywhr[0][0])
-                               center_y = int(obb.xywhr[0][1])
-                               angle=float(obb.xywhr[0][4])
+                    if len(contours) > 0:
+                        largest_contour = max(contours, key=cv2.contourArea)
+                        x, y, w, h = cv2.boundingRect(largest_contour)
+                        cv2.putText(
+                            color_image,
+                            f"{cls_name} SEG {conf:.2f}",
+                            (x, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            (0, 255, 0),
+                            2
+                        )
 
-                               rotation_from_camera=np.array([[math.cos(angle), -math.sin(angle), 0], 
-                                                   [math.sin(angle), math.cos(angle), 0], 
-                                                   [0, 0, 1]])
+            # Draw OBB boxes for all detected objects
+            for result in results:
+                if result.obb is None:
+                    continue
 
-                    # Get distance in meters from the depth frame
-                               distance = depth_frame.get_distance(center_x, center_y)
+                for obb in result.obb:
+                    cls_id = int(obb.cls[0])
+                    cls_name = model.names[cls_id].lower()
+                    confidence = float(obb.conf[0])
 
-                    # Deproject pixel to 3D spatial coordinates [X, Y, Z] relative to camera
-                               spatial_coords = rs.rs2_deproject_pixel_to_point(intrinsics, [center_x, center_y], distance)
+                    (x1, y1), (x2, y2), (x3, y3), (x4, y4) = obb.xyxyxyxy[0].cpu().numpy().astype(int)
 
-                        # Update global 3D coordinates with smoothing to prevent flickering
-                               latest_3d_coords["x"] = smooth_coord(latest_3d_coords["x"], spatial_coords[0])
-                               latest_3d_coords["y"] = smooth_coord(latest_3d_coords["y"], spatial_coords[1])
-                               latest_3d_coords["z"] = smooth_coord(latest_3d_coords["z"], spatial_coords[2] + Z_OFFSET)
-                    
-                               roll,pitch,yaw=rotationMatrixToEulerAngles(rotation_from_matrix @ rotation_from_camera)
-                    
-                               robot=CAM_TO_ROBOT_T @ np.array([spatial_coords[0], spatial_coords[1], spatial_coords[2], 1.0])
-                               cv2.putText(color_image, f"Robot Frame: X:{robot[0]*1000:.4f} Y:{robot[1]*1000:.4f} Z:{robot[2]*1000:.4f}m R:{roll/math.pi*180:.2f} P:{pitch/math.pi*180:.2f} Y:{yaw/math.pi*180:.2f} {cls_name}", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                               print(f"{cls_name} X:{robot[0]*1000:.4f} Y:{robot[1]*1000:.4f} Z:{robot[2]*1000:.4f}m R:{roll/math.pi*180:.2f} P:{pitch/math.pi*180:.2f} Y:{yaw/math.pi*180:.2f}")
+                    current_boxes.append((x1, y1, x2, y2, x3, y3, x4, y4, cls_name, confidence))
+
+                    cv2.polylines(
+                        color_image,
+                        [np.array([(x1, y1), (x2, y2), (x3, y3), (x4, y4)], dtype=np.int32)],
+                        True,
+                        (0, 255, 255),
+                        2
+                    )
+
+                    cv2.putText(
+                        color_image,
+                        f"{cls_name} OBB {confidence:.2f}",
+                        (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 255, 255),
+                        2
+                    )
+
+                    # Only update latest_3d_coords for the selected target
+                    if current_target_class and cls_name == current_target_class.lower():
+                        CAM_TO_ROBOT_T = np.array([
+                            [0.7337634310,  0.6126652048, -0.2936538341,  0.7173839756],
+                            [0.6785283256, -0.6388791698,  0.3625365054, -0.4903506740],
+                            [0.0345041846, -0.4652684744, -0.8844968672,  0.7880605490],
+                            [0.0,           0.0,           0.0,            1.0]
+                        ], dtype=np.float64)
+
+                        rotation_from_matrix = CAM_TO_ROBOT_T[:3, :3]
+
+                        center_x = int(obb.xywhr[0][0])
+                        center_y = int(obb.xywhr[0][1])
+                        angle = float(obb.xywhr[0][4])
+
+                        rotation_from_camera = np.array([
+                            [math.cos(angle), -math.sin(angle), 0],
+                            [math.sin(angle),  math.cos(angle), 0],
+                            [0,                0,               1]
+                        ])
+
+                        distance = depth_frame.get_distance(center_x, center_y)
+                        spatial_coords = rs.rs2_deproject_pixel_to_point(intrinsics, [center_x, center_y], distance)
+
+                        latest_3d_coords["x"] = smooth_coord(latest_3d_coords["x"], spatial_coords[0])
+                        latest_3d_coords["y"] = smooth_coord(latest_3d_coords["y"], spatial_coords[1])
+                        latest_3d_coords["z"] = smooth_coord(latest_3d_coords["z"], spatial_coords[2] + Z_OFFSET)
+
+                        roll, pitch, yaw = rotationMatrixToEulerAngles(rotation_from_matrix @ rotation_from_camera)
+                        robot = CAM_TO_ROBOT_T @ np.array([spatial_coords[0], spatial_coords[1], spatial_coords[2], 1.0])
+
+                        cv2.putText(
+                            color_image,
+                            f"TARGET {cls_name}: X:{robot[0]*1000:.1f} Y:{robot[1]*1000:.1f} Z:{robot[2]*1000:.1f}mm",
+                            (20, 70),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.7,
+                            (0, 0, 255),
+                            2
+                        )
                         
 
             # Show the live feed (for debugging on i5 laptop)
             cv2.imshow("Module B: System 1 Vision Reflex", color_image)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
+
+            frame_counter += 1
+            time.sleep(0.01)
 
     finally:
         try:
