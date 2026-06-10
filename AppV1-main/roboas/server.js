@@ -407,6 +407,49 @@ function getReasoningLevel(question) {
   return "medium";
 }
 
+// Map to keep track of active operations and their completion promises/resolvers
+let activeOperations = new Map();
+
+function waitForRobotEvent(timeoutMs = 300000) {
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+    
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        activeOperations.delete('robot_completion');
+        reject(new Error("Timeout waiting for robot completion event."));
+      }
+    }, timeoutMs);
+
+    activeOperations.set('robot_completion', (data) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        if (data.event === 'error') {
+          reject(new Error(data.error || "Robot execution failed."));
+        } else {
+          resolve(data);
+        }
+      }
+    });
+  });
+}
+
+// Robot completion event receiver
+app.post('/robot-event', (req, res) => {
+  const { event, error } = req.body;
+  console.log(`🤖 [Robot Event Received]: "${event}" ${error ? `(Error: ${error})` : ''}`);
+
+  if (activeOperations.has('robot_completion')) {
+    const resolve = activeOperations.get('robot_completion');
+    activeOperations.delete('robot_completion');
+    resolve({ event, error });
+  }
+
+  res.json({ success: true });
+});
+
 // === Endpoints ===
 
 // Progress Status SSE Channel
@@ -1035,7 +1078,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               const res = await visionMcpClient.callTool({ 
                 name: "locate_object", 
                 arguments: visionArgs 
-              }, undefined, { timeout: 300000 });
+              }, { timeout: 300000 });
               toolResultText = res.content[0].text;
 
               try {
@@ -1086,13 +1129,15 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                         robotArgs.grasp_label = parsed.coordinates.grasp_label;
                       }
 
+                      const completionPromise = waitForRobotEvent(300000);
                       const robotRes = await robotMcpClient.callTool({ 
                         name: "pick_and_place_object", 
                         arguments: robotArgs
-                      }, undefined, { timeout: 300000 });
+                      }, { timeout: 300000 });
                       toolResultText += `\n\nRobot Execution Status: ` + robotRes.content[0].text;
+                      sendProgress(`Waiting for robot to complete pick-and-place...`);
+                      await completionPromise;
                       sendProgress(`Pick-and-place completed for "${args.target_name}".`);
-                      await new Promise(resolve => setTimeout(resolve, 2000));
                     } catch (robotErr) {
                       toolResultText += `\n\nRobot Execution Failed: ${robotErr.message}`;
                       sendProgress(`Robot Error: ${robotErr.message}`);
@@ -1218,11 +1263,13 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           sendProgress(`Executing pick-and-place for "${args.object_name}"...`);
           if (robotMcpClient) {
             try {
+              const completionPromise = waitForRobotEvent(300000);
               const res = await robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args });
               toolResultText = res.content[0].text;
               logToolCall(question, "pick_and_place_object", args, toolResultText);
+              sendProgress(`Waiting for robot to complete pick-and-place...`);
+              await completionPromise;
               sendProgress(`Pick-and-place completed for "${args.object_name}".`);
-              await new Promise(resolve => setTimeout(resolve, 2000));
             } catch (e) {
               toolResultText = `Error calling Robot MCP pick_and_place_object: ${e.message}`;
               sendProgress(`Error: ${e.message}`);
@@ -1243,14 +1290,16 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           sendProgress(`Relocating obstacle "${args.obstacle_name}"...`);
           if (robotMcpClient) {
             try {
+              const completionPromise = waitForRobotEvent(300000);
               const res = await robotMcpClient.callTool({ 
                 name: "relocate_object", 
                 arguments: args 
-              }, undefined, { timeout: 300000 });
+              }, { timeout: 300000 });
               toolResultText = res.content[0].text;
               logToolCall(question, "relocate_object", args, toolResultText);
+              sendProgress(`Waiting for robot to complete relocation...`);
+              await completionPromise;
               sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`);
-              await new Promise(resolve => setTimeout(resolve, 2000));
             } catch (e) {
               toolResultText = `Error calling Robot MCP relocate_object: ${e.message}`;
               sendProgress(`Error: ${e.message}`);

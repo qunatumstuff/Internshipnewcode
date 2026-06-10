@@ -28,6 +28,38 @@ spec = importlib.util.spec_from_file_location("robot_control", ROBOT_CONTROL_PAT
 robot_control = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(robot_control)
 
+# ------------------------------------------------------------
+# Event completion signaling back to server.js
+# ------------------------------------------------------------
+CLIENT_IP = "localhost"
+
+def send_robot_event(event_type, error_msg=None):
+    global CLIENT_IP
+    import urllib.request
+    import json
+    
+    server_host = os.environ.get("SERVER_HOST", CLIENT_IP)
+    url = f"http://{server_host}:3000/robot-event"
+    payload = {"event": event_type}
+    if error_msg:
+        payload["error"] = str(error_msg)
+        
+    logger.info(f"Sending event '{event_type}' to server at {url}...")
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=3) as response:
+            logger.info(f"Event sent successfully, response status: {response.status}")
+    except Exception as e:
+        logger.error(f"Failed to send event to server: {e}")
+
+# Register the callback in the robot control module
+robot_control.ROBOT_EVENT_CALLBACK = send_robot_event
+
 # 1. Initialize the MCP Server
 server = Server("robot-arm-mcp-server")
 
@@ -295,6 +327,11 @@ async def handle_direct_rpc(scope, receive, send):
 
 # 5. Raw ASGI Routing App
 async def app(scope, receive, send):
+    global CLIENT_IP
+    client = scope.get("client")
+    if client:
+        CLIENT_IP = client[0]
+
     if scope["type"] == "lifespan":
         while True:
             message = await receive()

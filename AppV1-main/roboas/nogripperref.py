@@ -946,7 +946,7 @@ SMART_EXISTING_OBJECT_SPREAD_WEIGHT = 0.05
 
 # Try rotating the wrist/gripper for better placement packing.
 # These are relative offsets from the object's preferred grasp angle.
-PLACEMENT_ANGLE_OFFSETS_DEG = [-90, -60, -45, -30, 0, 30, 45, 60, 90]
+PLACEMENT_ANGLE_OFFSETS_DEG = [-30, 0, 30]
 
 # Permanent occupied-object footprint margin.
 # Keep this small. The gripper release opening is temporary and should not
@@ -2954,9 +2954,15 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
 
     execute_trajectory(r, phase3_depart, label="Phase 3 depart — drop_pose -> lift_drop")
     
+    if MCP_IS_RELOCATING and ROBOT_EVENT_CALLBACK:
+        ROBOT_EVENT_CALLBACK("relocate_placed")
+    
     execute_trajectory(r,[lift_drop_grip, lift_drop],label="Phase 3 reorient — grip angle -> forward")
 
     execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
+
+    if not MCP_IS_RELOCATING and ROBOT_EVENT_CALLBACK:
+        ROBOT_EVENT_CALLBACK("pick_and_place_completed")
 
     
 
@@ -2973,6 +2979,8 @@ MCP_NO_UI_MODE = False
 _MCP_ROBOT_READY = False
 AUTO_MCP_ROBOT_STARTUP = False  # Set True if this file should initialise robot/gripper inside run_mcp_pick_and_place().
 MCP_MIN_VALID_Z_M = 0.005
+ROBOT_EVENT_CALLBACK = None
+MCP_IS_RELOCATING = False
 
 
 def mcp_find_object_profile(object_name):
@@ -3353,8 +3361,9 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
     (grasp_A or grasp_B). Stored for diagnostics. x/y/z already point to
     the correct end when this is provided.
     """
-    global MCP_NO_UI_MODE
+    global MCP_NO_UI_MODE, MCP_IS_RELOCATING
     MCP_NO_UI_MODE = True
+    MCP_IS_RELOCATING = False
 
     if AUTO_MCP_ROBOT_STARTUP:
         mcp_robot_startup_once()
@@ -3374,9 +3383,14 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
     diagnostic_print_first_pick(sequence)
     diagnostic_print_placement_and_box(sequence)
 
-    for seq_item in sequence:
-        set_active_pick_item(seq_item, 1, 1)
-        execute_one_pick_cycle(seq_item, 1, 1)
+    try:
+        for seq_item in sequence:
+            set_active_pick_item(seq_item, 1, 1)
+            execute_one_pick_cycle(seq_item, 1, 1)
+    except Exception as e:
+        if ROBOT_EVENT_CALLBACK:
+            ROBOT_EVENT_CALLBACK("error", str(e))
+        raise
 
     return {
         "status":                       "ok",
@@ -3475,8 +3489,9 @@ def run_mcp_relocate_object(
       5. Return status + relocation coordinates so the MCP server knows to
          trigger a fresh camera detection before passing control back to Qwen.
     """
-    global MCP_NO_UI_MODE
+    global MCP_NO_UI_MODE, MCP_IS_RELOCATING
     MCP_NO_UI_MODE = True
+    MCP_IS_RELOCATING = True
 
     if AUTO_MCP_ROBOT_STARTUP:
         mcp_robot_startup_once()
@@ -3518,8 +3533,13 @@ def run_mcp_relocate_object(
     # Step 4: execute the pick-and-drop.
     # preplan_all_drop_slots is NOT called here — the slot is already set above
     # and we do not want to allocate placement-box space for a workspace relocation.
-    set_active_pick_item(sequence[0], 1, 1)
-    execute_one_pick_cycle(sequence[0], 1, 1)
+    try:
+        set_active_pick_item(sequence[0], 1, 1)
+        execute_one_pick_cycle(sequence[0], 1, 1)
+    except Exception as e:
+        if ROBOT_EVENT_CALLBACK:
+            ROBOT_EVENT_CALLBACK("error", str(e))
+        raise
 
     # Step 5: return status including relocation coordinates.
     # The MCP server uses "requires_redetection": True to trigger a fresh

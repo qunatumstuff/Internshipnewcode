@@ -1,6 +1,6 @@
 [
   {
-    "timestamp": "2026-06-10T02:45:55.472Z",
+    "timestamp": "2026-06-10T02:52:47.967Z",
     "userQuestion": "System Command",
     "toolName": "switch_avatar",
     "args": {
@@ -9,7 +9,7 @@
     "result": "switched to john"
   },
   {
-    "timestamp": "2026-06-10T02:45:55.477Z",
+    "timestamp": "2026-06-10T02:52:47.975Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -18,7 +18,7 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-10T02:45:55.481Z",
+    "timestamp": "2026-06-10T02:52:47.979Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -27,8 +27,8 @@
     "result": "updated to 🤗"
   },
   {
-    "timestamp": "2026-06-10T02:46:17.532Z",
-    "userQuestion": "Pick up the sponge.",
+    "timestamp": "2026-06-10T02:53:09.175Z",
+    "userQuestion": "Pick up the key, uh, sorry, pick up the sponge.",
     "toolName": "locate_object",
     "args": {
       "target_name": "sponge"
@@ -36,16 +36,16 @@
     "result": "Calling Remote Vision MCP..."
   },
   {
-    "timestamp": "2026-06-10T02:46:39.263Z",
-    "userQuestion": "Pick up the sponge.",
+    "timestamp": "2026-06-10T02:58:55.134Z",
+    "userQuestion": "Pick up the key, uh, sorry, pick up the sponge.",
     "toolName": "locate_object",
     "args": {
       "target_name": "sponge"
     },
-    "result": "{\"status\": \"ERROR\", \"message\": \"HTTP Error 500: Internal Server Error\", \"history\": [], \"output\": \"{\\n  \\\"next_action\\\": \\\"pick\\\",\\n  \\\"obstacle_name\\\": null,\\n  \\\"reasoning\\\": \\\"The 'sponge' appears to be clear and there are no objects blocking it. The target is visible, safe, and nothing is inside or on top of the sponge.\\\"\\n}\\n\\n(OVERRIDDEN BY DEPTH SENSOR FAILSAFE)\"}"
+    "result": "{\"status\": \"SUCCESS\", \"target\": \"sponge\", \"coordinates\": {\"x\": 0.3925, \"y\": -0.1729, \"z\": 0.0075, \"angle_deg\": 59.98, \"grasp_label\": null}, \"detections\": [{\"object_name\": \"sponge\", \"x\": 0.3925, \"y\": -0.1729, \"z\": 0.0075, \"angle_deg\": 59.98, \"confidence\": 0.913}], \"history\": [\"Relocated 'cube' \\u2014 Depth sensor failsafe: Target 'sponge' surface is 22mm higher than expected, indicating an undetected or overlapping object 'cube' is inside or on top of it.\", \"Vision located 'sponge' \\u2014 The 'sponge' is visible and safe on the table. There are no overlapping objects or blocking obstacles detected.\"], \"qwen_raw_output\": \"{\\n  \\\"next_action\\\": \\\"pick\\\",\\n  \\\"obstacle_name\\\": null,\\n  \\\"reasoning\\\": \\\"The 'sponge' is visible and safe on the table. There are no overlapping objects or blocking obstacles detected.\\\"\\n}\", \"iterations\": 2, \"qwen_reasoning\": \"The 'sponge' is visible and safe on the table. There are no overlapping objects or blocking obstacles detected.\"}\n\nRobot Execution Status: Failed to calculate joint angles for pose at index 8: Inverse Kinematics solution could not be found. Ensure that the target_pose and reference angle are valid and reachable."
   },
   {
-    "timestamp": "2026-06-10T02:46:40.493Z",
+    "timestamp": "2026-06-10T02:58:57.513Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
