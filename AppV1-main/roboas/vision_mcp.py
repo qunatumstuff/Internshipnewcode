@@ -440,10 +440,11 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         "stream": False,
         "images": [raw_b64],
         "options": {
-            "temperature": 0,
-            "num_predict": 1024
-            }
+            "temperature": 0.2,
+            "repeat_penalty": 1.2,
+            "num_predict": -1
         }
+    }
 
     print("IMAGE SIZE:", len(raw_b64))
 
@@ -588,18 +589,11 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
                 plausible.append(obj_name)
 
         if d["object_name"] == target:
-            # TARGET is elevated — it is sitting ON something (still reachable from above)
-            if plausible:
-                lines.append(
-                    f"  - INFO: Target '{target}' is elevated (Z={d['z']*1000:.0f}mm), "
-                    f"likely sitting ON TOP of: {', '.join(plausible)}. "
-                    f"Target is accessible from above — safe to pick."
-                )
-            else:
-                lines.append(
-                    f"  - CAUTION: Target '{target}' is elevated (Z={d['z']*1000:.0f}mm) "
-                    f"but no known support detected underneath. Unknown object may be below."
-                )
+            # TARGET has an anomalously high surface Z.
+            lines.append(
+                f"  - CAUTION: Target '{target}' has an anomalously high surface (Z={d['z']*1000:.0f}mm). "
+                f"Look at the image carefully. If you see a smaller object (like a 'cube') resting on top of the {target}, you MUST output 'relocate' for that object."
+            )
         else:
             # NON-TARGET is elevated — check if it might be sitting ON the target
             if target in plausible:
@@ -699,11 +693,10 @@ async def qwen_plan_next_action(
         f"INSTRUCTIONS:\n"
         f"  1. Look at the image AND read the Python sensor analysis.\n"
         f"  2. If the analysis shows a WARNING that another object is ON TOP of or overlapping with the target, output 'relocate' for that blocking object.\n"
-        f"  3. If the analysis shows INFO that the target is sitting on top of something, the target is accessible from above — output 'pick'.\n"
-        f"  4. If the analysis shows CAUTION about unknown support under the target, output 'abort'.\n"
-        f"  5. If the analysis says the target is clear, verify visually. If it looks clear, output 'pick'.\n"
-        f"  6. If you see an unknown object (not in catalogue) blocking the target, output 'abort'.\n"
-        f"  7. Do not re-relocate already moved objects (check history).\n\n"
+        f"  3. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP of it. If you see one (like a 'cube'), output 'relocate' for that object. If nothing is on top, output 'pick'.\n"
+        f"  4. If the analysis says the target is clear, verify visually. If it looks clear, output 'pick'.\n"
+        f"  5. If you see an unknown object (not in catalogue) blocking the target, output 'abort'.\n"
+        f"  6. Do not re-relocate already moved objects (check history).\n\n"
         f"AVAILABLE ACTIONS:\n"
         f"  - relocate: move one blocking object to a safe spot.\n"
         f"  - pick: pick the target.\n"
@@ -988,36 +981,43 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
                 if obstacle_name and obstacle_dets:
                     obs = obstacle_dets[0]
+                elif obstacle_name and target_detections:
+                    # Qwen visually saw a blocker that YOLO missed.
+                    # Since the blocker is on top of the target, we can safely use the target's
+                    # detected coordinates (which correspond to the top surface of the blocker anyway).
+                    logger.warning(f"Qwen requested relocate '{obstacle_name}' but it was not in YOLO detections. Falling back to target's coordinates.")
+                    obs = target_detections[0]
+                    obs["object_name"] = obstacle_name
+                else:
+                    # Qwen said relocate but obstacle not found and we can't fall back — abort
+                    logger.warning(f"Qwen requested relocate '{obstacle_name}' but it was not found in YOLO detections.")
+                    return [TextContent(type="text", text=json.dumps({
+                        "status": "ABORTED",
+                        "reasoning": f"Cannot relocate '{obstacle_name}' — not found in current detections.",
+                        "history": action_history,
+                        "qwen_raw_output": raw_output,
+                    }))]
 
-                    reloc_result = await call_robot_tool("relocate_object", {
-                        "obstacle_name": obs["object_name"],
-                        "obstacle_x": obs["x"],
-                        "obstacle_y": obs["y"],
-                        "obstacle_z": obs["z"],
-                        "obstacle_angle_deg": obs.get("angle_deg"),
-                        "detections": detections,
-                    })
+                reloc_result = await call_robot_tool("relocate_object", {
+                    "obstacle_name": obs["object_name"],
+                    "obstacle_x": obs["x"],
+                    "obstacle_y": obs["y"],
+                    "obstacle_z": obs["z"],
+                    "obstacle_angle_deg": obs.get("angle_deg"),
+                    "detections": detections,
+                })
 
-                    if reloc_result.get("error"):
-                        return [TextContent(type="text", text=json.dumps({
-                            "status": "ERROR",
-                            "message": reloc_result["error"],
-                            "history": action_history,
-                            "output": raw_output,
-                        }))]
+                if reloc_result.get("error"):
+                    return [TextContent(type="text", text=json.dumps({
+                        "status": "ERROR",
+                        "message": reloc_result["error"],
+                        "history": action_history,
+                        "output": raw_output,
+                    }))]
 
-                    action_history.append(f"Relocated '{obstacle_name}' — {reasoning}")
-                    await asyncio.sleep(1.0)
-                    continue
-
-                # Qwen said relocate but obstacle not found in detections — abort for safety
-                logger.warning(f"Qwen requested relocate '{obstacle_name}' but it was not found in YOLO detections.")
-                return [TextContent(type="text", text=json.dumps({
-                    "status": "ABORTED",
-                    "reasoning": f"Cannot relocate '{obstacle_name}' — not found in current detections.",
-                    "history": action_history,
-                    "qwen_raw_output": raw_output,
-                }))]
+                action_history.append(f"Relocated '{obstacle_name}' — {reasoning}")
+                await asyncio.sleep(1.0)
+                continue
 
             if next_action == "pick":
                 target_det = target_detections[0]
