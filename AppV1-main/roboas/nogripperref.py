@@ -2980,7 +2980,7 @@ def mcp_find_object_profile(object_name):
     name = str(object_name or "").strip().lower()
 
     match name:
-        case "cube" | "box":
+        case "cube" | "box" | "unknown_blocker":
             keys = ["3"]
         case "medicine" | "medicine box" | "med":
             keys = ["5"]
@@ -3016,7 +3016,7 @@ def mcp_find_object_profile(object_name):
 
     raise ValueError(
         f"Unsupported object_name={object_name!r}. "
-        "Use cube, medicine, nut, pipe, sponge, black marker, blue marker, or green marker."
+        "Use cube, medicine, nut, pipe, sponge, black marker, blue marker, green marker, or unknown_blocker."
     )
 
 

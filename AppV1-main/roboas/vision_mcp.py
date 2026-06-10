@@ -593,7 +593,7 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
             # TARGET has an anomalously high surface Z.
             lines.append(
                 f"  - CAUTION: Target '{target}' has an anomalously high surface (Z={d['z']*1000:.0f}mm). "
-                f"Look at the image carefully. If you see a smaller object (like a 'cube') resting on top of the {target}, you MUST output 'relocate' for that object."
+                f"Look at the image carefully. If you see a smaller object (like a 'cube') resting on top of OR inside/blocking the {target}, you MUST output 'relocate' for that object."
             )
         else:
             # NON-TARGET is elevated — check if it might be sitting ON the target
@@ -694,8 +694,8 @@ async def qwen_plan_next_action(
         f"INSTRUCTIONS:\n"
         f"  1. Look at the image AND read the Python sensor analysis.\n"
         f"  2. If the analysis shows a WARNING that another object is ON TOP of or overlapping with the target, output 'relocate' for that blocking object.\n"
-        f"  3. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP of it. If you see one (like a 'cube'), output 'relocate' for that object. If nothing is on top, output 'pick'.\n"
-        f"  4. If the analysis says the target is clear, verify visually. If it looks clear, output 'pick'.\n"
+        f"  3. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one (like a 'cube'), output 'relocate' for that object. If it is clear, output 'pick'.\n"
+        f"  4. If the analysis says the target is clear, verify visually. If it looks clear and nothing is inside/blocking it, output 'pick'.\n"
         f"  5. If you see an unknown object (not in catalogue) blocking the target, output 'abort'.\n"
         f"  6. Do not re-relocate already moved objects (check history).\n\n"
         f"AVAILABLE ACTIONS:\n"
@@ -707,7 +707,7 @@ async def qwen_plan_next_action(
         f"Pick format:\n"
         f'{{"next_action":"pick","obstacle_name":null,"reasoning":"target is visible and safe"}}\n\n'
         f"Relocate format:\n"
-        f'{{"next_action":"relocate","obstacle_name":"cube","reasoning":"cube is blocking the target"}}\n\n'
+        f'{{"next_action":"relocate","obstacle_name":"[name_of_blocking_object]","reasoning":"[name] is blocking the target"}}\n\n'
         f"Abort format:\n"
         f'{{"next_action":"abort","obstacle_name":null,"reasoning":"target cannot be safely reached"}}'
     )
@@ -961,6 +961,39 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 }
                 print("AFTER QWEN:", plan)
 
+                if plan.get("next_action") == "pick":
+                    # Failsafe: If Qwen hallucinated that the path is clear, but depth sensor knows there is an anomaly.
+                    target_info = OBJECT_CATALOGUE.get(target, {})
+                    expected_h = target_info.get("height_m")
+                    if expected_h is not None and target_detections:
+                        expected_z = expected_h / 2
+                        excess = target_detections[0]["z"] - expected_z
+                        if excess > 0.020:
+                            # Find overlapping or closest detected obstacle to target
+                            target_x = target_detections[0]["x"]
+                            target_y = target_detections[0]["y"]
+                            best_obstacle = None
+                            min_dist = 9999.0
+                            for d in detections:
+                                if d is target_detections[0]:
+                                    continue
+                                dx = d["x"] - target_x
+                                dy = d["y"] - target_y
+                                dist = (dx*dx + dy*dy)**0.5
+                                if dist < 0.080 and dist < min_dist:
+                                    min_dist = dist
+                                    best_obstacle = d.get("object_name")
+                            obstacle_name = best_obstacle if best_obstacle else "cube"
+
+                            logger.warning(f"QWEN FAILSAFE OVERRIDE: Target '{target}' Z is anomalously high (+{excess*1000:.0f}mm). Forcing relocate of '{obstacle_name}'.")
+                            plan = {
+                                "next_action": "relocate",
+                                "obstacle_name": obstacle_name,
+                                "reasoning": f"Depth sensor failsafe: Target '{target}' surface is {excess*1000:.0f}mm higher than expected, indicating an undetected or overlapping object '{obstacle_name}' is inside or on top of it.",
+                                "raw_output": plan.get("raw_output", "") + f"\n\n(OVERRIDDEN BY DEPTH SENSOR FAILSAFE: Relocating {obstacle_name})"
+                            }
+
+
             next_action = plan.get("next_action", "abort")
             obstacle_name = (plan.get("obstacle_name") or "").strip().lower()
             reasoning = plan.get("reasoning", "")
@@ -987,8 +1020,10 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     # Since the blocker is on top of the target, we can safely use the target's
                     # detected coordinates (which correspond to the top surface of the blocker anyway).
                     logger.warning(f"Qwen requested relocate '{obstacle_name}' but it was not in YOLO detections. Falling back to target's coordinates.")
-                    obs = target_detections[0]
+                    obs = target_detections[0].copy()
                     obs["object_name"] = obstacle_name
+                    # MUST append to detections so the Robot MCP can find it!
+                    detections.append(obs)
                 else:
                     # Qwen said relocate but obstacle not found and we can't fall back — abort
                     logger.warning(f"Qwen requested relocate '{obstacle_name}' but it was not found in YOLO detections.")
