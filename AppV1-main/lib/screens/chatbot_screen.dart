@@ -677,6 +677,30 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _scrollToBottom();
   }
 
+  Future<void> _returnHome() async {
+    try {
+      http.post(
+        Uri.parse('$baseUrl/return-home'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({}),
+      ).catchError((e) {
+        debugPrint('Failed to send return home request: $e');
+        return http.Response('Failed', 500);
+      });
+    } catch (e) {
+      debugPrint('Failed to initialize return home HTTP: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _messages.add(ChatMessage(
+            text: "🏠 System: Returning Robot Arm to Home Position...",
+            isUser: false));
+      });
+    }
+    _scrollToBottom();
+  }
+
   void _clearChat() {
     setState(() {
       _messages.clear();
@@ -2087,6 +2111,30 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   foregroundColor: Colors.white,
                   elevation: 8,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: const BorderSide(color: Colors.white, width: 2),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // ── HOME Button ─────────────────────────────────
+          Positioned(
+            top: 65,
+            right: 170,
+            child: SafeArea(
+              child: ElevatedButton.icon(
+                onPressed: _returnHome,
+                icon: const Icon(Icons.home, size: 18, color: Colors.white),
+                label: const Text('HOME',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue[700],
+                  foregroundColor: Colors.white,
+                  elevation: 8,
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
                     side: const BorderSide(color: Colors.white, width: 2),

@@ -2120,12 +2120,15 @@ def clear_temporary_future_object_obstacle(was_manual_obstacle):
 # -----------------------------------------------------------------
 
 def power_off_robot():
+    global _MCP_ROBOT_READY
     try:
         r.stop()
         time.sleep(0.5)
         r.power_off()
         gripper_shutdown()
+        _MCP_ROBOT_READY = False
     except Exception as e:
+        _MCP_ROBOT_READY = False
         return
 
 

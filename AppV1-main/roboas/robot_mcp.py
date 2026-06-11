@@ -176,6 +176,11 @@ async def handle_list_tools() -> list[Tool]:
             name="emergency_stop",
             description="Emergency stop. Halts all physical robot movements immediately.",
             inputSchema={"type": "object", "properties": {}}
+        ),
+        Tool(
+            name="return_home",
+            description="Return home. Clears errors, ensures robot is ready, and moves to the home position safely.",
+            inputSchema={"type": "object", "properties": {}}
         )
     ]
 
@@ -276,14 +281,26 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     if name == "emergency_stop":
         logger.warning("⚠️ EMERGENCY STOP TRIGGERED!")
         try:
-            if hasattr(robot_control, 'r') and robot_control.r is not None:
+            if hasattr(robot_control, 'power_off_robot'):
+                robot_control.power_off_robot()
+            elif hasattr(robot_control, 'r') and robot_control.r is not None:
                 robot_control.r.stop()
-            if hasattr(robot_control, 'gripper_open'):
-                robot_control.gripper_open()
-            return [TextContent(type="text", text="Emergency Stop Successful: Robot halted, gripper opened.")]
+            return [TextContent(type="text", text="Emergency Stop Successful: Robot powered off.")]
         except Exception as e:
             logger.error(f"Error during emergency stop: {e}")
             return [TextContent(type="text", text=f"Error executing emergency stop: {str(e)}")]
+
+    if name == "return_home":
+        logger.info("🏠 RETURN HOME TRIGGERED!")
+        try:
+            if hasattr(robot_control, 'ensure_robot_ready') and hasattr(robot_control, 'r'):
+                robot_control.ensure_robot_ready(robot_control.r)
+            if hasattr(robot_control, 'move_to_home_emergency'):
+                robot_control.move_to_home_emergency(robot_control.r)
+            return [TextContent(type="text", text="Return Home Successful: Robot moved to home position.")]
+        except Exception as e:
+            logger.error(f"Error during return home: {e}")
+            return [TextContent(type="text", text=f"Error executing return home: {str(e)}")]
 
     raise ValueError(f"Unknown tool: {name}")
 
