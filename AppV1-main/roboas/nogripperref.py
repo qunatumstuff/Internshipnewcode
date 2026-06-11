@@ -2208,6 +2208,7 @@ def mcp_return_home():
         r.stop()
         time.sleep(0.5)
         r.reset_errors()              # clear errors before doing anything else
+        r.power_on()                  # ensure power is on (might be off from emergency stop)
         r.switch_to_automatic_mode()  # must be in auto before any motion
         time.sleep(1)
         gripper_open()                # now safe to open gripper
@@ -3327,7 +3328,6 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
 
     MCP_DYNAMIC_OBSTACLES = []
     MCP_PLACEMENT_BOX_DETECTIONS = []
-    PERSISTENT_PLACED_OBJECTS = []
 
     normalized = []
 

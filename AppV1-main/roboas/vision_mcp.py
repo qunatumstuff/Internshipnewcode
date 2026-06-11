@@ -755,7 +755,7 @@ async def call_robot_tool(tool_name: str, arguments: dict) -> dict:
     )
     loop = asyncio.get_running_loop()
     def fetch():
-        with urllib.request.urlopen(req, timeout=300) as response:
+        with urllib.request.urlopen(req, timeout=900) as response:
             return json.loads(response.read().decode("utf-8"))
     try:
         result = await loop.run_in_executor(None, fetch)

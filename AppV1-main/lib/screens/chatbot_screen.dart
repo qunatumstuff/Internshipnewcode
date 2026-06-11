@@ -1366,6 +1366,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     if (eventName.startsWith('robot_moving_status:')) {
       final isMoving = eventName.substring('robot_moving_status:'.length) == 'true';
       _addUiLog('[OWW] Robot moving status: $isMoving');
+      _setWakeWordMute(isMoving);
+      
       if (isMoving) {
         // Abort any active manual recording immediately
         if (_isListening) {

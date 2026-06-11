@@ -1,6 +1,6 @@
 [
   {
-    "timestamp": "2026-06-11T05:13:14.177Z",
+    "timestamp": "2026-06-11T05:43:41.003Z",
     "userQuestion": "System Command",
     "toolName": "switch_avatar",
     "args": {
@@ -9,7 +9,7 @@
     "result": "switched to john"
   },
   {
-    "timestamp": "2026-06-11T05:13:14.182Z",
+    "timestamp": "2026-06-11T05:43:41.009Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -18,7 +18,7 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-11T05:13:14.189Z",
+    "timestamp": "2026-06-11T05:43:41.019Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -27,16 +27,16 @@
     "result": "updated to 🤗"
   },
   {
-    "timestamp": "2026-06-11T05:13:35.169Z",
-    "userQuestion": "I need medicine, John.",
+    "timestamp": "2026-06-11T05:44:15.459Z",
+    "userQuestion": "Pick up the sponge. John and Boy!",
     "toolName": "locate_object",
     "args": {
-      "target_name": "medicine"
+      "target_name": "sponge"
     },
     "result": "Orchestrating autonomous scan & pick in background..."
   },
   {
-    "timestamp": "2026-06-11T05:13:35.176Z",
+    "timestamp": "2026-06-11T05:44:15.467Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -45,16 +45,50 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-11T05:17:05.440Z",
-    "userQuestion": "I need medicine, John.",
+    "timestamp": "2026-06-11T05:44:42.568Z",
+    "userQuestion": "Pick up the sponge. John and Boy!",
     "toolName": "locate_object",
     "args": {
-      "target_name": "medicine"
+      "target_name": "sponge"
     },
     "result": "Target located"
   },
   {
-    "timestamp": "2026-06-11T05:18:01.533Z",
+    "timestamp": "2026-06-11T05:48:38.890Z",
+    "userQuestion": "Pick up the cube.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-11T05:48:38.897Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T05:49:00.091Z",
+    "userQuestion": "Pick up the cube.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Target located"
+  },
+  {
+    "timestamp": "2026-06-11T05:51:04.469Z",
+    "userQuestion": "System Emergency Button",
+    "toolName": "emergency_stop",
+    "args": {},
+    "result": "Robot halted"
+  },
+  {
+    "timestamp": "2026-06-11T05:51:25.020Z",
     "userQuestion": "System Home Button",
     "toolName": "return_home",
     "args": {},

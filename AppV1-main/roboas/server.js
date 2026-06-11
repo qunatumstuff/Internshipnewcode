@@ -1080,7 +1080,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             visionMcpClient.callTool({ 
               name: "locate_object", 
               arguments: { target_name: args.target_name, user_context: question } 
-            }, undefined, { timeout: 300000 })
+            }, undefined, { timeout: 900000 })
             .then(async res => {
               const parsed = JSON.parse(res.content[0].text);
               logToolCall(question, "locate_object", args, parsed.status === "SUCCESS" ? "Target located" : "Scan failed");
@@ -1101,11 +1101,11 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                       robotArgs.grasp_label = parsed.coordinates.grasp_label;
                     }
                     
-                    const completionPromise = waitForRobotEvent(300000);
+                    const completionPromise = waitForRobotEvent(900000);
                     robotMcpClient.callTool({
                       name: "pick_and_place_object",
                       arguments: robotArgs
-                    }, undefined, { timeout: 300000 }).catch(e => console.error("Background robot pick failed:", e));
+                    }, undefined, { timeout: 900000 }).catch(e => console.error("Background robot pick failed:", e));
                     
                     await completionPromise;
                     sendProgress(`Successfully picked up the ${args.target_name}!`, true);
@@ -1243,8 +1243,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           sendProgress(`Executing pick-and-place for "${args.object_name}"...`, true);
           
           if (robotMcpClient) {
-            const completionPromise = waitForRobotEvent(300000);
-            robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args }, undefined, { timeout: 300000 })
+            const completionPromise = waitForRobotEvent(900000);
+            robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args }, undefined, { timeout: 900000 })
               .catch(e => console.error("Background robot pick failed:", e));
             
             completionPromise.then(() => {
@@ -1278,8 +1278,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           logToolCall(question, "relocate_object", args, "Calling Robot MCP in background...");
           sendProgress(`Relocating obstacle "${args.obstacle_name}"...`, true);
           if (robotMcpClient) {
-            const completionPromise = waitForRobotEvent(300000);
-            robotMcpClient.callTool({ name: "relocate_object", arguments: args }, undefined, { timeout: 300000 })
+            const completionPromise = waitForRobotEvent(900000);
+            robotMcpClient.callTool({ name: "relocate_object", arguments: args }, undefined, { timeout: 900000 })
               .catch(e => console.error("Background robot relocation failed:", e));
             
             completionPromise.then(() => {
