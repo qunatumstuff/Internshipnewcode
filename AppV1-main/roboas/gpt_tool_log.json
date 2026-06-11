@@ -1,6 +1,6 @@
 [
   {
-    "timestamp": "2026-06-11T04:47:20.809Z",
+    "timestamp": "2026-06-11T05:13:14.177Z",
     "userQuestion": "System Command",
     "toolName": "switch_avatar",
     "args": {
@@ -9,7 +9,7 @@
     "result": "switched to john"
   },
   {
-    "timestamp": "2026-06-11T04:47:20.813Z",
+    "timestamp": "2026-06-11T05:13:14.182Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -18,7 +18,7 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-11T04:47:20.819Z",
+    "timestamp": "2026-06-11T05:13:14.189Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -27,16 +27,16 @@
     "result": "updated to 🤗"
   },
   {
-    "timestamp": "2026-06-11T04:47:37.598Z",
-    "userQuestion": "Pick up the cube.",
+    "timestamp": "2026-06-11T05:13:35.169Z",
+    "userQuestion": "I need medicine, John.",
     "toolName": "locate_object",
     "args": {
-      "target_name": "cube"
+      "target_name": "medicine"
     },
     "result": "Orchestrating autonomous scan & pick in background..."
   },
   {
-    "timestamp": "2026-06-11T04:47:37.614Z",
+    "timestamp": "2026-06-11T05:13:35.176Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -45,26 +45,19 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-11T04:48:08.585Z",
-    "userQuestion": "Pick up the cube.",
+    "timestamp": "2026-06-11T05:17:05.440Z",
+    "userQuestion": "I need medicine, John.",
     "toolName": "locate_object",
     "args": {
-      "target_name": "cube"
+      "target_name": "medicine"
     },
     "result": "Target located"
   },
   {
-    "timestamp": "2026-06-11T04:49:50.867Z",
+    "timestamp": "2026-06-11T05:18:01.533Z",
     "userQuestion": "System Home Button",
     "toolName": "return_home",
     "args": {},
     "result": "Robot returning home"
-  },
-  {
-    "timestamp": "2026-06-11T04:49:51.662Z",
-    "userQuestion": "System Emergency Button",
-    "toolName": "emergency_stop",
-    "args": {},
-    "result": "Robot halted"
   }
 ]

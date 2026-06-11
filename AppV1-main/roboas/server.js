@@ -1656,6 +1656,9 @@ app.post('/switch-persona', (req, res) => {
 app.post('/emergency-stop', async (req, res) => {
   console.log('\n🚨 \x1b[41m\x1b[37m[EMERGENCY STOP]: Received UI signal! Halting Robot Arm...\x1b[0m\n');
   
+  await sendWakewordCommand('mute');
+  sendProgress("Emergency stop activated. Halting the robot.", true, "Emergency stop activated. Halting the robot.");
+
   let robotSuccess = false;
   let robotError = null;
   let responseText = "";
@@ -1681,8 +1684,10 @@ app.post('/emergency-stop', async (req, res) => {
   // Log the emergency stop event
   logToolCall("System Emergency Button", "emergency_stop", {}, robotSuccess ? "Robot halted" : `Failed: ${robotError}`);
 
-  sendProgress(null, false);
-  await sendWakewordCommand('unmute');
+  setTimeout(async () => {
+    sendProgress(null, false);
+    await sendWakewordCommand('unmute');
+  }, 3500);
 
   res.json({
     success: robotSuccess,
@@ -1695,6 +1700,9 @@ app.post('/emergency-stop', async (req, res) => {
 app.all('/return-home', async (req, res) => {
   console.log('\n🏠 \x1b[46m\x1b[30m[HOME BUTTON]: Received UI signal! Returning Robot Arm to Home...\x1b[0m\n');
   
+  await sendWakewordCommand('mute');
+  sendProgress("Returning robot arm to home position.", true, "Returning robot arm to home position.");
+
   let robotSuccess = false;
   let robotError = null;
   let responseText = "";
@@ -1720,8 +1728,18 @@ app.all('/return-home', async (req, res) => {
   // Log the return home event
   logToolCall("System Home Button", "return_home", {}, robotSuccess ? "Robot returning home" : `Failed: ${robotError}`);
 
-  sendProgress(null, false);
-  await sendWakewordCommand('unmute');
+  if (robotSuccess) {
+    sendProgress("Arm has been returned to home. Waiting for your next input.", true, "Arm has been returned to home. Waiting for your next input.");
+    setTimeout(async () => {
+      sendProgress(null, false);
+      await sendWakewordCommand('unmute');
+    }, 4500);
+  } else {
+    setTimeout(async () => {
+      sendProgress(null, false);
+      await sendWakewordCommand('unmute');
+    }, 4000);
+  }
 
   res.json({
     success: robotSuccess,

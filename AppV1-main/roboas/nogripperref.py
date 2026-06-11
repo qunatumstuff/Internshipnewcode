@@ -421,6 +421,7 @@ MCP_DYNAMIC_OBSTACLES = []
 # They are NOT valid pick targets, but they reserve area inside the box so
 # the drop planner avoids overlapping them.
 MCP_PLACEMENT_BOX_DETECTIONS = []
+PERSISTENT_PLACED_OBJECTS = []
 
 # Keep normal MCP operation quiet. Only these two diagnostics are printed:
 #   1) first pickup coordinate
@@ -2027,10 +2028,17 @@ def preplan_all_drop_slots(pick_sequence):
     Pre-calculate all drop locations before robot motion starts.
 
     For MCP/camera mode, PLACED_OBJECTS is first seeded with any objects that
-    the camera already sees inside the placement box. This makes the smart
-    drop planner compute remaining free area instead of assuming the box is empty.
+    the camera already sees inside the placement box, PLUS any objects we 
+    already successfully placed in previous voice commands (PERSISTENT_PLACED_OBJECTS).
     """
     PLACED_OBJECTS.clear()
+    
+    # 1. Load memory of previously placed objects (cross-session memory)
+    for slot in PERSISTENT_PLACED_OBJECTS:
+        if slot not in PLACED_OBJECTS:
+            PLACED_OBJECTS.append(slot)
+
+    # 2. Load any newly detected objects physically inside the box
     _load_mcp_placement_occupancy_into_planner()
 
     for seq_item in pick_sequence:
@@ -3053,8 +3061,13 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
 
     execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
 
-    if not MCP_IS_RELOCATING and ROBOT_EVENT_CALLBACK:
-        ROBOT_EVENT_CALLBACK("pick_and_place_completed")
+    if not MCP_IS_RELOCATING:
+        slot = seq_item["object"].get("_planned_drop_slot")
+        if slot and slot not in PERSISTENT_PLACED_OBJECTS:
+            PERSISTENT_PLACED_OBJECTS.append(slot)
+            
+        if ROBOT_EVENT_CALLBACK:
+            ROBOT_EVENT_CALLBACK("pick_and_place_completed")
 
     
 
@@ -3188,11 +3201,17 @@ def _mcp_normalize_detection(raw, default_index=1):
 def _mcp_detection_inside_placement_box(det):
     """
     Return True if a camera/MCP detection centre is already inside the placement box.
-
-    These objects are considered already placed, so they should not be selected
-    as the next pickup target. They are instead used to reserve placement area.
+    Uses an inward tolerance so objects placed slightly near the edge still count.
     """
-    return point_in_placement_box_xy(float(det["x"]), float(det["y"]))
+    INBOX_TOLERANCE_M = 0.05
+    try:
+        x, y = float(det["x"]), float(det["y"])
+        return (
+            PLACEMENT_BOX_X_MIN - INBOX_TOLERANCE_M <= x <= PLACEMENT_BOX_X_MAX + INBOX_TOLERANCE_M and
+            PLACEMENT_BOX_Y_MIN - INBOX_TOLERANCE_M <= y <= PLACEMENT_BOX_Y_MAX + INBOX_TOLERANCE_M
+        )
+    except Exception:
+        return False
 
 
 def _mcp_make_placement_occupancy(det):
@@ -3304,10 +3323,11 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
     (grasp_A or grasp_B). When provided, x/y/z already point to that exact
     end and catalogue offsets are confirmed zero so nothing shifts the position.
     """
-    global MCP_DYNAMIC_OBSTACLES, MCP_PLACEMENT_BOX_DETECTIONS
+    global MCP_DYNAMIC_OBSTACLES, MCP_PLACEMENT_BOX_DETECTIONS, PERSISTENT_PLACED_OBJECTS
 
     MCP_DYNAMIC_OBSTACLES = []
     MCP_PLACEMENT_BOX_DETECTIONS = []
+    PERSISTENT_PLACED_OBJECTS = []
 
     normalized = []
 
@@ -3535,6 +3555,9 @@ def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, tar
             avoid.append((det_x, det_y))
     avoid.append((float(obstacle_x), float(obstacle_y)))
 
+    best_score = -1
+    best_xy = None
+
     x = CAM_X_MIN + BORDER_M
     while x <= CAM_X_MAX - BORDER_M:
         y = CAM_Y_MIN + BORDER_M
@@ -3562,10 +3585,24 @@ def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, tar
                         break
 
             if not too_close:
-                return [x, y]
+                min_dist = min(
+                    (math.hypot(x - ox, y - oy) for ox, oy in avoid),
+                    default=999.0
+                )
+                target_min_dist = min(
+                    (math.hypot(x - tx, y - ty) for tx, ty in target_positions),
+                    default=999.0
+                )
+                score = min(min_dist, target_min_dist)
+                if score > best_score:
+                    best_score = score
+                    best_xy = [x, y]
 
             y += GRID_STEP_M
         x += GRID_STEP_M
+
+    if best_xy:
+        return best_xy
 
     raise RuntimeError(
         f"No safe relocation spot found for {obstacle_name!r} in pick workspace. "
