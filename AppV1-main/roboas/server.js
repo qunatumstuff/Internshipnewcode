@@ -811,6 +811,11 @@ app.post('/ask-gpt', async (req, res) => {
   const question = req.body.question;
   if (!question) return res.status(400).json({ success: false, message: 'No question provided.' });
 
+  const lowerQuestion = question.toLowerCase().trim();
+  if (lowerQuestion.startsWith("lora task:") || lowerQuestion.startsWith("capture task:")) {
+    return runLoraDataCollection(question, res);
+  }
+
   // Mute wake word during thinking/processing
   await sendWakewordCommand('mute');
   let hasRobotMovement = false;
@@ -1746,6 +1751,112 @@ app.all('/return-home', async (req, res) => {
     message: robotSuccess ? "Return home sent successfully." : `Failed to return home: ${robotError}`,
     detail: responseText || robotError
   });
+});
+
+// === VLA / LoRA Dataset Collection Protocol v1.0 ===
+const DATASET_DIR = path.join(__dirname, 'TIEFA_Phase1_Dataset');
+if (!fs.existsSync(DATASET_DIR)) {
+  fs.mkdirSync(DATASET_DIR, { recursive: true });
+}
+
+async function runLoraDataCollection(question, res) {
+  try {
+    let instructionText = question;
+    if (question.toLowerCase().startsWith("lora task:")) {
+      instructionText = question.substring("lora task:".length).trim();
+    } else if (question.toLowerCase().startsWith("capture task:")) {
+      instructionText = question.substring("capture task:".length).trim();
+    }
+
+    const now = new Date();
+    const pad = (num) => String(num).padStart(2, '0');
+    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +
+                      `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const sessionId = `task_${timestamp}`;
+    const episodeDir = path.join(DATASET_DIR, sessionId);
+    fs.mkdirSync(episodeDir, { recursive: true });
+
+    // Save instruction.txt
+    fs.writeFileSync(path.join(episodeDir, 'instruction.txt'), instructionText, 'utf-8');
+    console.log(`[LoRA] Saved instruction.txt for ${sessionId}`);
+
+    // Capture clean snapshot from Vision MCP (before annotations)
+    let imageSaved = false;
+    if (visionMcpClient) {
+      sendProgress(`Capturing clean camera snapshot for VLA training...`, true);
+      const snapshotRes = await visionMcpClient.callTool({
+        name: "get_camera_snapshot",
+        arguments: {}
+      });
+      if (snapshotRes && snapshotRes.content && snapshotRes.content[0]) {
+        const rawText = snapshotRes.content[0].text;
+        const base64Data = rawText.replace(/^data:image\/jpeg;base64,/, "");
+        fs.writeFileSync(path.join(episodeDir, 'image.jpg'), base64Data, 'base64');
+        console.log(`[LoRA] Saved clean image.jpg for ${sessionId}`);
+        imageSaved = true;
+      }
+    }
+
+    if (!imageSaved) {
+      throw new Error("Failed to capture a clean camera snapshot. Ensure Vision MCP is connected.");
+    }
+
+    // Trigger Robot MCP to start pose collection
+    if (robotMcpClient) {
+      sendProgress(`Priming Robot PC kinematic recorder for ${sessionId}...`, true);
+      await robotMcpClient.callTool({
+        name: "start_pose_collection",
+        arguments: { session_id: sessionId }
+      });
+    } else {
+      throw new Error("Robot MCP is not connected for pose collection.");
+    }
+
+    sendProgress(`Session ${sessionId} ready! Guide LARA arm and press Enter on the Robot PC console.`, false);
+    return res.json({
+      success: true,
+      answer: `VLA LoRA session ${sessionId} initiated. Please manually guide the LARA arm tool flange precisely above the target object, then press [ENTER] on the Robot PC console to save the 6D pose.`
+    });
+
+  } catch (err) {
+    console.error("LoRA data collection failed:", err);
+    sendProgress(`LoRA Error: ${err.message}`, false);
+    await sendWakewordCommand('unmute');
+    return res.json({
+      success: false,
+      answer: `Sorry, I could not initiate the LoRA data collection session because of an error: ${err.message}`
+    });
+  }
+}
+
+app.post('/lora/save-pose', async (req, res) => {
+  const { session_id, pose, gripper } = req.body;
+  if (!session_id || !pose) {
+    return res.status(400).json({ success: false, message: 'Invalid payload: session_id and pose are required.' });
+  }
+
+  const episodeDir = path.join(DATASET_DIR, session_id);
+  if (!fs.existsSync(episodeDir)) {
+    return res.status(400).json({ success: false, message: `Session ID directory ${session_id} not found.` });
+  }
+
+  try {
+    const posePath = path.join(episodeDir, 'pose_action.json');
+    const payload = {
+      session_id,
+      pose,
+      gripper: gripper !== undefined ? gripper : 0
+    };
+    fs.writeFileSync(posePath, JSON.stringify(payload, null, 2), 'utf-8');
+    console.log(`✅ [LoRA] Saved pose_action.json for ${session_id}`);
+
+    sendProgress(`VLA Episode ${session_id} recorded successfully!`, false, `VLA Episode recorded successfully!`);
+    await sendWakewordCommand('unmute');
+    return res.json({ success: true, message: 'Pose saved successfully.' });
+  } catch (err) {
+    console.error("Failed to save pose_action.json:", err);
+    return res.status(500).json({ success: false, message: `Failed to save pose: ${err.message}` });
+  }
 });
 
 // Serve debug dashboard

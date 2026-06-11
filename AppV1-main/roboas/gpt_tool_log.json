@@ -79,5 +79,167 @@
       "target_name": "blue marker"
     },
     "result": "Scan failed"
+  },
+  {
+    "timestamp": "2026-06-11T08:30:50.817Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-06-11T08:30:50.822Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T08:30:50.827Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "idle"
+    },
+    "result": "updated to 🤗"
+  },
+  {
+    "timestamp": "2026-06-11T08:31:12.656Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "linda"
+    },
+    "result": "switched to linda"
+  },
+  {
+    "timestamp": "2026-06-11T08:31:12.660Z",
+    "userQuestion": "Can you switch to Linda?",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "linda"
+    },
+    "result": "switched to linda"
+  },
+  {
+    "timestamp": "2026-06-11T08:31:14.845Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T08:31:33.870Z",
+    "userQuestion": "Can you pick up the medicine box?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "medicine"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-11T08:31:33.877Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T08:32:14.843Z",
+    "userQuestion": "Can you pick up the medicine box?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "medicine"
+    },
+    "result": "Target located"
+  },
+  {
+    "timestamp": "2026-06-11T08:35:52.943Z",
+    "userQuestion": "Can you pick up the cube for me?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-11T08:35:52.953Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T08:38:58.076Z",
+    "userQuestion": "Can you pick up the cube for me?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Target located"
+  },
+  {
+    "timestamp": "2026-06-11T08:42:10.621Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-06-11T08:42:10.624Z",
+    "userQuestion": "Can you switch to John?",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-06-11T08:42:11.757Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T08:42:25.445Z",
+    "userQuestion": "Can you help me pick up the nut?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "nut"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-11T08:42:25.452Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T08:42:48.170Z",
+    "userQuestion": "Can you help me pick up the nut?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "nut"
+    },
+    "result": "Target located"
   }
 ]

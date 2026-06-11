@@ -32,6 +32,7 @@ spec.loader.exec_module(robot_control)
 # Event completion signaling back to server.js
 # ------------------------------------------------------------
 CLIENT_IP = "localhost"
+cached_session_id = None
 
 def send_robot_event(event_type, error_msg=None):
     global CLIENT_IP
@@ -186,6 +187,20 @@ async def handle_list_tools() -> list[Tool]:
             name="return_home",
             description="Return home. Clears errors, ensures robot is ready, and moves to the home position safely.",
             inputSchema={"type": "object", "properties": {}}
+        ),
+        Tool(
+            name="start_pose_collection",
+            description="Initiate VLA LoRA coordinate collection. Caches session_id in memory.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Unique session ID for the VLA episode."
+                    }
+                },
+                "required": ["session_id"]
+            }
         )
     ]
 
@@ -314,6 +329,14 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             logger.error(f"Error during return home: {e}")
             return [TextContent(type="text", text=f"Error executing return home: {str(e)}")]
 
+    if name == "start_pose_collection":
+        session_id = args.get("session_id")
+        global cached_session_id
+        cached_session_id = session_id
+        logger.info(f"🦾 [LoRA Data Collection] Session '{session_id}' initiated.")
+        logger.info("🦾 GUIDE ROBOT ARM TO TARGET AND PRESS [ENTER] ON THIS CONSOLE TO RECORD POSE...")
+        return [TextContent(type="text", text=f"Started VLA collection for session: {session_id}")]
+
     raise ValueError(f"Unknown tool: {name}")
 
 # 4. SSE Networking Setup
@@ -402,7 +425,55 @@ async def app(scope, receive, send):
         "body": b"Not Found"
     })
 
+def console_input_listener():
+    global cached_session_id
+    import sys
+    import math
+    import urllib.request
+    import json
+    
+    while True:
+        sys.stdin.readline()
+        if cached_session_id:
+            try:
+                pose_m = robot_control.r.get_tcp_pose()
+                
+                # Convert to mm and degrees
+                x_mm = float(pose_m[0]) * 1000.0
+                y_mm = float(pose_m[1]) * 1000.0
+                z_mm = float(pose_m[2]) * 1000.0
+                
+                roll_deg = math.degrees(float(pose_m[3]))
+                pitch_deg = math.degrees(float(pose_m[4]))
+                yaw_deg = math.degrees(float(pose_m[5]))
+                
+                pose_converted = [x_mm, y_mm, z_mm, roll_deg, pitch_deg, yaw_deg]
+                
+                payload = {
+                    "session_id": cached_session_id,
+                    "pose": pose_converted,
+                    "gripper": 0
+                }
+                
+                server_host = os.environ.get("SERVER_HOST", "localhost")
+                url = f"http://{server_host}:3000/lora/save-pose"
+                
+                data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(
+                    url,
+                    data=data,
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    logger.info(f"🦾 Pose recorded successfully. Server response: {response.status}")
+                
+                cached_session_id = None # clear session
+            except Exception as e:
+                logger.error(f"❌ Failed to record VLA pose: {e}")
+
 if __name__ == "__main__":
+    import threading
+    threading.Thread(target=console_input_listener, daemon=True).start()
     logger.info("🦾 Robot Arm MCP Server listening on Ethernet port 8002...")
     logger.info("Tool: pick_and_place_object(object_name, x, y, z, angle_deg[optional])")
     uvicorn.run(app, host="0.0.0.0", port=8002)
