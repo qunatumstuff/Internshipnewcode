@@ -1,6 +1,6 @@
 [
   {
-    "timestamp": "2026-06-11T00:55:04.534Z",
+    "timestamp": "2026-06-11T01:37:52.863Z",
     "userQuestion": "System Command",
     "toolName": "switch_avatar",
     "args": {
@@ -9,7 +9,7 @@
     "result": "switched to john"
   },
   {
-    "timestamp": "2026-06-11T00:55:04.541Z",
+    "timestamp": "2026-06-11T01:37:52.873Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -18,7 +18,7 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-11T00:55:04.547Z",
+    "timestamp": "2026-06-11T01:37:52.879Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -27,43 +27,16 @@
     "result": "updated to 🤗"
   },
   {
-    "timestamp": "2026-06-11T00:55:14.884Z",
-    "userQuestion": "System Command",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "john"
-    },
-    "result": "switched to john"
-  },
-  {
-    "timestamp": "2026-06-11T00:55:14.898Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-11T00:55:14.904Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "idle"
-    },
-    "result": "updated to 🤗"
-  },
-  {
-    "timestamp": "2026-06-11T00:55:43.152Z",
-    "userQuestion": "Pick up the medicine box.",
+    "timestamp": "2026-06-11T01:38:18.478Z",
+    "userQuestion": "Pick up the cube.",
     "toolName": "locate_object",
     "args": {
-      "target_name": "medicine"
+      "target_name": "cube"
     },
     "result": "Orchestrating autonomous scan & pick in background..."
   },
   {
-    "timestamp": "2026-06-11T00:55:43.164Z",
+    "timestamp": "2026-06-11T01:38:18.489Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -72,16 +45,16 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-11T00:56:09.930Z",
-    "userQuestion": "Pick up the medicine box.",
+    "timestamp": "2026-06-11T01:38:45.480Z",
+    "userQuestion": "Pick up the cube.",
     "toolName": "locate_object",
     "args": {
-      "target_name": "medicine"
+      "target_name": "cube"
     },
     "result": "Target located"
   },
   {
-    "timestamp": "2026-06-11T01:03:58.315Z",
+    "timestamp": "2026-06-11T01:42:59.195Z",
     "userQuestion": "Pick up the sponge.",
     "toolName": "locate_object",
     "args": {
@@ -90,7 +63,7 @@
     "result": "Orchestrating autonomous scan & pick in background..."
   },
   {
-    "timestamp": "2026-06-11T01:03:58.329Z",
+    "timestamp": "2026-06-11T01:42:59.204Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -99,38 +72,11 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-11T01:07:11.133Z",
+    "timestamp": "2026-06-11T01:46:39.779Z",
     "userQuestion": "Pick up the sponge.",
     "toolName": "locate_object",
     "args": {
       "target_name": "sponge"
-    },
-    "result": "Target located"
-  },
-  {
-    "timestamp": "2026-06-11T01:11:21.830Z",
-    "userQuestion": "Can you pick up the cube?",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
-    "timestamp": "2026-06-11T01:11:21.843Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-11T01:11:43.494Z",
-    "userQuestion": "Can you pick up the cube?",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
     },
     "result": "Target located"
   }

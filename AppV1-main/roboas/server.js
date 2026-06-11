@@ -1105,7 +1105,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                     await completionPromise;
                     sendProgress(`Successfully picked up the ${args.target_name}!`, true);
                     setTimeout(async () => {
-                      sendProgress(null, false);
+                      sendProgress(null, false, `I have finished picking and placing the requested object, ${args.target_name}.`);
                       await sendWakewordCommand('unmute');
                     }, 3000);
                   } catch (e) {
@@ -1125,7 +1125,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               } else {
                 sendProgress(`Scan stopped: ${parsed.message || parsed.reasoning || "Obstacle blockage"}`, false);
                 setTimeout(async () => {
-                  sendProgress(null, false);
+                  sendProgress(null, false, `Scan stopped. ${parsed.message || parsed.reasoning || "Obstacle blockage"}`);
                   await sendWakewordCommand('unmute');
                 }, 5000);
               }
