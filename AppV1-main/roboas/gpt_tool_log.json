@@ -43,5 +43,14 @@
       "state": "answering"
     },
     "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T07:23:49.729Z",
+    "userQuestion": "Pick up the cube.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Target located"
   }
 ]
