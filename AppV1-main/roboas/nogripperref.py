@@ -922,8 +922,8 @@ PLACEMENT_INNER_X_MAX = PLACEMENT_BOX_X_MAX - PLACEMENT_INNER_MARGIN_M
 PLACEMENT_INNER_Y_MIN = PLACEMENT_BOX_Y_MIN + PLACEMENT_INNER_MARGIN_M
 PLACEMENT_INNER_Y_MAX = PLACEMENT_BOX_Y_MAX - PLACEMENT_INNER_MARGIN_M
 
-PLACEMENT_OBJECT_GAP_M = 0.020
-PLACEMENT_GRID_STEP_M = 0.020
+PLACEMENT_OBJECT_GAP_M = 0.008
+PLACEMENT_GRID_STEP_M = 0.010
 
 # Placement packing target:
 # Keep object footprint about 1-2 cm from the wall when packing near the wall.
@@ -3477,25 +3477,25 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
     MCP_NO_UI_MODE = True
     MCP_IS_RELOCATING = False
 
-    if AUTO_MCP_ROBOT_STARTUP:
-        mcp_robot_startup_once()
-
-    sequence = mcp_build_pick_sequence(
-        target_object_name=object_name,
-        x=x,
-        y=y,
-        z=z,
-        angle=angle,
-        detections=detections,
-        grasp_label=grasp_label,
-    )
-
-    preplan_all_drop_slots(sequence)
-
-    diagnostic_print_first_pick(sequence)
-    diagnostic_print_placement_and_box(sequence)
-
     try:
+        if AUTO_MCP_ROBOT_STARTUP:
+            mcp_robot_startup_once()
+
+        sequence = mcp_build_pick_sequence(
+            target_object_name=object_name,
+            x=x,
+            y=y,
+            z=z,
+            angle=angle,
+            detections=detections,
+            grasp_label=grasp_label,
+        )
+
+        preplan_all_drop_slots(sequence)
+
+        diagnostic_print_first_pick(sequence)
+        diagnostic_print_placement_and_box(sequence)
+
         for seq_item in sequence:
             set_active_pick_item(seq_item, 1, 1)
             execute_one_pick_cycle(seq_item, 1, 1)
@@ -3640,47 +3640,47 @@ def run_mcp_relocate_object(
     MCP_NO_UI_MODE = True
     MCP_IS_RELOCATING = True
 
-    if AUTO_MCP_ROBOT_STARTUP:
-        mcp_robot_startup_once()
-
-    # Step 1: find a safe drop spot in the workspace.
-    reloc_xy = _find_relocation_spot(
-        obstacle_name, obstacle_x, obstacle_y, detections, target_name=target_name
-    )
-    reloc_x, reloc_y = reloc_xy
-
-    # Step 2: build a pick sequence for the obstacle.
-    # Pass all detections so other objects become dynamic obstacles during planning.
-    sequence = mcp_build_pick_sequence(
-        target_object_name=obstacle_name,
-        x=obstacle_x,
-        y=obstacle_y,
-        z=obstacle_z,
-        angle=obstacle_angle,
-        detections=detections,
-    )
-
-    selected_object = sequence[0]["object"]
-
-    # Step 3: override the planned drop slot to the relocation position.
-    # estimate_drop_tcp_z_for_object gives the correct TCP Z for a table-level drop.
-    reloc_z = estimate_drop_tcp_z_for_object(selected_object)
-
-    reloc_slot = {
-        "x":        reloc_x,
-        "y":        reloc_y,
-        "z":        reloc_z,
-        "angle_deg": float(obstacle_angle) if obstacle_angle is not None else HOME_RZ,
-        "length_m": float(selected_object.get("length_m", selected_object.get("width_m", 0.04))),
-        "width_m":  float(selected_object.get("width_m", 0.04)),
-    }
-
-    selected_object["_planned_drop_slot"] = reloc_slot
-
-    # Step 4: execute the pick-and-drop.
-    # preplan_all_drop_slots is NOT called here — the slot is already set above
-    # and we do not want to allocate placement-box space for a workspace relocation.
     try:
+        if AUTO_MCP_ROBOT_STARTUP:
+            mcp_robot_startup_once()
+
+        # Step 1: find a safe drop spot in the workspace.
+        reloc_xy = _find_relocation_spot(
+            obstacle_name, obstacle_x, obstacle_y, detections, target_name=target_name
+        )
+        reloc_x, reloc_y = reloc_xy
+
+        # Step 2: build a pick sequence for the obstacle.
+        # Pass all detections so other objects become dynamic obstacles during planning.
+        sequence = mcp_build_pick_sequence(
+            target_object_name=obstacle_name,
+            x=obstacle_x,
+            y=obstacle_y,
+            z=obstacle_z,
+            angle=obstacle_angle,
+            detections=detections,
+        )
+
+        selected_object = sequence[0]["object"]
+
+        # Step 3: override the planned drop slot to the relocation position.
+        # estimate_drop_tcp_z_for_object gives the correct TCP Z for a table-level drop.
+        reloc_z = estimate_drop_tcp_z_for_object(selected_object)
+
+        reloc_slot = {
+            "x":        reloc_x,
+            "y":        reloc_y,
+            "z":        reloc_z,
+            "angle_deg": float(obstacle_angle) if obstacle_angle is not None else HOME_RZ,
+            "length_m": float(selected_object.get("length_m", selected_object.get("width_m", 0.04))),
+            "width_m":  float(selected_object.get("width_m", 0.04)),
+        }
+
+        selected_object["_planned_drop_slot"] = reloc_slot
+
+        # Step 4: execute the pick-and-drop.
+        # preplan_all_drop_slots is NOT called here — the slot is already set above
+        # and we do not want to allocate placement-box space for a workspace relocation.
         set_active_pick_item(sequence[0], 1, 1)
         execute_one_pick_cycle(sequence[0], 1, 1)
     except Exception as e:

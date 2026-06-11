@@ -1116,7 +1116,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                   } catch (e) {
                     sendProgress(`Robot pick error: ${e.message}`, false);
                     setTimeout(async () => {
-                      sendProgress(null, false);
+                      sendProgress(null, false, `Sorry, I could not complete the action because: ${e.message}`);
                       await sendWakewordCommand('unmute');
                     }, 5000);
                   }
@@ -1257,7 +1257,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               .catch(e => {
                 sendProgress(`Error: ${e.message}`, false);
                 setTimeout(async () => {
-                  sendProgress(null, false);
+                  sendProgress(null, false, `Sorry, the action failed because of an error: ${e.message}`);
                   await sendWakewordCommand('unmute');
                 }, 5000);
               });
@@ -1292,7 +1292,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               .catch(e => {
                 sendProgress(`Error: ${e.message}`, false);
                 setTimeout(async () => {
-                  sendProgress(null, false);
+                  sendProgress(null, false, `Sorry, the action failed because of an error: ${e.message}`);
                   await sendWakewordCommand('unmute');
                 }, 5000);
               });

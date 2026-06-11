@@ -34,7 +34,7 @@ logger = logging.getLogger("vision-mcp")
 # ==========================================
 # OLLAMA AUTO-DISCOVERY
 # ==========================================
-def auto_detect_ollama():
+def auto_detect_ollama():no
     """Scans for an active Ollama instance and automatically selects the best vision model."""
     ips_to_try = [
         os.environ.get("LAPTOP_A_IP"),

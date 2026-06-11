@@ -70,6 +70,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ── Hands-free / wake-word ──
   HandsOffState _currentState = HandsOffState.handsOffOff;
   html.WebSocket? _wakeWordSocket;
+  html.MediaStream? _manualWebStream;
   String _wakeWsStatus = 'disconnected'; // connected | connecting | disconnected | error
   bool _wakeWsReconnecting = false;      // prevents overlapping reconnect attempts
   bool _isManualRestarting = false;
@@ -412,6 +413,18 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
   }
 
+  void _stopManualWebStream() {
+    if (_manualWebStream != null) {
+      try {
+        _manualWebStream!.getTracks().forEach((track) => track.stop());
+        _addUiLog('[MIC] Manual stream tracks stopped.');
+      } catch (e) {
+        _addUiLog('[MIC] Error stopping manual stream tracks: $e');
+      }
+      _manualWebStream = null;
+    }
+  }
+
   Future<void> _speak(String text) async {
     if (text.isEmpty) return;
     
@@ -454,6 +467,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         audio.onEnded.listen((_) async {
           if (_audioElement != audio) return; // Ignore events from old audio sessions
           html.Url.revokeObjectUrl(blobUrl);
+          _stopManualWebStream();
           _setWakeWordMute(false); // Re-enable wake word / restart engine
           if (mounted) {
             setState(() {
@@ -463,10 +477,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           }
           await _setAvatarState(AvatarState.idle);
 
-          if (_currentState == HandsOffState.johnSpeaking) {
-            if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-              _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
-            }
+          if (_currentState != HandsOffState.handsOffOff) {
+            js.context.callMethod('startWakeWordListening');
           }
         });
 
@@ -560,6 +572,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       utterance.onEnd.listen((_) async {
         debugPrint('📢 [NATIVE TTS] Completed successfully.');
+        _stopManualWebStream();
         _setWakeWordMute(false);
         if (mounted) {
           setState(() {
@@ -568,15 +581,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           });
         }
         await _setAvatarState(AvatarState.idle);
-        if (_currentState == HandsOffState.johnSpeaking) {
-          if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-            _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
-          }
+        if (_currentState != HandsOffState.handsOffOff) {
+          js.context.callMethod('startWakeWordListening');
         }
       });
 
       utterance.onError.listen((e) async {
         debugPrint('❌ [NATIVE TTS] Error: $e');
+        _stopManualWebStream();
         _setWakeWordMute(false);
         if (mounted) {
           setState(() {
@@ -585,10 +597,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           });
         }
         await _setAvatarState(AvatarState.idle);
-        if (_currentState == HandsOffState.johnSpeaking) {
-          if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-            _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
-          }
+        if (_currentState != HandsOffState.handsOffOff) {
+          js.context.callMethod('startWakeWordListening');
         }
       });
 
@@ -793,6 +803,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         _changeState(HandsOffState.userRecording);
       }
 
+      try {
+        js.context.callMethod('stopWakeWordListening');
+        _addUiLog('[MIC] Stopped wakeword listening for manual recording');
+      } catch (e) {
+        _addUiLog('[MIC] Warning: could not call stopWakeWordListening: $e');
+      }
+
       _addUiLog('[MIC] Requesting browser microphone permission');
       html.MediaStream? stream;
       try {
@@ -810,6 +827,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         return;
       }
       _addUiLog('[MIC] Permission granted');
+      _manualWebStream = stream;
 
       setState(() {
         _isListening = true;
@@ -1124,7 +1142,18 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   void _abortAndRestartWakeWord() {
     _addUiLog('[OWW] auto-restart on abort');
-    _setWakeWordMute(false);
+    _stopManualWebStream();
+    
+    bool robotMoving = false;
+    try {
+      robotMoving = js.context['isRobotMoving'] == true;
+    } catch (_) {}
+    
+    _setWakeWordMute(robotMoving);
+    
+    if (_currentState != HandsOffState.handsOffOff) {
+      js.context.callMethod('startWakeWordListening');
+    }
   }
 
   void _manualRestartWakeWord() {
