@@ -268,5 +268,86 @@
       "target_name": "black marker"
     },
     "result": "Target located"
+  },
+  {
+    "timestamp": "2026-06-11T09:15:41.852Z",
+    "userQuestion": "Can you pick up the green marker?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "green marker"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-11T09:15:41.861Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T09:16:11.137Z",
+    "userQuestion": "Can you pick up the green marker?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "green marker"
+    },
+    "result": "Target located"
+  },
+  {
+    "timestamp": "2026-06-11T09:17:08.735Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "linda"
+    },
+    "result": "switched to linda"
+  },
+  {
+    "timestamp": "2026-06-11T09:17:08.740Z",
+    "userQuestion": "Change to Linda.",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "linda"
+    },
+    "result": "switched to linda"
+  },
+  {
+    "timestamp": "2026-06-11T09:17:10.223Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T09:17:24.740Z",
+    "userQuestion": "Pick up cubes.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-11T09:17:24.746Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T09:17:46.499Z",
+    "userQuestion": "Pick up cubes.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Target located"
   }
 ]
