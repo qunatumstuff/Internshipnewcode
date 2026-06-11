@@ -201,7 +201,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             f"MCP pick_and_place_object: {object_name} at ({x}, {y}, {z}) "
             f"angle={angle_deg} grasp={grasp_label}"
         )
-        result = robot_control.run_mcp_pick_and_place(
+        result = await asyncio.to_thread(
+            robot_control.run_mcp_pick_and_place,
             object_name,
             x, y, z,
             angle=angle_deg,
@@ -217,7 +218,10 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         angle_deg = float(args["angle_deg"]) if "angle_deg" in args else None
 
         logger.info(f"Compatibility move_to_coordinates -> pick_and_place_object: {object_name} at ({x}, {y}, {z}) angle={angle_deg}")
-        result = robot_control.run_mcp_pick_and_place(object_name, x, y, z, angle=angle_deg)
+        result = await asyncio.to_thread(
+            robot_control.run_mcp_pick_and_place,
+            object_name, x, y, z, angle=angle_deg
+        )
         return [TextContent(type="text", text=f"Completed: {result}")]
 
     if name == "relocate_object":
@@ -234,14 +238,15 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             f"({obstacle_x}, {obstacle_y}, {obstacle_z}) angle={obstacle_angle} target={target_name}"
         )
 
-        result = robot_control.run_mcp_relocate_object(
-            obstacle_name  = obstacle_name,
-            obstacle_x     = obstacle_x,
-            obstacle_y     = obstacle_y,
-            obstacle_z     = obstacle_z,
-            obstacle_angle = obstacle_angle,
-            detections     = detections,
-            target_name    = target_name,
+        result = await asyncio.to_thread(
+            robot_control.run_mcp_relocate_object,
+            obstacle_name=obstacle_name,
+            obstacle_x=obstacle_x,
+            obstacle_y=obstacle_y,
+            obstacle_z=obstacle_z,
+            obstacle_angle=obstacle_angle,
+            detections=detections,
+            target_name=target_name,
         )
 
         # Robot signals it needs a fresh detection before Qwen plans next action.
@@ -282,9 +287,9 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         logger.warning("⚠️ EMERGENCY STOP TRIGGERED!")
         try:
             if hasattr(robot_control, 'power_off_robot'):
-                robot_control.power_off_robot()
+                await asyncio.to_thread(robot_control.power_off_robot)
             elif hasattr(robot_control, 'r') and robot_control.r is not None:
-                robot_control.r.stop()
+                await asyncio.to_thread(robot_control.r.stop)
             return [TextContent(type="text", text="Emergency Stop Successful: Robot powered off.")]
         except Exception as e:
             logger.error(f"Error during emergency stop: {e}")
@@ -294,9 +299,9 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         logger.info("🏠 RETURN HOME TRIGGERED!")
         try:
             if hasattr(robot_control, 'ensure_robot_ready') and hasattr(robot_control, 'r'):
-                robot_control.ensure_robot_ready(robot_control.r)
+                await asyncio.to_thread(robot_control.ensure_robot_ready, robot_control.r)
             if hasattr(robot_control, 'move_to_home_emergency'):
-                robot_control.move_to_home_emergency(robot_control.r)
+                await asyncio.to_thread(robot_control.move_to_home_emergency, robot_control.r)
             return [TextContent(type="text", text="Return Home Successful: Robot moved to home position.")]
         except Exception as e:
             logger.error(f"Error during return home: {e}")

@@ -3049,7 +3049,7 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
 
 MCP_NO_UI_MODE = False
 _MCP_ROBOT_READY = False
-AUTO_MCP_ROBOT_STARTUP = False  # Set True if this file should initialise robot/gripper inside run_mcp_pick_and_place().
+AUTO_MCP_ROBOT_STARTUP = True  # Set True if this file should initialise robot/gripper inside run_mcp_pick_and_place().
 MCP_MIN_VALID_Z_M = 0.005
 ROBOT_EVENT_CALLBACK = None
 MCP_IS_RELOCATING = False
