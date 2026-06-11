@@ -466,11 +466,11 @@ app.get('/progress', (req, res) => {
   });
 });
 
-function sendProgress(status, isRobotMoving = false) {
-  console.log(`📡 [SSE Progress Broadcast]: "${status}" (isRobotMoving: ${isRobotMoving})`);
+function sendProgress(status, isRobotMoving = false, ttsMessage = null) {
+  console.log(`📡 [SSE Progress Broadcast]: "${status}" (isRobotMoving: ${isRobotMoving}, ttsMessage: ${ttsMessage !== null})`);
   progressClients.forEach(client => {
     try {
-      client.write(`data: ${JSON.stringify({ status, isRobotMoving })}\n\n`);
+      client.write(`data: ${JSON.stringify({ status, isRobotMoving, tts_message: ttsMessage })}\n\n`);
     } catch (e) {
       console.error('❌ SSE write error:', e.message);
     }
@@ -1245,7 +1245,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             completionPromise.then(() => {
                 sendProgress(`Pick-and-place completed for "${args.object_name}".`, true);
                 setTimeout(async () => {
-                  sendProgress(null, false);
+                  sendProgress(null, false, `I have finished picking and placing the requested object, ${args.object_name}.`);
                   await sendWakewordCommand('unmute');
                 }, 3000);
               })
@@ -1280,7 +1280,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             completionPromise.then(() => {
                 sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`, true);
                 setTimeout(async () => {
-                  sendProgress(null, false);
+                  sendProgress(null, false, `I have relocated the object ${args.obstacle_name}.`);
                   await sendWakewordCommand('unmute');
                 }, 3000);
               })

@@ -88,6 +88,11 @@
             onEventCallback('robot_moving_status:' + data.isRobotMoving);
           }
         }
+        if (data.tts_message) {
+          if (onEventCallback) {
+            onEventCallback('tts:' + data.tts_message);
+          }
+        }
       } catch (e) {}
     };
 

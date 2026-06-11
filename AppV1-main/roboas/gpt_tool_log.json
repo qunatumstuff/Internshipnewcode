@@ -79,5 +79,59 @@
       "target_name": "medicine"
     },
     "result": "Target located"
+  },
+  {
+    "timestamp": "2026-06-11T01:03:58.315Z",
+    "userQuestion": "Pick up the sponge.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "sponge"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-11T01:03:58.329Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T01:07:11.133Z",
+    "userQuestion": "Pick up the sponge.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "sponge"
+    },
+    "result": "Target located"
+  },
+  {
+    "timestamp": "2026-06-11T01:11:21.830Z",
+    "userQuestion": "Can you pick up the cube?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-11T01:11:21.843Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T01:11:43.494Z",
+    "userQuestion": "Can you pick up the cube?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Target located"
   }
 ]

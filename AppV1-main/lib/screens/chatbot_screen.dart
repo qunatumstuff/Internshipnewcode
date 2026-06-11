@@ -1370,6 +1370,18 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         final score = parts[1];
         _addUiLog('[OWW] $keyword near miss: score $score');
       }
+    }
+
+    if (eventName.startsWith('tts:')) {
+      final msg = eventName.substring('tts:'.length);
+      _addUiLog('[FLUTTER] Received TTS event: $msg');
+      if (mounted) {
+        setState(() {
+          _messages.add(ChatMessage(text: '$_pName($_answeringEmoji): $msg', isUser: false));
+        });
+        _scrollToBottom();
+      }
+      _speak(msg);
       return;
     }
 
