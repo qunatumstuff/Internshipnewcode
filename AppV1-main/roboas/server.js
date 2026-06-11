@@ -1443,22 +1443,6 @@ app.post('/tts', async (req, res) => {
       }
     });
 
-    const clientCloseHandler = () => {
-      if (!attemptFinished) {
-        attemptFinished = true;
-        console.log('⚠️ Client aborted TTS request. Cleaning up...');
-        openaiReq.destroy();
-        fallbackTriggered = true; 
-      }
-    };
-
-    req.on('close', clientCloseHandler);
-
-    // Clean up our specific listener when the request finishes successfully to avoid memory leaks
-    openaiReq.on('close', () => {
-      req.removeListener('close', clientCloseHandler);
-    });
-
     openaiReq.write(postData);
     openaiReq.end();
   };
