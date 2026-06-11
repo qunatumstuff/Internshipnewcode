@@ -241,5 +241,32 @@
       "target_name": "nut"
     },
     "result": "Target located"
+  },
+  {
+    "timestamp": "2026-06-11T08:45:28.017Z",
+    "userQuestion": "Can you pick up the black marker for me?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "black marker"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-11T08:45:28.029Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-11T08:45:50.567Z",
+    "userQuestion": "Can you pick up the black marker for me?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "black marker"
+    },
+    "result": "Target located"
   }
 ]
