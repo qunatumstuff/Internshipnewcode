@@ -656,7 +656,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     // Reset wake word socket if connected
     if (_currentState != HandsOffState.handsOffOff) {
-      _changeState(HandsOffState.handsOffOff);
       if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
         _wakeWordSocket!.send(json.encode({'action': 'stop_wakeword'}));
       }

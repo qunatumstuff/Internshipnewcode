@@ -558,6 +558,23 @@ def parse_qwen_action(raw: str) -> dict:
         "reasoning": f"Could not parse Qwen output — sensor analysis clear, defaulting to pick. Raw: {raw[:100]}"
     }
 
+def is_inside_placement_box(det: dict) -> bool:
+    """
+    Return True if the detection is inside the virtual placement box.
+    Uses coordinate bounds matching nogripperref.py with 5cm tolerance.
+    """
+    INBOX_TOLERANCE_M = 0.05
+    try:
+        x = float(det["x"])
+        y = float(det["y"])
+        return (
+            0.248 - INBOX_TOLERANCE_M <= x <= 0.586 + INBOX_TOLERANCE_M and
+            0.055 - INBOX_TOLERANCE_M <= y <= 0.280 + INBOX_TOLERANCE_M
+        )
+    except Exception:
+        return False
+
+
 def compute_scene_analysis(target: str, detections: list[dict]) -> str:
     """Deterministic spatial analysis using YOLO coordinates + catalogue dimensions.
     Distinguishes between:
@@ -565,12 +582,17 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
       - BLOCKER elevated by target's height → likely on top of target, must relocate
     """
     lines = []
-    target_det = next((d for d in detections if d["object_name"] == target), None)
+    # Find the target detection, excluding any that are already in the placement box
+    target_det = next((d for d in detections if d["object_name"] == target and not is_inside_placement_box(d)), None)
 
     # 1. Analyze Elevation (Z-axis)
     lines.append("ELEVATION ANALYSIS:")
     elevation_found = False
     for d in detections:
+        # Ignore any objects that are inside the placement box
+        if is_inside_placement_box(d):
+            continue
+
         known_h = OBJECT_CATALOGUE.get(d["object_name"], {}).get("height_m", None)
         if known_h is None:
             continue
@@ -598,7 +620,12 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
             )
         else:
             # NON-TARGET is elevated — check if it might be sitting ON the target
-            if target in plausible:
+            # Only flag as block if it is physically close/overlapping in XY to the target
+            dist = 9999.0
+            if target_det:
+                dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
+
+            if dist < 0.080 and target in plausible:
                 lines.append(
                     f"  - WARNING: {d['object_name']} is elevated (Z={d['z']*1000:.0f}mm) "
                     f"and is likely sitting ON TOP OF target '{target}'. "
@@ -632,7 +659,7 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
         ) / 2
 
         for d in detections:
-            if d["object_name"] == target:
+            if d["object_name"] == target or is_inside_placement_box(d):
                 continue
             dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
             d_info = OBJECT_CATALOGUE.get(d["object_name"], {})
@@ -904,7 +931,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
             target_detections = [
                 d for d in detections
-                if d.get("object_name") == target
+                if d.get("object_name") == target and not is_inside_placement_box(d)
             ]
 
             if not target_detections:
@@ -916,6 +943,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 inferred_blocker = None
                 if target_height:
                     for d in detections:
+                        if is_inside_placement_box(d):
+                            continue
                         known_h = OBJECT_CATALOGUE.get(d["object_name"], {}).get("height_m", None)
                         if known_h is None:
                             continue
@@ -930,7 +959,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     return [TextContent(type="text", text=json.dumps({
                         "status": "FAILED",
                         "message": f"'{target}' not found.",
-                        "detected_objects": [d.get("object_name") for d in detections],
+                        "detected_objects": [d.get("object_name") for d in detections if not is_inside_placement_box(d)],
                         "history": action_history,
                     }))]
 
@@ -967,7 +996,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         best_obstacle = None
                         min_dist = 9999.0
                         for d in detections:
-                            if d is target_detections[0]:
+                            if d is target_detections[0] or is_inside_placement_box(d):
                                 continue
                             dx = d["x"] - target_x
                             dy = d["y"] - target_y
@@ -990,7 +1019,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     min_overlap_dist = 9999.0
 
                     for d in detections:
-                        if d["object_name"] == target:
+                        if d["object_name"] == target or is_inside_placement_box(d):
                             continue
                         dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
                         d_info = OBJECT_CATALOGUE.get(d["object_name"], {})
@@ -1047,7 +1076,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                             best_obstacle = None
                             min_dist = 9999.0
                             for d in detections:
-                                if d is target_detections[0]:
+                                if d is target_detections[0] or is_inside_placement_box(d):
                                     continue
                                 dx = d["x"] - target_x
                                 dy = d["y"] - target_y
@@ -1078,7 +1107,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         min_overlap_dist = 9999.0
 
                         for d in detections:
-                            if d["object_name"] == target:
+                            if d["object_name"] == target or is_inside_placement_box(d):
                                 continue
                             dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
                             d_info = OBJECT_CATALOGUE.get(d["object_name"], {})

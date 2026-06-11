@@ -100,6 +100,11 @@ async def handle_list_tools() -> list[Tool]:
                             "(grasp_A or grasp_B). When provided, x/y/z already point to "
                             "that end and catalogue offsets are zeroed automatically."
                         )
+                    },
+                    "detections": {
+                        "type": "array",
+                        "description": "Full YOLO detection list for the current scene. Used for placement boundary occupancy.",
+                        "items": {"type": "object"}
                     }
                 },
                 "required": ["object_name", "x", "y", "z"]
@@ -196,16 +201,18 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         z           = float(args.get("z"))
         angle_deg   = float(args["angle_deg"]) if "angle_deg" in args else None
         grasp_label = args.get("grasp_label", None)
+        detections  = args.get("detections", None)
 
         logger.info(
             f"MCP pick_and_place_object: {object_name} at ({x}, {y}, {z}) "
-            f"angle={angle_deg} grasp={grasp_label}"
+            f"angle={angle_deg} grasp={grasp_label} detections_count={len(detections) if detections else 0}"
         )
         result = await asyncio.to_thread(
             robot_control.run_mcp_pick_and_place,
             object_name,
             x, y, z,
             angle=angle_deg,
+            detections=detections,
             grasp_label=grasp_label,
         )
         return [TextContent(type="text", text=f"Completed: {result}")]
@@ -216,11 +223,12 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         y = float(args.get("y"))
         z = float(args.get("z"))
         angle_deg = float(args["angle_deg"]) if "angle_deg" in args else None
+        detections = args.get("detections", None)
 
         logger.info(f"Compatibility move_to_coordinates -> pick_and_place_object: {object_name} at ({x}, {y}, {z}) angle={angle_deg}")
         result = await asyncio.to_thread(
             robot_control.run_mcp_pick_and_place,
-            object_name, x, y, z, angle=angle_deg
+            object_name, x, y, z, angle=angle_deg, detections=detections
         )
         return [TextContent(type="text", text=f"Completed: {result}")]
 
