@@ -436,6 +436,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         "model": QWEN_MODEL,
         "prompt": prompt_with_directive,
         "stream": False,
+        "think": False,   # Stops Qwen3 burning all tokens on 'thinking' before the answer
         "images": [raw_b64],
         "options": {
             "temperature": 0.1,
@@ -552,9 +553,9 @@ def parse_qwen_action(raw: str) -> dict:
         }
 
     return {
-        "next_action": "abort",
+        "next_action": "pick",
         "obstacle_name": None,
-        "reasoning": f"Could not parse Qwen output, defaulting to abort. Raw: {raw[:100]}"
+        "reasoning": f"Could not parse Qwen output — sensor analysis clear, defaulting to pick. Raw: {raw[:100]}"
     }
 
 def compute_scene_analysis(target: str, detections: list[dict]) -> str:
@@ -721,10 +722,14 @@ async def qwen_plan_next_action(
         # Clean fallback message for the UI
         clean_reason = raw[:100] if "Ollama API Error" in raw else "JSON Parse Error"
         
+        # Default to PICK not abort — the Python sensor analysis (overlap +
+        # elevation) has already gated this point. If sensors said the target
+        # was blocked, the relocate would have been forced earlier. Aborting
+        # because the LLM rambled is the wrong failure mode.
         plan = {
-            "next_action": "abort",
+            "next_action": "pick",
             "obstacle_name": None,
-            "reasoning": f"Safety check bypassed: {clean_reason}"
+            "reasoning": f"Qwen unparseable ({clean_reason}) — sensor analysis clear, proceeding with direct pick."
         }
         
     print("PARSED QWEN ACTION:", plan)
@@ -1112,6 +1117,22 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 }))]
 
             if next_action == "relocate":
+                # ── Repeat-relocate guard ────────────────────────────────
+                # If this obstacle was already relocated this cycle, Qwen is
+                # likely hallucinating or ignoring history. Force pick instead
+                # of relocating the same object forever until iteration cap.
+                already_relocated = any(
+                    f"Relocated '{obstacle_name}'" in entry
+                    for entry in action_history
+                )
+                if already_relocated:
+                    logger.warning(
+                        f"Qwen asked to relocate '{obstacle_name}' again but it was "
+                        f"already relocated this cycle. Forcing pick instead."
+                    )
+                    next_action = "pick"
+
+            if next_action == "relocate":
                 camera.current_target_class = obstacle_name
                 obstacle_dets = [
                     d for d in detections
@@ -1122,13 +1143,37 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     obs = obstacle_dets[0]
                 elif obstacle_name and target_detections:
                     # Qwen visually saw a blocker that YOLO missed.
-                    # Since the blocker is on top of the target, we can safely use the target's
-                    # detected coordinates (which correspond to the top surface of the blocker anyway).
-                    logger.warning(f"Qwen requested relocate '{obstacle_name}' but it was not in YOLO detections. Falling back to target's coordinates.")
-                    obs = target_detections[0].copy()
-                    obs["object_name"] = obstacle_name
-                    # MUST append to detections so the Robot MCP can find it!
-                    detections.append(obs)
+                    # DANGEROUS fallback: using the target's own coordinates means
+                    # the robot may physically pick up the TARGET, not the blocker.
+                    # Only allow this ONCE per cycle, and only when the sensor
+                    # analysis also flagged elevation on the target (i.e. there is
+                    # physical evidence something is stacked there).
+                    fallback_used = any("coordinate-fallback" in e for e in action_history)
+                    target_known_h = OBJECT_CATALOGUE.get(target, {}).get("height_m", None)
+                    target_elevated = False
+                    if target_known_h is not None:
+                        t = target_detections[0]
+                        target_elevated = (t["z"] - target_known_h / 2) > 0.020
+
+                    if fallback_used or not target_elevated:
+                        logger.warning(
+                            f"Qwen requested relocate '{obstacle_name}' (not in YOLO detections) "
+                            f"but no elevation evidence on target — refusing coordinate fallback, "
+                            f"attempting direct pick instead."
+                        )
+                        next_action = "pick"
+                        obs = None
+                    else:
+                        logger.warning(
+                            f"Qwen requested relocate '{obstacle_name}' not in YOLO detections. "
+                            f"Target IS elevated — using target coordinates as blocker position (one-time)."
+                        )
+                        obs = target_detections[0].copy()
+                        obs["object_name"] = obstacle_name
+                        detections.append(obs)
+                        action_history.append(
+                            f"(coordinate-fallback used for '{obstacle_name}')"
+                        )
                 else:
                     # Qwen said relocate but obstacle not found and we can't fall back — abort
                     logger.warning(f"Qwen requested relocate '{obstacle_name}' but it was not found in YOLO detections.")
@@ -1139,6 +1184,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         "qwen_raw_output": raw_output,
                     }))]
 
+            if next_action == "relocate" and obs is not None:
                 reloc_result = await call_robot_tool("relocate_object", {
                     "obstacle_name": obs["object_name"],
                     "obstacle_x": obs["x"],
