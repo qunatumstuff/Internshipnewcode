@@ -441,6 +441,11 @@ app.post('/robot-event', (req, res) => {
   const { event, error } = req.body;
   console.log(`🤖 [Robot Event Received]: "${event}" ${error ? `(Error: ${error})` : ''}`);
 
+  if (event === 'relocate_placed') {
+    // Notify the frontend with TTS that the relocation is complete and we are proceeding to pick.
+    sendProgress(null, true, "I will pick up the requested object now after relocating.");
+  }
+
   if (activeOperations.has('robot_completion')) {
     const resolve = activeOperations.get('robot_completion');
     activeOperations.delete('robot_completion');
@@ -1378,27 +1383,87 @@ app.post('/tts', async (req, res) => {
     }
   };
 
-  const openaiReq = https.request(options, (openaiRes) => {
-    if (openaiRes.statusCode === 200) {
-      console.log('✅ OpenAI TTS Success');
-      res.setHeader('Content-Type', 'audio/mpeg');
-      openaiRes.pipe(res);
-    } else {
-      openaiRes.on('data', (d) => {
-        console.error(`⚠️ OpenAI TTS Error Detail: ${d.toString()}`);
-      });
-      console.error(`⚠️ OpenAI TTS Status: ${openaiRes.statusCode}. Falling back to espeak...`);
-      runEspeakFallback(text, res);
-    }
-  });
-
-  openaiReq.on('error', (e) => {
-    console.error(`❌ OpenAI Request Error: ${e.message}. Falling back to espeak...`);
+  let fallbackTriggered = false;
+  const safeFallback = () => {
+    if (fallbackTriggered) return;
+    fallbackTriggered = true;
     runEspeakFallback(text, res);
-  });
+  };
 
-  openaiReq.write(postData);
-  openaiReq.end();
+  const attemptOpenAITTS = (attempt = 1) => {
+    if (fallbackTriggered) return;
+    
+    console.log(`[TTS] OpenAI attempt ${attempt}...`);
+    let attemptFinished = false;
+
+    const openaiReq = https.request(options, (openaiRes) => {
+      if (attemptFinished) return;
+      if (openaiRes.statusCode === 200) {
+        attemptFinished = true;
+        console.log('✅ OpenAI TTS Success');
+        res.setHeader('Content-Type', 'audio/mpeg');
+        openaiRes.pipe(res);
+      } else {
+        let errData = '';
+        openaiRes.on('data', (d) => { errData += d.toString(); });
+        openaiRes.on('end', () => {
+          if (attemptFinished) return;
+          attemptFinished = true;
+          console.error(`⚠️ OpenAI TTS Status: ${openaiRes.statusCode} - ${errData}`);
+          if (attempt < 3) {
+            setTimeout(() => attemptOpenAITTS(attempt + 1), attempt * 1000);
+          } else {
+            console.error('❌ OpenAI TTS failed after 3 attempts. Falling back to espeak...');
+            safeFallback();
+          }
+        });
+      }
+    });
+
+    openaiReq.on('error', (e) => {
+      if (attemptFinished) return;
+      attemptFinished = true;
+      console.error(`❌ OpenAI Request Error (Attempt ${attempt}): ${e.message}`);
+      if (attempt < 3) {
+        setTimeout(() => attemptOpenAITTS(attempt + 1), attempt * 1000);
+      } else {
+        safeFallback();
+      }
+    });
+
+    openaiReq.setTimeout(10000, () => {
+      if (attemptFinished) return;
+      attemptFinished = true;
+      console.error(`❌ OpenAI TTS Request Timeout (Attempt ${attempt}).`);
+      openaiReq.destroy();
+      if (attempt < 3) {
+        setTimeout(() => attemptOpenAITTS(attempt + 1), attempt * 1000);
+      } else {
+        safeFallback();
+      }
+    });
+
+    const clientCloseHandler = () => {
+      if (!attemptFinished) {
+        attemptFinished = true;
+        console.log('⚠️ Client aborted TTS request. Cleaning up...');
+        openaiReq.destroy();
+        fallbackTriggered = true; 
+      }
+    };
+
+    req.on('close', clientCloseHandler);
+
+    // Clean up our specific listener when the request finishes successfully to avoid memory leaks
+    openaiReq.on('close', () => {
+      req.removeListener('close', clientCloseHandler);
+    });
+
+    openaiReq.write(postData);
+    openaiReq.end();
+  };
+
+  attemptOpenAITTS(1);
 });
 
 function runEspeakFallback(text, res) {

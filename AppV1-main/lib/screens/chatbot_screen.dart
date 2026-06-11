@@ -440,7 +440,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         Uri.parse('$baseUrl/tts'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'text': text, 'persona': _currentPersona}),
-      );
+      ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final contentType =

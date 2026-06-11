@@ -80,6 +80,11 @@
     progressSource.onmessage = function(event) {
       try {
         const data = JSON.parse(event.data);
+        if (data.tts_message) {
+          if (onEventCallback) {
+            onEventCallback('tts:' + data.tts_message);
+          }
+        }
         if (data.isRobotMoving !== undefined) {
           window.isRobotMoving = data.isRobotMoving;
           window.wakewordDetectionMuted = window.ttsMuted || window.isRobotMoving;
@@ -88,12 +93,9 @@
             onEventCallback('robot_moving_status:' + data.isRobotMoving);
           }
         }
-        if (data.tts_message) {
-          if (onEventCallback) {
-            onEventCallback('tts:' + data.tts_message);
-          }
-        }
-      } catch (e) {}
+      } catch (e) {
+        console.error('[JS] Error parsing SSE:', e);
+      }
     };
 
     let engine = null;
