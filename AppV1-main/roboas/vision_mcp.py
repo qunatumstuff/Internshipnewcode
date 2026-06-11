@@ -34,7 +34,7 @@ logger = logging.getLogger("vision-mcp")
 # ==========================================
 # OLLAMA AUTO-DISCOVERY
 # ==========================================
-def auto_detect_ollama():no
+def auto_detect_ollama():
     """Scans for an active Ollama instance and automatically selects the best vision model."""
     ips_to_try = [
         os.environ.get("LAPTOP_A_IP"),
@@ -575,6 +575,81 @@ def is_inside_placement_box(det: dict) -> bool:
         return False
 
 
+def check_overlap_obb(d1: dict, d2: dict, clearance: float = 0.0) -> bool:
+    """Check if two oriented bounding boxes overlap in XY plane using Separating Axis Theorem (SAT)."""
+    # Retrieve catalogue sizes
+    info1 = OBJECT_CATALOGUE.get(d1.get("object_name", ""), {})
+    info2 = OBJECT_CATALOGUE.get(d2.get("object_name", ""), {})
+
+    l1 = float(info1.get("length_m", 0.04))
+    b1 = float(info1.get("breadth_m", 0.04))
+    l2 = float(info2.get("length_m", 0.04))
+    b2 = float(info2.get("breadth_m", 0.04))
+
+    # Parse angles
+    a1_val = d1.get("angle_deg")
+    a2_val = d2.get("angle_deg")
+    a1_deg = float(a1_val) if a1_val is not None else 0.0
+    a2_deg = float(a2_val) if a2_val is not None else 0.0
+
+    r1 = math.radians(a1_deg)
+    r2 = math.radians(a2_deg)
+
+    cos1, sin1 = math.cos(r1), math.sin(r1)
+    cos2, sin2 = math.cos(r2), math.sin(r2)
+
+    # Separation axes (perpendicular to rect edges)
+    axes = [
+        (cos1, sin1),
+        (-sin1, cos1),
+        (cos2, sin2),
+        (-sin2, cos2)
+    ]
+
+    # Corners of rect 1
+    cx1, cy1 = float(d1["x"]), float(d1["y"])
+    hl1, hb1 = l1 / 2.0, b1 / 2.0
+    corners1 = []
+    for s1 in (-1.0, 1.0):
+        for s2 in (-1.0, 1.0):
+            corners1.append((
+                cx1 + s1 * hl1 * cos1 - s2 * hb1 * sin1,
+                cy1 + s1 * hl1 * sin1 + s2 * hb1 * cos1
+            ))
+
+    # Corners of rect 2
+    cx2, cy2 = float(d2["x"]), float(d2["y"])
+    hl2, hb2 = l2 / 2.0, b2 / 2.0
+    corners2 = []
+    for s1 in (-1.0, 1.0):
+        for s2 in (-1.0, 1.0):
+            corners2.append((
+                cx2 + s1 * hl2 * cos2 - s2 * hb2 * sin2,
+                cy2 + s1 * hl2 * sin2 + s2 * hb2 * cos2
+            ))
+
+    # Project corners onto each axis to find overlaps
+    for ax, ay in axes:
+        length = math.hypot(ax, ay)
+        if length < 1e-6:
+            continue
+        ax, ay = ax / length, ay / length
+
+        # Project corners1
+        p1 = [c[0] * ax + c[1] * ay for c in corners1]
+        min1, max1 = min(p1), max(p1)
+
+        # Project corners2
+        p2 = [c[0] * ax + c[1] * ay for c in corners2]
+        min2, max2 = min(p2), max(p2)
+
+        # Check for gap along the projected axis
+        if max1 + clearance < min2 or max2 + clearance < min1:
+            return False
+
+    return True
+
+
 def compute_scene_analysis(target: str, detections: list[dict]) -> str:
     """Deterministic spatial analysis using YOLO coordinates + catalogue dimensions.
     Distinguishes between:
@@ -661,14 +736,7 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
         for d in detections:
             if d["object_name"] == target or is_inside_placement_box(d):
                 continue
-            dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
-            d_info = OBJECT_CATALOGUE.get(d["object_name"], {})
-            d_radius = math.hypot(
-                d_info.get("length_m", 0.04),
-                d_info.get("breadth_m", 0.04),
-            ) / 2
-
-            if dist < (target_radius + d_radius) * 0.85:
+            if check_overlap_obb(d, target_det, clearance=0.015):
                 overlap_found = True
                 lines.append(f"  - WARNING: {d['object_name']} overlaps with target {target}.")
 
@@ -1021,14 +1089,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     for d in detections:
                         if d["object_name"] == target or is_inside_placement_box(d):
                             continue
-                        dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
-                        d_info = OBJECT_CATALOGUE.get(d["object_name"], {})
-                        d_radius = math.hypot(
-                            d_info.get("length_m", 0.04),
-                            d_info.get("breadth_m", 0.04),
-                        ) / 2
-
-                        if dist < (target_radius + d_radius) * 0.85:
+                        if check_overlap_obb(d, target_det, clearance=0.015):
+                            dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
                             if dist < min_overlap_dist:
                                 min_overlap_dist = dist
                                 overlapping_obstacle = d["object_name"]
@@ -1109,14 +1171,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         for d in detections:
                             if d["object_name"] == target or is_inside_placement_box(d):
                                 continue
-                            dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
-                            d_info = OBJECT_CATALOGUE.get(d["object_name"], {})
-                            d_radius = math.hypot(
-                                d_info.get("length_m", 0.04),
-                                d_info.get("breadth_m", 0.04),
-                            ) / 2
-
-                            if dist < (target_radius + d_radius) * 0.85:
+                            if check_overlap_obb(d, target_det, clearance=0.015):
+                                dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
                                 # Overlaps! Find the closest overlapping object
                                 if dist < min_overlap_dist:
                                     min_overlap_dist = dist
