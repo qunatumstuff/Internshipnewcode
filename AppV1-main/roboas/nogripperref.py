@@ -2189,10 +2189,14 @@ def move_to_home_emergency(r):
     execute_trajectory(r, traj, label="Emergency return home")
     # No try/except — let exceptions propagate so on_h knows if it failed
 
+MCP_INTENTIONAL_STOP = False
+
 def mcp_return_home():
     """Callable from robot_mcp to safely stop and return home."""
+    global MCP_INTENTIONAL_STOP
     import time
     try:
+        MCP_INTENTIONAL_STOP = True
         r.stop()
         time.sleep(0.5)
         r.reset_errors()              # clear errors before doing anything else
@@ -2202,6 +2206,8 @@ def mcp_return_home():
         move_to_home_emergency(r)     # then go home
     except Exception as e:
         print(f"Error returning home: {e}")
+    finally:
+        MCP_INTENTIONAL_STOP = False
 
     
         
@@ -3474,9 +3480,10 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
             set_active_pick_item(seq_item, 1, 1)
             execute_one_pick_cycle(seq_item, 1, 1)
     except Exception as e:
-        if ROBOT_EVENT_CALLBACK:
+        if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("error", str(e))
-        raise
+        if not MCP_INTENTIONAL_STOP:
+            raise
 
     return {
         "status":                       "ok",
@@ -3640,9 +3647,10 @@ def run_mcp_relocate_object(
         set_active_pick_item(sequence[0], 1, 1)
         execute_one_pick_cycle(sequence[0], 1, 1)
     except Exception as e:
-        if ROBOT_EVENT_CALLBACK:
+        if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("error", str(e))
-        raise
+        if not MCP_INTENTIONAL_STOP:
+            raise
 
     # Step 5: return status including relocation coordinates.
     # The MCP server uses "requires_redetection": True to trigger a fresh

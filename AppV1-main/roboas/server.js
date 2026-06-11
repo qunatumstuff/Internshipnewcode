@@ -1691,6 +1691,45 @@ app.post('/emergency-stop', async (req, res) => {
   });
 });
 
+// Return Home Endpoint (from Chatbot UI)
+app.all('/return-home', async (req, res) => {
+  console.log('\n🏠 \x1b[46m\x1b[30m[HOME BUTTON]: Received UI signal! Returning Robot Arm to Home...\x1b[0m\n');
+  
+  let robotSuccess = false;
+  let robotError = null;
+  let responseText = "";
+
+  if (robotMcpClient) {
+    try {
+      const result = await robotMcpClient.callTool({
+        name: "return_home",
+        arguments: {}
+      });
+      robotSuccess = true;
+      responseText = result.content[0].text;
+      console.log('🏠 Robot MCP Return Home Success:', responseText);
+    } catch (err) {
+      robotError = err.message;
+      console.error('❌ Failed to call Robot MCP return_home:', err.message);
+    }
+  } else {
+    robotError = "Robot MCP is not connected.";
+    console.error('❌ Robot MCP is not connected.');
+  }
+
+  // Log the return home event
+  logToolCall("System Home Button", "return_home", {}, robotSuccess ? "Robot returning home" : `Failed: ${robotError}`);
+
+  sendProgress(null, false);
+  await sendWakewordCommand('unmute');
+
+  res.json({
+    success: robotSuccess,
+    message: robotSuccess ? "Return home sent successfully." : `Failed to return home: ${robotError}`,
+    detail: responseText || robotError
+  });
+});
+
 // Serve debug dashboard
 app.get('/debug', (req, res) => {
   res.setHeader('Cache-Control', 'no-store'); // Ensure fresh HUD on reload
