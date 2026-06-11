@@ -2189,6 +2189,20 @@ def move_to_home_emergency(r):
     execute_trajectory(r, traj, label="Emergency return home")
     # No try/except — let exceptions propagate so on_h knows if it failed
 
+def mcp_return_home():
+    """Callable from robot_mcp to safely stop and return home."""
+    import time
+    try:
+        r.stop()
+        time.sleep(0.5)
+        r.reset_errors()              # clear errors before doing anything else
+        r.switch_to_automatic_mode()  # must be in auto before any motion
+        time.sleep(1)
+        gripper_open()                # now safe to open gripper
+        move_to_home_emergency(r)     # then go home
+    except Exception as e:
+        print(f"Error returning home: {e}")
+
     
         
 

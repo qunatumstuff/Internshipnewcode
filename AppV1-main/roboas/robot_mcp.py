@@ -296,13 +296,12 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             return [TextContent(type="text", text=f"Error executing emergency stop: {str(e)}")]
 
     if name == "return_home":
+        print("\n🏠 [VS CODE CONSOLE] RETURN HOME SIGNAL RECEIVED! Interrupting motion and returning home.\n")
         logger.info("🏠 RETURN HOME TRIGGERED!")
         try:
-            if hasattr(robot_control, 'ensure_robot_ready') and hasattr(robot_control, 'r'):
-                await asyncio.to_thread(robot_control.ensure_robot_ready, robot_control.r)
-            if hasattr(robot_control, 'move_to_home_emergency'):
-                await asyncio.to_thread(robot_control.move_to_home_emergency, robot_control.r)
-            return [TextContent(type="text", text="Return Home Successful: Robot moved to home position.")]
+            if hasattr(robot_control, 'mcp_return_home'):
+                await asyncio.to_thread(robot_control.mcp_return_home)
+            return [TextContent(type="text", text="Return Home Successful: Robot interrupted and moved to home position.")]
         except Exception as e:
             logger.error(f"Error during return home: {e}")
             return [TextContent(type="text", text=f"Error executing return home: {str(e)}")]
