@@ -626,10 +626,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     _setWakeWordMute(false); // Re-enable wake word / restart engine
 
-    if (_currentState == HandsOffState.johnSpeaking) {
-      if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
-        _wakeWordSocket!.send(json.encode({'action': 'start_wakeword'}));
-      }
+    if (_currentState != HandsOffState.handsOffOff) {
+      js.context.callMethod('startWakeWordListening');
     }
   }
 
