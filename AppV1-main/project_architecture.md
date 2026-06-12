@@ -8,7 +8,7 @@ This document outlines the distributed architecture of the AI-driven Robotic Cha
 
 Below is the generated system architecture diagram illustrating the network flow, component locations, and how Ngrok acts as the secure ingress gateway for client operations:
 
-![System Architecture Diagram](file:///C:/Users/Dominic/.gemini/antigravity/brain/6c67177b-db98-4266-8e78-a0c226812ed1/system_architecture_1780647202182.png)
+![System Architecture Diagram](file:///C:/Users/Dominic/.gemini/antigravity/brain/6c67177b-db98-4266-8e78-a0c226812ed1/system_architecture_1781244116200.png)
 
 ---
 
@@ -30,6 +30,8 @@ graph TD
         
         Camera["Intel RealSense Depth Camera"]
         Arm["Neura LARA 5 Robot Arm (IP: 192.168.2.13)"]
+        ToolChanger["OnRobot Quick Changer (14mm)"]
+        Gripper["OnRobot 2FG7 Gripper (125mm, 38mm stroke)"]
     end
 
     %% Flow links
@@ -41,6 +43,8 @@ graph TD
     
     LaptopB --->|Hardware Pipeline| Camera
     RobotPC --->|Direct SDK Connection| Arm
+    Arm --->|Tool Flange Interface| ToolChanger
+    ToolChanger --->|Built-in Coupling| Gripper
     
     %% Styling
     style Client fill:#3a0ca3,stroke:#7209b7,stroke-width:2px,color:#fff
@@ -50,6 +54,8 @@ graph TD
     style RobotPC fill:#004b23,stroke:#38b000,stroke-width:2px,color:#fff
     style Camera fill:#0096c7,stroke:#03045e,stroke-width:1px,color:#fff
     style Arm fill:#70e000,stroke:#007200,stroke-width:1px,color:#fff
+    style ToolChanger fill:#ffb703,stroke:#fb8500,stroke-width:1px,color:#000
+    style Gripper fill:#fb8500,stroke:#d00000,stroke-width:2px,color:#fff
 ```
 
 ---
@@ -100,3 +106,17 @@ While the free tier of Ngrok works for basic hello-world APIs, it is **unusable 
 | **Endpoint URL** | Randomly changes on restart | Permanent, Reserved Static Domain | Free tier requires daily re-compilation of Flutter Web assets; Premium is set-and-forget. |
 | **Access Security** | None (Publicly exposed) | OAuth (Google/Github), IP Whitelisting | **Safety Critical:** Premium blocks unauthorized users from triggering physical arm movements. |
 | **Support for TCP/SSE** | Basic | Enhanced | Ensures SSE message streams remain open indefinitely without timeout. |
+
+---
+
+## 6. End-Effector Tool Parameters (OnRobot 2FG7 + Quick Changer)
+
+To integrate the OnRobot parallel gripper hardware, the controller (`nogripperref.py`) is configured with the following active parameters:
+
+- **Flange/TCP Z-Offset (Length)**: Combined tool height of **139 mm (0.139 m)** comprising **125 mm** for the 2FG7 parallel gripper body and **14 mm** for the Quick Changer attachment.
+- **Physical Collision Profile**:
+  - **Flange Section (Quick Changer)**: 84 mm diameter, 14 mm length cylinder.
+  - **Neck Section (2FG7 Body)**: 90 mm diameter, 71 mm length cylinder.
+  - **Jaw Finger Section**: Rectangular box representing sliding parallel jaws with 30 mm finger block thickness, 38 mm total stroke (`MAX_STROKE_M = 0.038`), and 156 mm maximum open width.
+- **TCP Packing Optimization**: Finer 15-degree steps between -90° and +90° rotation allow the box-packing planner to optimize orientation. If a 90-degree rotated footprint slot is chosen, the robot's TCP placement yaw (`DROP_RZ_DEG`) shifts by 90 degrees accordingly, aligning wrist orientation with object packing.
+

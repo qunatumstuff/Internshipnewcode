@@ -32,6 +32,67 @@
   <title>appver</title>
   <link rel="manifest" href="manifest.json">
   <script>
+    (function() {
+      const originalLog = console.log;
+      const originalWarn = console.warn;
+      const originalError = console.error;
+      let isLogging = false;
+
+      function formatMessage(args) {
+        return args.map(arg => {
+          if (arg === null) return 'null';
+          if (arg === undefined) return 'undefined';
+          if (typeof arg === 'object') {
+            try { return JSON.stringify(arg); } catch (e) { return '[Object]'; }
+          }
+          return arg.toString();
+        }).join(' ');
+      }
+
+      console.log = function(...args) {
+        originalLog.apply(console, args);
+        if (!isLogging) {
+          isLogging = true;
+          try {
+            const msg = formatMessage(args);
+            if (!msg.includes('[OWW Scores]') && !msg.includes('[OWW] Active | RMS:') && window.onConsoleLogCallback) {
+              window.onConsoleLogCallback('[BROWSER] ' + msg);
+            }
+          } catch (e) {}
+          isLogging = false;
+        }
+      };
+
+      console.warn = function(...args) {
+        originalWarn.apply(console, args);
+        if (!isLogging) {
+          isLogging = true;
+          try {
+            const msg = formatMessage(args);
+            if (window.onConsoleLogCallback) {
+              window.onConsoleLogCallback('[BROWSER WARN] ' + msg);
+            }
+          } catch (e) {}
+          isLogging = false;
+        }
+      };
+
+      console.error = function(...args) {
+        originalError.apply(console, args);
+        if (!isLogging) {
+          isLogging = true;
+          try {
+            const msg = formatMessage(args);
+            if (window.onConsoleLogCallback) {
+              window.onConsoleLogCallback('[BROWSER ERROR] ' + msg);
+            }
+          } catch (e) {}
+          isLogging = false;
+        }
+      };
+    })();
+  </script>
+  <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
         for(let registration of registrations) {
@@ -83,6 +144,11 @@
         if (data.tts_message) {
           if (onEventCallback) {
             onEventCallback('tts:' + data.tts_message);
+          }
+        }
+        if (data.server_log) {
+          if (onEventCallback) {
+            onEventCallback('server_log:' + data.server_log);
           }
         }
         if (data.isRobotMoving !== undefined) {

@@ -1,24 +1,6 @@
 [
   {
-    "timestamp": "2026-06-12T00:39:13.962Z",
-    "userQuestion": "System Command",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "john"
-    },
-    "result": "switched to john"
-  },
-  {
-    "timestamp": "2026-06-12T00:39:13.971Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-12T00:39:13.975Z",
+    "timestamp": "2026-06-12T08:13:16.064Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -27,16 +9,70 @@
     "result": "updated to 🤗"
   },
   {
-    "timestamp": "2026-06-12T00:39:55.498Z",
-    "userQuestion": "Pick up the sponge.",
+    "timestamp": "2026-06-12T08:13:16.632Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-12T08:13:18.969Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-12T08:13:44.477Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 26369,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-12T08:13:47.730Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"Pick up the black marker.\""
+  },
+  {
+    "timestamp": "2026-06-12T08:13:47.874Z",
+    "userQuestion": "Pick up the black marker.",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-06-12T08:13:50.455Z",
+    "userQuestion": "Pick up the black marker.",
     "toolName": "locate_object",
     "args": {
-      "target_name": "sponge"
+      "target_name": "black marker"
     },
     "result": "Orchestrating autonomous scan & pick in background..."
   },
   {
-    "timestamp": "2026-06-12T00:39:55.512Z",
+    "timestamp": "2026-06-12T08:13:50.463Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Initiating workspace scan for \"black marker\"...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-12T08:13:50.472Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -45,206 +81,395 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-12T00:43:27.027Z",
-    "userQuestion": "Pick up the sponge.",
+    "timestamp": "2026-06-12T08:13:50.477Z",
+    "userQuestion": "Pick up the black marker.",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "john",
+      "emoji": "🤖"
+    },
+    "result": "I am checking the workspace for the black marker. Once the path is clear, I will pick it up for you."
+  },
+  {
+    "timestamp": "2026-06-12T08:13:50.891Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I am checking the workspace for the black marker. Once the path is clear, I will pick it up for you."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-12T08:13:53.053Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I am checking the workspace for the black marker. Once the path is clear, I will pick it up for you.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-12T08:14:13.503Z",
+    "userQuestion": "Pick up the black marker.",
     "toolName": "locate_object",
     "args": {
-      "target_name": "sponge"
+      "target_name": "black marker"
     },
     "result": "Target located"
   },
   {
-    "timestamp": "2026-06-12T00:47:18.455Z",
+    "timestamp": "2026-06-12T08:14:13.511Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Target \"black marker\" clear! Instructing robot to pick it up...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-12T08:20:41.224Z",
     "userQuestion": "System Command",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "linda"
-    },
-    "result": "switched to linda"
-  },
-  {
-    "timestamp": "2026-06-12T00:47:18.459Z",
-    "userQuestion": "Change to Linda. Alright. Excellent.",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "linda"
-    },
-    "result": "switched to linda"
-  },
-  {
-    "timestamp": "2026-06-12T00:47:19.223Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-12T00:47:40.732Z",
-    "userQuestion": "All right. Okay, Linda, can you pick up the cube?",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
-    "timestamp": "2026-06-12T00:47:40.739Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-12T00:47:41.971Z",
-    "userQuestion": "All right. Okay, Linda, can you pick up the cube?",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
-    },
-    "result": "Scan failed"
-  },
-  {
-    "timestamp": "2026-06-12T00:48:07.731Z",
-    "userQuestion": "Cube is found. Linda, can you pick up the cube? Ma...",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
-    "timestamp": "2026-06-12T00:48:07.737Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-12T00:48:29.390Z",
-    "userQuestion": "Cube is found. Linda, can you pick up the cube? Ma...",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
-    },
-    "result": "Target located"
-  },
-  {
-    "timestamp": "2026-06-12T00:48:58.853Z",
-    "userQuestion": "So now we're extending the throttle, pick up some....",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "sponge"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
-    "timestamp": "2026-06-12T00:48:58.861Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-12T00:49:00.120Z",
-    "userQuestion": "So now we're extending the throttle, pick up some....",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "sponge"
-    },
-    "result": "Scan failed"
-  },
-  {
-    "timestamp": "2026-06-12T00:49:17.579Z",
-    "userQuestion": "Okay, I'll try to pick up the cube and be sure tha...",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
-    "timestamp": "2026-06-12T00:49:17.588Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-12T00:49:39.122Z",
-    "userQuestion": "Okay, I'll try to pick up the cube and be sure tha...",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
-    },
-    "result": "Target located"
-  },
-  {
-    "timestamp": "2026-06-12T00:49:52.975Z",
-    "userQuestion": "System Emergency Button",
-    "toolName": "emergency_stop",
-    "args": {},
-    "result": "Robot halted"
-  },
-  {
-    "timestamp": "2026-06-12T00:50:04.398Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-12T00:50:16.327Z",
-    "userQuestion": "System Home Button",
-    "toolName": "return_home",
-    "args": {},
-    "result": "Robot returning home"
-  },
-  {
-    "timestamp": "2026-06-12T00:50:29.020Z",
-    "userQuestion": "System Sync",
     "toolName": "switch_avatar",
     "args": {
       "persona": "john"
     },
-    "result": "switched to john via Remote Control"
+    "result": "switched to john"
   },
   {
-    "timestamp": "2026-06-12T00:51:08.822Z",
-    "userQuestion": "Yeah, I'll show you all the outputs. So you can se...",
-    "toolName": "search_web",
-    "args": {
-      "query": "signal has been interrupted meaning in robotics or electronics"
-    },
-    "result": "Searching web..."
-  },
-  {
-    "timestamp": "2026-06-12T00:51:09.617Z",
-    "userQuestion": "Yeah, I'll show you all the outputs. So you can se...",
-    "toolName": "search_web",
-    "args": {
-      "query": "signal has been interrupted meaning in robotics or electronics"
-    },
-    "result": "Search Results (Wikipedia) for 'signal has been interrupted meaning in robotics or electronics':\n\nTitle: Morse code\nSnippet: characters as standardized sequences of two different signal durations, called dots and dashes, or dits and dahs. It is named after Samuel Morse, one of\n\nTitle: Traffic light\nSnippet: Traffic lights, traffic signals, or stoplights – also known as robots in South Africa, Zambia, and Namibia – are signalling devices positioned at road\n\nTitle: Embedded system\nSnippet: computations, or even custom designed for the application at hand. A common standard class of dedicated processors is the digital signal processor (DSP)\n\nTitle: I2C\nSnippet: processors and microcontrollers in short-distance, intra-board communication. The I2C bus can be found in a wide range of electronics applications where simplicity"
-  },
-  {
-    "timestamp": "2026-06-12T00:51:12.353Z",
+    "timestamp": "2026-06-12T08:20:41.232Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
       "state": "answering"
     },
     "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-12T08:20:41.241Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "idle"
+    },
+    "result": "updated to 🤗"
+  },
+  {
+    "timestamp": "2026-06-12T08:20:41.706Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-12T08:20:42.711Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:16.418Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 32634,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:18.211Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"Pick up the blue marker.\""
+  },
+  {
+    "timestamp": "2026-06-12T08:21:18.251Z",
+    "userQuestion": "Pick up the blue marker.",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:19.571Z",
+    "userQuestion": "Pick up the blue marker.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "blue marker"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:19.575Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Initiating workspace scan for \"blue marker\"...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:19.583Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-12T08:21:19.587Z",
+    "userQuestion": "Pick up the blue marker.",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "john",
+      "emoji": "🤖"
+    },
+    "result": "I am checking the workspace for the blue marker. Once the path is clear, I will pick it up for you."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:19.617Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I am checking the workspace for the blue marker. Once the path is clear, I will pick it up for you."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:20.533Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I am checking the workspace for the blue marker. Once the path is clear, I will pick it up for you.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:47.841Z",
+    "userQuestion": "Pick up the blue marker.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "blue marker"
+    },
+    "result": "Target located"
+  },
+  {
+    "timestamp": "2026-06-12T08:21:47.850Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Target \"blue marker\" clear! Instructing robot to pick it up...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:47.900Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Robot pick error: No free placement slot found inside the box. The box may be full, object footprint too large, or margins too conservative.",
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:52.912Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": true
+    },
+    "result": "Sorry, I could not complete the action because: No free placement slot found inside the box. The box may be full, object footprint too large, or margins too conservative."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:53.039Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Sorry, I could not complete the action because: No free placement slot found inside the box. The box may be full, object footprint too large, or margins too conservative."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-12T08:21:54.294Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Sorry, I could not complete the action because: No free placement slot found inside the box. The box may be full, object footprint too large, or margins too conservative.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-12T08:24:31.941Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 161656,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-12T08:24:35.250Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"The box is full, even though it is currently full and cannot place a blue marker.\""
+  },
+  {
+    "timestamp": "2026-06-12T08:24:35.347Z",
+    "userQuestion": "The box is full, even though it is currently full ...",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-06-12T08:24:36.579Z",
+    "userQuestion": "The box is full, even though it is currently full ...",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "blue marker"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-12T08:24:36.585Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Initiating workspace scan for \"blue marker\"...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-12T08:24:36.593Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-12T08:24:36.599Z",
+    "userQuestion": "The box is full, even though it is currently full ...",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "john",
+      "emoji": "🤖"
+    },
+    "result": "I am checking the workspace for the blue marker. Once the path is clear, I will pick it up for you."
+  },
+  {
+    "timestamp": "2026-06-12T08:24:36.648Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I am checking the workspace for the blue marker. Once the path is clear, I will pick it up for you."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-12T08:24:37.844Z",
+    "userQuestion": "The box is full, even though it is currently full ...",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "blue marker"
+    },
+    "result": "Scan failed"
+  },
+  {
+    "timestamp": "2026-06-12T08:24:37.848Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Scan stopped: 'blue marker' not found.",
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-12T08:24:38.059Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I am checking the workspace for the blue marker. Once the path is clear, I will pick it up for you.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-12T08:24:42.856Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": true
+    },
+    "result": "Scan stopped. 'blue marker' not found."
+  },
+  {
+    "timestamp": "2026-06-12T08:24:42.940Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Scan stopped. 'blue marker' not found."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-12T08:24:55.661Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Scan stopped. 'blue marker' not found.",
+      "attempt": 2
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-12T08:29:13.520Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Robot pick error: Timeout waiting for robot completion event.",
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-12T08:29:18.531Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": true
+    },
+    "result": "Sorry, I could not complete the action because: Timeout waiting for robot completion event."
   }
 ]

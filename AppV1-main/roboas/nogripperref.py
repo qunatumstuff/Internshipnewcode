@@ -136,8 +136,8 @@ r = Robot()
 GRIPPER_SAFETY_LENGTH = 0.000
 TABLE_Z_M = -0.0198
 
-GRIPPER_LEN_OPEN = 0.2009
-GRIPPER_LEN_CLOSED = 0.2259
+GRIPPER_LEN_OPEN = 0.145
+GRIPPER_LEN_CLOSED = 0.145
 
 GRIPPER_LENGTH = GRIPPER_LEN_CLOSED
 # Keep planner conservative by default: assume longest possible gripper length.
@@ -151,29 +151,24 @@ ACTIVE_GRIPPER_LENGTH = GRIPPER_LENGTH
 # -----------------------------------------------------------------
 # SEGMENTED END-EFFECTOR COLLISION MODEL
 # -----------------------------------------------------------------
-# Old code treated the whole gripper as one long 45 mm radius cylinder.
-# That is safe, but very conservative. The new model splits the tool into:
-#   1) flange/body circular section,
-#   2) neck circular section,
-#   3) lower jaw rectangular section.
-# This lets the planner see that the lower gripping part is not a huge circle.
+# The model splits the tool into:
+#   1) flange/body circular section (OnRobot Quick Changer),
+#   2) neck circular section (OnRobot 2FG7 main body),
+#   3) lower jaw rectangular section (sliding parallel jaws).
 
-CIRCULAR_EXTRA_DIAMETER_M = 0.005   # extra 0.5 cm added only to circular collision partsS
+CIRCULAR_EXTRA_DIAMETER_M = 0.005   # extra 0.5 cm added only to circular collision parts
 
-FLANGE_DIAMETER_M = 0.087 + CIRCULAR_EXTRA_DIAMETER_M  # 87 mm CAD diameter + 5 mm allowance
-FLANGE_RADIUS_M = FLANGE_DIAMETER_M / 2.0              # 46 mm
+FLANGE_LENGTH_M = 0.014                                # Quick Changer thickness (14 mm)
+FLANGE_DIAMETER_M = 0.084 + CIRCULAR_EXTRA_DIAMETER_M  # 84 mm diameter
+FLANGE_RADIUS_M = FLANGE_DIAMETER_M / 2.0
 
-NECK_LENGTH_M = 0.079964                               # fixed section between your two CAD planes
-NECK_DIAMETER_M = 0.068 + CIRCULAR_EXTRA_DIAMETER_M    # 68 mm CAD diameter + 5 mm allowance
-NECK_RADIUS_M = NECK_DIAMETER_M / 2.0                  # 36.5 mm
+NECK_LENGTH_M = 0.085                                  # 2FG7 body height (85 mm)
+NECK_DIAMETER_M = 0.090 + CIRCULAR_EXTRA_DIAMETER_M    # 90 mm body width
+NECK_RADIUS_M = NECK_DIAMETER_M / 2.0
 
-# Approximate length of the top flange/body section along TCP-Z.
-# Adjust this if you later measure the flange axial thickness directly.
-FLANGE_LENGTH_M = 0.030
-
-# Lower jaw collision model. The jaws are better treated as a rectangular box
-# rather than a circular radius. 50 mm comes from your CAD front-view measurement.
-JAW_FIXED_WIDTH_M = 0.050
+# Lower jaw collision model. The jaws are treated as a rectangular box.
+JAW_FIXED_WIDTH_M = 0.020                              # jaw finger block front-to-back thickness (20 mm)
+JAW_FINGER_THICKNESS_M = 0.007                         # 7 mm thickness for each finger (along the grip axis)
 JAW_MIN_DYNAMIC_WIDTH_M = 0.010
 
 # Carried object collision model
@@ -189,29 +184,10 @@ GRIPPER_RADIUS = max(FLANGE_RADIUS_M, NECK_RADIUS_M)
 END_EFFECTOR_MAX_RADIUS = GRIPPER_RADIUS
 
 # Jaw stroke model.
-# NOTE:
-# The gripper physically may be advertised/estimated as 90 mm, but your latest
-# test showed the commanded percentage produced a larger real opening
-# (~55 mm when you wanted ~40 mm). That means the Modbus 0-100% scale must be
-# calibrated to the REAL measured jaw opening, not only the nominal datasheet value.
-#
-# If the gripper still opens too wide, tune this value using:
-#   EFFECTIVE_COMMAND_STROKE_M = measured_opening_m / (command_percent / 100)
-# Example: if full-open internal stroke is measured as 90 mm, use 0.090 m.
-MAX_STROKE_M = 0.090              # actual usable internal jaw stroke/opening; 100% = 90 mm
+MAX_STROKE_M = 0.038              # 2FG7 total parallel stroke is 38 mm
 # =================================================================
 # GRIPPER PERCENTAGE CALIBRATION
 # =================================================================
-# The real gripper appears to open wider than the simple linear
-# MAX_STROKE_M calculation predicts.
-#
-# Example from test:
-#   desired cube opening ≈ 40 mm
-#   real opening was ≈ 45 mm
-#   scale = 40 / 45 ≈ 0.88
-#
-# This only scales the command percentage.
-# It does NOT change MAX_STROKE_M, object dimensions, or placement footprint.
 GRIPPER_PERCENT_SCALE = 1
 GRIPPER_PERCENT_OFFSET = 0.0
 
@@ -219,14 +195,12 @@ GRIPPER_PERCENT_OFFSET = 0.0
 
 # IMPORTANT:
 # Jaw stroke/opening is NOT the same as total physical gripper width.
-# Your measured full-open stroke/opening is about 90 mm, but the whole gripper
-# can physically occupy about 150 mm including jaw thickness/body protrusion.
-MAX_PHYSICAL_GRIPPER_WIDTH_M = 0.150
+# Total outer physical width occupied by 2FG7 with fingers.
+MAX_PHYSICAL_GRIPPER_WIDTH_M = 0.156
 # Physical lower-gripper footprint used only for placement/collision clearance.
-# This is NOT jaw stroke. It estimates the outer size that could touch the box/object.
-GRIPPER_PHYSICAL_CLOSED_LENGTH_M = 0.060  # 0% open -> 6 cm outer footprint
-GRIPPER_PHYSICAL_OPEN_LENGTH_M = 0.150    # 100% open -> 15 cm outer footprint
-GRIPPER_PHYSICAL_DEPTH_M = 0.035          # constant 3.5 cm depth
+GRIPPER_PHYSICAL_CLOSED_LENGTH_M = 0.118  # 0% open -> 11.8 cm outer footprint
+GRIPPER_PHYSICAL_OPEN_LENGTH_M = 0.156    # 100% open -> 15.6 cm outer footprint
+GRIPPER_PHYSICAL_DEPTH_M = 0.071          # constant 7.1 cm depth
 
 MAX_PHYSICAL_GRIPPER_HALF_WIDTH_M = MAX_PHYSICAL_GRIPPER_WIDTH_M / 2.0
 
@@ -947,7 +921,8 @@ SMART_EXISTING_OBJECT_SPREAD_WEIGHT = 0.05
 
 # Try rotating the wrist/gripper for better placement packing.
 # These are relative offsets from the object's preferred grasp angle.
-PLACEMENT_ANGLE_OFFSETS_DEG = [-30, 0, 30]
+# We test in steps of 15 degrees from -90 to 90 to allow maximum squeeze / optimization.
+PLACEMENT_ANGLE_OFFSETS_DEG = [-90, -75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75, 90]
 
 # Permanent occupied-object footprint margin.
 # Keep this small. The gripper release opening is temporary and should not
@@ -1529,29 +1504,25 @@ def gripper_side_clearance_at_box_wall(drop_tcp_z, selected_object):
     release_internal_opening_m = object_grip_width_m * (1.0 + PRE_PICK_EXTRA_RATIO)
 
     # Physical width used for wall clearance.
-    # Adds body/jaw thickness around the internal opening.
-    extra_body_width = max(0.0, MAX_PHYSICAL_GRIPPER_WIDTH_M - MAX_STROKE_M)
-    release_physical_width_m = min(
-        MAX_PHYSICAL_GRIPPER_WIDTH_M,
-        release_internal_opening_m + extra_body_width,
-    )
+    # Add finger thickness around the internal opening.
+    release_physical_width_m = release_internal_opening_m + (JAW_FINGER_THICKNESS_M * 2.0)
 
     clearance = max(
         MIN_BOX_GRIPPER_SIDE_CLEARANCE_M,
-        JAW_FIXED_WIDTH_M / 2.0,
-        release_physical_width_m / 2.0,
+        (JAW_FIXED_WIDTH_M / 2.0) + JAW_SAFETY_MARGIN_M,
+        (release_physical_width_m / 2.0) + JAW_SAFETY_MARGIN_M,
     )
 
     flange_bottom_z = drop_tcp_z - FLANGE_LENGTH_M
     neck_bottom_z = drop_tcp_z - (FLANGE_LENGTH_M + NECK_LENGTH_M)
 
     if neck_bottom_z <= box_wall_top_z:
-        clearance = max(clearance, NECK_RADIUS_M)
+        clearance = max(clearance, NECK_RADIUS_M + BODY_SAFETY_MARGIN_M)
 
     if flange_bottom_z <= box_wall_top_z:
-        clearance = max(clearance, FLANGE_RADIUS_M)
+        clearance = max(clearance, FLANGE_RADIUS_M + BODY_SAFETY_MARGIN_M)
 
-    return clearance + SEGMENTED_BOX_WALL_MARGIN_M
+    return clearance
 
 
 def _effective_inner_margin_for_object(selected_object):
@@ -1943,7 +1914,8 @@ def find_best_drop_slot(selected_object):
         for rotated in (False, True):
             length, width = _object_footprint_for_placement(selected_object, rotated=rotated)
 
-            margin_x, margin_y = _effective_xy_margins_for_object(selected_object, placement_angle_deg)
+            actual_angle = _normalise_angle_deg(placement_angle_deg + 90.0) if rotated else placement_angle_deg
+            margin_x, margin_y = _effective_xy_margins_for_object(selected_object, actual_angle)
             x_min = PLACEMENT_BOX_X_MIN + margin_x
             x_max = PLACEMENT_BOX_X_MAX - margin_x
             y_min = PLACEMENT_BOX_Y_MIN + margin_y
@@ -1959,11 +1931,11 @@ def find_best_drop_slot(selected_object):
                                 y -= grid_step
                                 continue
                         
-                        score = _placement_score(x, y, length, width, selected_object, placement_angle_deg)
+                        score = _placement_score(x, y, length, width, selected_object, actual_angle)
                         # Prefer angles where the long gripper rectangle wastes less X margin.
                         grip_half_x, grip_half_y = rotated_gripper_half_extents_for_object(
                             selected_object,
-                            placement_angle_deg,
+                            actual_angle,
                             )
                         score += min(grip_half_x, MAX_PLACEMENT_SEGMENT_CLEARANCE_X_M) * 0.5
                         
@@ -2757,6 +2729,8 @@ def resolve_object_runtime_variables(selected_object, move_x, move_y, drop_slot)
     placement_angle_deg = None
     if isinstance(drop_slot, dict):
         placement_angle_deg = drop_slot.get("placement_angle_deg")
+        if drop_slot.get("rotated") == True and placement_angle_deg is not None:
+            placement_angle_deg = _normalise_angle_deg(placement_angle_deg + 90.0)
 
     pick_rz_deg = planned_rz_for_object(
         selected_object,

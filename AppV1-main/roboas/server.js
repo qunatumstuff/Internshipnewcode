@@ -467,6 +467,59 @@ app.post('/robot-event', (req, res) => {
 
 // Progress Status SSE Channel
 let progressClients = [];
+
+// === Console Override for HUD ===
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+let isServerLogging = false;
+
+function sendServerLogToClients(msg) {
+  progressClients.forEach(client => {
+    try {
+      client.write(`data: ${JSON.stringify({ server_log: msg })}\n\n`);
+    } catch (e) {
+      originalConsoleError.call(console, '❌ SSE server_log write error:', e.message);
+    }
+  });
+}
+
+function formatServerMsg(args) {
+  return args.map(arg => {
+    if (arg === null) return 'null';
+    if (arg === undefined) return 'undefined';
+    if (typeof arg === 'object') {
+      try { return JSON.stringify(arg); } catch (e) { return '[Object]'; }
+    }
+    return arg.toString();
+  }).join(' ');
+}
+
+console.log = function(...args) {
+  originalConsoleLog.apply(console, args);
+  if (!isServerLogging) {
+    isServerLogging = true;
+    try {
+      const msg = formatServerMsg(args);
+      if (!msg.includes('[SSE Progress Broadcast]')) {
+        sendServerLogToClients('[SERVER] ' + msg);
+      }
+    } catch (e) {}
+    isServerLogging = false;
+  }
+};
+
+console.error = function(...args) {
+  originalConsoleError.apply(console, args);
+  if (!isServerLogging) {
+    isServerLogging = true;
+    try {
+      const msg = formatServerMsg(args);
+      sendServerLogToClients('[SERVER ERROR] ' + msg);
+    } catch (e) {}
+    isServerLogging = false;
+  }
+};
+// ==================================
 app.get('/progress', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');

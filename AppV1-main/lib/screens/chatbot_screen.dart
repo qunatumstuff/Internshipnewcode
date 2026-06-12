@@ -157,7 +157,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     if (mounted) {
       setState(() {
         _micDebugLogs.add(log);
-        if (_micDebugLogs.length > 15) _micDebugLogs.removeAt(0); // keep last 15
+        if (_micDebugLogs.length > 150) _micDebugLogs.removeAt(0); // keep last 150
+      });
+    }
+  }
+
+  void _addExternalUiLog(String log) {
+    if (mounted) {
+      setState(() {
+        _micDebugLogs.add(log);
+        if (_micDebugLogs.length > 150) _micDebugLogs.removeAt(0); // keep last 150
       });
     }
   }
@@ -192,6 +201,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   @override
   void initState() {
     super.initState();
+    if (kIsWeb) {
+      js.context['onConsoleLogCallback'] = js.allowInterop((msg) {
+        _addExternalUiLog(msg);
+      });
+    }
     _vizController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
@@ -1342,6 +1356,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _handleOwwEvent(String eventName) {
+    if (eventName.startsWith('server_log:')) {
+      final msg = eventName.substring('server_log:'.length);
+      _addExternalUiLog(msg);
+      return;
+    }
+
     if (eventName.startsWith('status_update:')) {
       final parts = eventName.substring('status_update:'.length).split(',');
       String rms = '0.0000';
@@ -1410,7 +1430,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         debugPrint('[OWW Scores] John: ${jPercent.toStringAsFixed(1)}% (V2: ${jV2Percent.toStringAsFixed(1)}%) | Linda: ${lPercent.toStringAsFixed(1)}% (V2: ${lV2Percent.toStringAsFixed(1)}%)');
       }
       
-      _addUiLog('[OWW] Active | RMS: $rms | J: ${jPercent.toStringAsFixed(1)}% (V2: ${jV2Percent.toStringAsFixed(1)}%) | L: ${lPercent.toStringAsFixed(1)}% (V2: ${lV2Percent.toStringAsFixed(1)}%)');
+      debugPrint('[OWW] Active | RMS: $rms | J: ${jPercent.toStringAsFixed(1)}% (V2: ${jV2Percent.toStringAsFixed(1)}%) | L: ${lPercent.toStringAsFixed(1)}% (V2: ${lV2Percent.toStringAsFixed(1)}%)');
       return;
     }
 
