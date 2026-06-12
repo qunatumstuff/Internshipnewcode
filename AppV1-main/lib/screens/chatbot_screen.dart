@@ -110,6 +110,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ── Persona ──
   String _currentPersona = 'john';
   String get _pName => _currentPersona == 'linda' ? 'Linda' : 'John';
+  html.SpeechSynthesisUtterance? _currentUtterance;
   bool get _isInteractionBlocked {
     bool isMoving = false;
     try {
@@ -468,6 +469,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           if (_audioElement != audio) return; // Ignore events from old audio sessions
           html.Url.revokeObjectUrl(blobUrl);
           _stopManualWebStream();
+          
+          _addUiLog('[TTS] Audio playback ended. Starting 2-second cooldown...');
+          // Wait 2 seconds before unmuting the wake word engine to let speaker echo and ONNX model scores settle
+          await Future.delayed(const Duration(seconds: 2));
+          if (_audioElement != audio) return;
+
+          _addUiLog('[OWW] Cooldown finished. Unmuting wake word engine.');
           _setWakeWordMute(false); // Re-enable wake word / restart engine
           if (mounted) {
             setState(() {
@@ -527,6 +535,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       synth.cancel();
 
       final utterance = html.SpeechSynthesisUtterance(text);
+      _currentUtterance = utterance;
       
       // Set voice based on current persona
       final voices = synth.getVoices();
@@ -571,8 +580,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       });
 
       utterance.onEnd.listen((_) async {
+        if (_currentUtterance != utterance) return;
         debugPrint('📢 [NATIVE TTS] Completed successfully.');
         _stopManualWebStream();
+        
+        _addUiLog('[NATIVE TTS] Speech ended. Starting 2-second cooldown...');
+        // Wait 2 seconds before unmuting the wake word engine to let speaker echo and ONNX model scores settle
+        await Future.delayed(const Duration(seconds: 2));
+        if (_currentUtterance != utterance) return;
+
+        _addUiLog('[OWW] Cooldown finished. Unmuting wake word engine.');
         _setWakeWordMute(false);
         if (mounted) {
           setState(() {
@@ -587,8 +604,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       });
 
       utterance.onError.listen((e) async {
+        if (_currentUtterance != utterance) return;
         debugPrint('❌ [NATIVE TTS] Error: $e');
         _stopManualWebStream();
+        
+        _addUiLog('[NATIVE TTS] Error occurred. Starting 2-second cooldown...');
+        // Wait 2 seconds before unmuting the wake word engine to let speaker echo and ONNX model scores settle
+        await Future.delayed(const Duration(seconds: 2));
+        if (_currentUtterance != utterance) return;
+
+        _addUiLog('[OWW] Cooldown finished. Unmuting wake word engine.');
         _setWakeWordMute(false);
         if (mounted) {
           setState(() {
@@ -1392,9 +1417,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     if (eventName.startsWith('robot_moving_status:')) {
       final isMoving = eventName.substring('robot_moving_status:'.length) == 'true';
       _addUiLog('[OWW] Robot moving status: $isMoving');
-      _setWakeWordMute(isMoving);
       
       if (isMoving) {
+        _setWakeWordMute(true);
         // Abort any active manual recording immediately
         if (_isListening) {
           _addUiLog('[MIC] Robot moving — aborting active recording.');
@@ -1407,6 +1432,29 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             _webMediaRecorder?.stop();
           } catch (_) {}
           _abortAndRestartWakeWord();
+        }
+      } else {
+        // Only unmute and restart listening if TTS is not in progress!
+        if (!_isTtsInProgress) {
+          _addUiLog('[OWW] Robot stopped moving. Starting 2-second cooldown...');
+          // Add a 2.0 second cooldown delay to let motor stopping noise/vibrations settle before listening
+          Future.delayed(const Duration(milliseconds: 2000), () {
+            if (mounted && !_isTtsInProgress) {
+              bool stillStopped = true;
+              try {
+                stillStopped = js.context['isRobotMoving'] != true;
+              } catch (_) {}
+              if (stillStopped) {
+                _addUiLog('[OWW] Cooldown finished. Unmuting wake word engine.');
+                _setWakeWordMute(false);
+                if (_currentState != HandsOffState.handsOffOff) {
+                  js.context.callMethod('startWakeWordListening');
+                }
+              }
+            }
+          });
+        } else {
+          _addUiLog('[OWW] Robot stopped, but TTS is in progress. Keeping wake word muted.');
         }
       }
       if (mounted) {
@@ -2114,6 +2162,79 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           Positioned.fill(child: _buildAvatar()),
 
           // ── Debug Overlay ─────────────────────────────────
+          if (_showDebugPanel)
+            Positioned(
+              left: 20,
+              top: 80,
+              width: 320,
+              bottom: 160,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white24, width: 1.5),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black54,
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    )
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          '🐞 DEBUGGING HUD',
+                          style: TextStyle(
+                            color: Colors.greenAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.clear, color: Colors.white70, size: 16),
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          onPressed: () {
+                            setState(() {
+                              _micDebugLogs.clear();
+                            });
+                          },
+                          tooltip: 'Clear Logs',
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white30, height: 8),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: _micDebugLogs.length,
+                        reverse: true, // Show newest logs at the bottom/start
+                        itemBuilder: (context, index) {
+                          final logText = _micDebugLogs[_micDebugLogs.length - 1 - index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2.0),
+                            child: Text(
+                              logText,
+                              style: const TextStyle(
+                                color: Colors.green,
+                                fontSize: 11,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
 
           // ── Logo ──────────────────────────────────────────
@@ -2186,6 +2307,30 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20)),
+                ),
+              ),
+            ),
+          ),
+
+          // ── Debug HUD Toggle Button ──────────────────────
+          Positioned(
+            top: 20,
+            left: 140,
+            child: SafeArea(
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _showDebugPanel = !_showDebugPanel;
+                  });
+                },
+                icon: Icon(_showDebugPanel ? Icons.bug_report : Icons.bug_report_outlined, size: 16),
+                label: Text(_showDebugPanel ? 'Hide Debug' : 'Show Debug'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _showDebugPanel ? Colors.red[700] : Colors.grey[850],
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20)),
                 ),

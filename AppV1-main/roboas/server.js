@@ -28,8 +28,16 @@ const WAKEWORD_WS_URL = process.env.WAKEWORD_WS_URL || 'ws://localhost:8003';
 // Laptop B (Robot/Vision Laptop) IP Address
 const LAPTOP_B_IP = "192.168.2.99"; // Ethernet IP for Laptop B
 // === Tool Call Activity Log ===
-const toolCallLog = [];
+let toolCallLog = [];
 const TOOL_LOG_FILE = path.join(__dirname, 'gpt_tool_log.json');
+try {
+  if (fs.existsSync(TOOL_LOG_FILE)) {
+    toolCallLog = JSON.parse(fs.readFileSync(TOOL_LOG_FILE, 'utf-8'));
+    console.log(`📜 Loaded ${toolCallLog.length} tool logs from disk.`);
+  }
+} catch (e) {
+  console.error('Failed to load tool log from disk:', e.message);
+}
 
 function logToolCall(userQuestion, toolName, args, result) {
   const entry = {
@@ -473,6 +481,7 @@ app.get('/progress', (req, res) => {
 
 function sendProgress(status, isRobotMoving = false, ttsMessage = null) {
   console.log(`📡 [SSE Progress Broadcast]: "${status}" (isRobotMoving: ${isRobotMoving}, ttsMessage: ${ttsMessage !== null})`);
+  logToolCall("System Event", "progress_sse", { status, isRobotMoving, hasTts: ttsMessage !== null }, ttsMessage || "No TTS message.");
   progressClients.forEach(client => {
     try {
       client.write(`data: ${JSON.stringify({ status, isRobotMoving, tts_message: ttsMessage })}\n\n`);
@@ -527,11 +536,13 @@ app.post('/transcribe', upload.single('audio'), async (req, res) => {
   console.log(`\n\n=== 🎙️ [POST /transcribe] Endpoint Hit! ===`);
   if (!req.file) {
     console.log(`❌ [POST /transcribe] Error: No audio file uploaded.`);
+    logToolCall("System Event", "transcribe_error", {}, "No audio file uploaded.");
     return res.status(400).json({ success: false, message: 'No audio file uploaded.' });
   }
   
   console.log(`✅ [POST /transcribe] Uploaded file size: ${req.file.size} bytes`);
   console.log(`✅ [POST /transcribe] Uploaded MIME type: ${req.file.mimetype}`);
+  logToolCall("System Event", "transcribe_request", { size: req.file.size, mimetype: req.file.mimetype }, "Transcription request received.");
 
   try {
     // TIER 1: Optimized Context Prompt (Natural flow)
@@ -612,11 +623,13 @@ Terms to protect:
     // Clean up the temporary audio file
     if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
+    logToolCall("System Event", "transcribe_success", {}, `Transcription result: "${recognizedText}"`);
     res.json({ success: true, text: recognizedText });
   } catch (error) {
     const errorDetails = error.response ? JSON.stringify(error.response.data) : error.message;
     console.error('❌ Transcription Error:', errorDetails);
     if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    logToolCall("System Event", "transcribe_error", {}, `Transcription failed: ${errorDetails}`);
     res.status(500).json({ success: false, message: 'Transcription failed.', error: errorDetails });
   }
 });
@@ -810,6 +823,8 @@ function sendWakewordCommand(action) {
 app.post('/ask-gpt', async (req, res) => {
   const question = req.body.question;
   if (!question) return res.status(400).json({ success: false, message: 'No question provided.' });
+
+  logToolCall(question, "ask-gpt_prompt", {}, "GPT request received.");
 
   // Mute wake word during thinking/processing
   await sendWakewordCommand('mute');
@@ -1344,6 +1359,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
       sendProgress(null); // Clear progress overlay
       await sendWakewordCommand('unmute');
     }
+    logToolCall(question, "ask-gpt_response", { persona: currentPersona, emoji }, answerText);
     res.json({ success: true, answer: answerText, emoji, persona: currentPersona });
 
   } catch (err) {
@@ -1353,6 +1369,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
     }
     const errorDetails = err.response ? JSON.stringify(err.response.data) : err.message;
     console.error('❌ AI Chat Error:', errorDetails);
+    logToolCall(question, "ask-gpt_error", {}, errorDetails);
     res.status(500).json({ success: false, message: 'AI failed to respond.', error: errorDetails });
   }
 });
@@ -1363,6 +1380,7 @@ app.post('/tts', async (req, res) => {
   if (!text) return res.status(400).json({ success: false, message: 'No text provided.' });
 
   console.log(`🎙️ Generating TTS for: "${text.substring(0, 30)}..."`);
+  logToolCall("System Event", "tts_request", { text }, "Generating TTS...");
 
   // 1. Try OpenAI TTS (Premium)
   // Accept persona override from request body for guaranteed voice matching
@@ -1387,6 +1405,7 @@ app.post('/tts', async (req, res) => {
   const safeFallback = () => {
     if (fallbackTriggered) return;
     fallbackTriggered = true;
+    logToolCall("System Event", "tts_fallback", { text }, "OpenAI TTS failed. Fallback to Espeak triggered.");
     runEspeakFallback(text, res);
   };
 
@@ -1401,6 +1420,7 @@ app.post('/tts', async (req, res) => {
       if (openaiRes.statusCode === 200) {
         attemptFinished = true;
         console.log('✅ OpenAI TTS Success');
+        logToolCall("System Event", "tts_success", { text, attempt }, "OpenAI TTS generated successfully.");
         res.setHeader('Content-Type', 'audio/mpeg');
         openaiRes.pipe(res);
       } else {
