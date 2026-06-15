@@ -1,5 +1,5 @@
 import math
-import os
+
 import cv2
 import numpy as np
 import pyrealsense2 as rs
@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 import threading
 import base64
 import time
-import inference
+
 
 # -----------------------------------------------------------------------------
 # 1. Global State Variables (Shared between Vision Thread and MCP Server)
@@ -16,6 +16,8 @@ import inference
 current_rgb_frame = None
 current_target_class = None  # e.g., "cup", "bottle", "apple"
 latest_3d_coords = {"x": 0.0, "y": 0.0, "z": 0.0}
+last_click = ""
+spatial_coords = [0.0, 0.0, 0.0]
 
 # Initialize F                                                                                                                                                          1`astMCP Server
 mcp = FastMCP("TIEFA_Module_B_Vision")

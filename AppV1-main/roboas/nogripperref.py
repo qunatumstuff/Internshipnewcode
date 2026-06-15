@@ -156,6 +156,10 @@ TABLE_Z_M = -0.0198
 GRIPPER_LEN_OPEN = 0.145
 GRIPPER_LEN_CLOSED = 0.145
 
+# Explicit Safety Margins for Collision Planning (in meters)
+JAW_SAFETY_MARGIN_M = 0.010
+BODY_SAFETY_MARGIN_M = 0.005
+
 GRIPPER_LENGTH = GRIPPER_LEN_CLOSED
 # Keep planner conservative by default: assume longest possible gripper length.
 # Surface/table height in robot base coordinates.
