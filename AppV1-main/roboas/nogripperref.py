@@ -114,17 +114,34 @@ from serial.tools import list_ports
 # NO_GRIPPER_VERSION: pymodbus not imported — gripper is disabled
 
 try:
-    import keyboard
+    import keyboard  # type: ignore
     HAS_KEYBOARD = True
 except ImportError:
     HAS_KEYBOARD = False
     pass  # print removed for MCP quiet operation
 
 try:
-    from neurapy.robot import Robot
+    from neurapy.robot import Robot  # type: ignore
 except ImportError:
+    import sys
     sys.path.append(r"C:\Module-A\PythonAPI")
-    from neurapy.robot import Robot
+    try:
+        from neurapy.robot import Robot  # type: ignore
+    except ImportError:
+        print("[WARNING] neurapy not found. Using Mock Robot for local testing.")
+        class Robot:
+            def __init__(self): pass
+            def stop(self): pass
+            def power_off(self): pass
+            def power_on(self): pass
+            def switch_to_real(self): pass
+            def get_errors(self): return []
+            def reset_errors(self): pass
+            def is_robot_in_automatic_mode(self): return True
+            def switch_to_automatic_mode(self): pass
+            def init_program(self): pass
+            def get_tcp_pose(self): return [0.0, 0.0, 0.5, 0.0, 0.0, 0.0]
+            def move_linear(self, *args, **kwargs): pass
 
 r = Robot()
 
