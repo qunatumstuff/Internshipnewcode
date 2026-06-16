@@ -37,10 +37,12 @@ logger = logging.getLogger("vision-mcp")
 def auto_detect_ollama():
     """Scans for an active Ollama instance and automatically selects the best vision model."""
     ips_to_try = [
+        os.environ.get("LAPTOP_B_IP"),
         os.environ.get("LAPTOP_A_IP"),
         "127.0.0.1",
+        "192.168.2.10",
         "192.168.2.99",
-        "192.168.2.13" # Or whatever Laptop A's IP is
+        "192.168.2.13"
     ]
     
     for ip in ips_to_try:
@@ -69,7 +71,7 @@ def auto_detect_ollama():
             continue
             
     logger.error("Could not find any Ollama instance running!")
-    return "127.0.0.1", "qwen2.5-vl:7b"
+    return "127.0.0.1", "qwen3-vl:2b"
 
 OLLAMA_IP, QWEN_MODEL = auto_detect_ollama()
 
@@ -436,7 +438,6 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         "model": QWEN_MODEL,
         "prompt": prompt_with_directive,
         "stream": False,
-        "think": False,   # Stops Qwen3 burning all tokens on 'thinking' before the answer
         "images": [raw_b64],
         "options": {
             "temperature": 0.1,
