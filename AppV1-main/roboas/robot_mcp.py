@@ -207,15 +207,20 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             f"MCP pick_and_place_object: {object_name} at ({x}, {y}, {z}) "
             f"angle={angle_deg} grasp={grasp_label} detections_count={len(detections) if detections else 0}"
         )
-        result = await asyncio.to_thread(
-            robot_control.run_mcp_pick_and_place,
-            object_name,
-            x, y, z,
-            angle=angle_deg,
-            detections=detections,
-            grasp_label=grasp_label,
-        )
-        return [TextContent(type="text", text=f"Completed: {result}")]
+        try:
+            result = await asyncio.to_thread(
+                robot_control.run_mcp_pick_and_place,
+                object_name,
+                x, y, z,
+                angle=angle_deg,
+                detections=detections,
+                grasp_label=grasp_label,
+            )
+            return [TextContent(type="text", text=f"Completed: {result}")]
+        except Exception as e:
+            import traceback
+            logger.error(f"Error in pick_and_place_object: {e}\n{traceback.format_exc()}")
+            return [TextContent(type="text", text=json.dumps({"status": "error", "message": str(e)}))]
 
     if name == "move_to_coordinates":
         object_name = args.get("object_name", "cube")
@@ -226,11 +231,16 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         detections = args.get("detections", None)
 
         logger.info(f"Compatibility move_to_coordinates -> pick_and_place_object: {object_name} at ({x}, {y}, {z}) angle={angle_deg}")
-        result = await asyncio.to_thread(
-            robot_control.run_mcp_pick_and_place,
-            object_name, x, y, z, angle=angle_deg, detections=detections
-        )
-        return [TextContent(type="text", text=f"Completed: {result}")]
+        try:
+            result = await asyncio.to_thread(
+                robot_control.run_mcp_pick_and_place,
+                object_name, x, y, z, angle=angle_deg, detections=detections
+            )
+            return [TextContent(type="text", text=f"Completed: {result}")]
+        except Exception as e:
+            import traceback
+            logger.error(f"Error in move_to_coordinates: {e}\n{traceback.format_exc()}")
+            return [TextContent(type="text", text=json.dumps({"status": "error", "message": str(e)}))]
 
     if name == "relocate_object":
         obstacle_name  = args.get("obstacle_name")
@@ -246,16 +256,21 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             f"({obstacle_x}, {obstacle_y}, {obstacle_z}) angle={obstacle_angle} target={target_name}"
         )
 
-        result = await asyncio.to_thread(
-            robot_control.run_mcp_relocate_object,
-            obstacle_name=obstacle_name,
-            obstacle_x=obstacle_x,
-            obstacle_y=obstacle_y,
-            obstacle_z=obstacle_z,
-            obstacle_angle=obstacle_angle,
-            detections=detections,
-            target_name=target_name,
-        )
+        try:
+            result = await asyncio.to_thread(
+                robot_control.run_mcp_relocate_object,
+                obstacle_name=obstacle_name,
+                obstacle_x=obstacle_x,
+                obstacle_y=obstacle_y,
+                obstacle_z=obstacle_z,
+                obstacle_angle=obstacle_angle,
+                detections=detections,
+                target_name=target_name,
+            )
+        except Exception as e:
+            import traceback
+            logger.error(f"Error in relocate_object: {e}\n{traceback.format_exc()}")
+            return [TextContent(type="text", text=json.dumps({"status": "error", "message": str(e)}))]
 
         # Robot signals it needs a fresh detection before Qwen plans next action.
         # The MCP server triggers the YOLO re-photograph here so Qwen automatically
