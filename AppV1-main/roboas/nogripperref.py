@@ -421,7 +421,6 @@ MCP_DYNAMIC_OBSTACLES = []
 # They are NOT valid pick targets, but they reserve area inside the box so
 # the drop planner avoids overlapping them.
 MCP_PLACEMENT_BOX_DETECTIONS = []
-PERSISTENT_PLACED_OBJECTS = []
 
 # Keep normal MCP operation quiet. Only these two diagnostics are printed:
 #   1) first pickup coordinate
@@ -2033,10 +2032,7 @@ def preplan_all_drop_slots(pick_sequence):
     """
     PLACED_OBJECTS.clear()
     
-    # 1. Load memory of previously placed objects (cross-session memory)
-    for slot in PERSISTENT_PLACED_OBJECTS:
-        if slot not in PLACED_OBJECTS:
-            PLACED_OBJECTS.append(slot)
+
 
     # 2. Load any newly detected objects physically inside the box
     _load_mcp_placement_occupancy_into_planner()
@@ -3066,10 +3062,6 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
     execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
 
     if not MCP_IS_RELOCATING:
-        slot = seq_item["object"].get("_planned_drop_slot")
-        if slot and slot not in PERSISTENT_PLACED_OBJECTS:
-            PERSISTENT_PLACED_OBJECTS.append(slot)
-            
         if ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("pick_and_place_completed")
 
@@ -3327,7 +3319,7 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
     (grasp_A or grasp_B). When provided, x/y/z already point to that exact
     end and catalogue offsets are confirmed zero so nothing shifts the position.
     """
-    global MCP_DYNAMIC_OBSTACLES, MCP_PLACEMENT_BOX_DETECTIONS, PERSISTENT_PLACED_OBJECTS
+    global MCP_DYNAMIC_OBSTACLES, MCP_PLACEMENT_BOX_DETECTIONS
 
     MCP_DYNAMIC_OBSTACLES = []
     MCP_PLACEMENT_BOX_DETECTIONS = []
