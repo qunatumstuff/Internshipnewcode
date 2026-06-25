@@ -2627,7 +2627,7 @@ def execute_joint_transit(r, start_pose, end_pose, label=""):
     execute_trajectory(r, transit_path, label=label)
 
 
-def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_speed=None):
+def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_speed=None, is_blending=True):
     """
     Execute a linear trajectory via ONE blended move_linear command.
 
@@ -2646,8 +2646,8 @@ def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_sp
     try:
         r.move_linear(
             speed=apply_speed,
-            blending=True,
-            blend_radius=BLEND_RADIUS,
+            blending=is_blending,
+            blend_radius=BLEND_RADIUS if is_blending else 0.0,
             controller_parameters={"control_mode": "position"},
             target_pose=trajectory,
             )
@@ -3027,7 +3027,7 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
     execute_joint_transit(r, home, lift_pick_forward, label="Phase 1 transit — Home -> lift_pick_forward")
 
     
-    execute_trajectory(r, phase1_rotate, label="Phase 1 wrist rotate — forward -> grip angle", custom_speed=0.5)
+    execute_trajectory(r, phase1_rotate, label="Phase 1 wrist rotate — forward -> grip angle", custom_speed=0.5, is_blending=False)
     time.sleep(0.3)
 
     # Open 30% larger than the object before descending.
@@ -3040,9 +3040,9 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
 
     execute_trajectory(r, phase2_depart, label="Phase 2 depart — pick_pose -> lift_pick")
     
-    execute_trajectory(r, phase2_reorient, label="Phase 2 reorient — pick angle -> forward", custom_speed=0.5)
+    execute_trajectory(r, phase2_reorient, label="Phase 2 reorient — pick angle -> forward", custom_speed=0.5, is_blending=False)
     execute_joint_transit(r, lift_pick_forward_after, lift_drop, label="Phase 2 transit — pick_forward -> drop_forward")
-    execute_trajectory(r, [lift_drop, lift_drop_grip], label="Phase 2 reorient — forward -> drop angle", custom_speed=0.5)
+    execute_trajectory(r, [lift_drop, lift_drop_grip], label="Phase 2 reorient — forward -> drop angle", custom_speed=0.5, is_blending=False)
     
     execute_trajectory(r, phase2_approach, label="Phase 2 approach — lift_drop -> drop_pose")
     gripper_release_object(OBJECT_GRIP_WIDTH_M)
@@ -3051,7 +3051,7 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
 
     execute_trajectory(r, phase3_depart, label="Phase 3 depart — drop_pose -> lift_drop")
     
-    execute_trajectory(r,[lift_drop_grip, lift_drop],label="Phase 3 reorient — grip angle -> forward", custom_speed=0.5)
+    execute_trajectory(r,[lift_drop_grip, lift_drop],label="Phase 3 reorient — grip angle -> forward", custom_speed=0.5, is_blending=False)
 
     if MCP_IS_RELOCATING:
         execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
