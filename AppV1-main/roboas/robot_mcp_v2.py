@@ -22,7 +22,7 @@ logger = logging.getLogger("robot-mcp")
 # as this RoboControl file when running on the robot PC.
 # ------------------------------------------------------------
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-ROBOT_CONTROL_PATH = os.path.join(THIS_DIR, "nogripperref.py")
+ROBOT_CONTROL_PATH = os.path.join(THIS_DIR, "nogripperref_v2.py")
 
 spec = importlib.util.spec_from_file_location("robot_control", ROBOT_CONTROL_PATH)
 robot_control = importlib.util.module_from_spec(spec)
