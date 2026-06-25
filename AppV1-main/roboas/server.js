@@ -429,6 +429,7 @@ function getReasoningLevel(question) {
 
 // Map to keep track of active operations and their completion promises/resolvers
 let activeOperations = new Map();
+let robotCompletionQueue = [];
 
 function waitForRobotEvent(timeoutMs = 300000) {
   return new Promise((resolve, reject) => {
@@ -437,12 +438,12 @@ function waitForRobotEvent(timeoutMs = 300000) {
     const timer = setTimeout(() => {
       if (!resolved) {
         resolved = true;
-        activeOperations.delete('robot_completion');
+        robotCompletionQueue = robotCompletionQueue.filter(cb => cb !== callback);
         reject(new Error("Timeout waiting for robot completion event."));
       }
     }, timeoutMs);
 
-    activeOperations.set('robot_completion', (data) => {
+    const callback = (data) => {
       if (!resolved) {
         resolved = true;
         clearTimeout(timer);
@@ -452,7 +453,9 @@ function waitForRobotEvent(timeoutMs = 300000) {
           resolve(data);
         }
       }
-    });
+    };
+    
+    robotCompletionQueue.push(callback);
   });
 }
 
@@ -466,10 +469,9 @@ app.post('/robot-event', (req, res) => {
     sendProgress(null, true, "I will pick up the requested object now after relocating.");
   }
 
-  if (activeOperations.has('robot_completion')) {
-    const resolve = activeOperations.get('robot_completion');
-    activeOperations.delete('robot_completion');
-    resolve({ event, error });
+  if (robotCompletionQueue.length > 0) {
+    const resolveCb = robotCompletionQueue.shift();
+    resolveCb({ event, error });
   }
 
   res.json({ success: true });
