@@ -125,6 +125,12 @@ async function startVisionMcpClient() {
     await visionMcpClient.connect(transport);
     isVisionConnected = true;
     console.log(`✅ \x1b[32mVision MCP Server connected via SSE at ${LAPTOP_B_IP}:8001\x1b[0m`);
+    // Detect silent SSE connection drops
+    visionMcpClient.onclose = () => {
+      console.error("⚠️ Vision MCP SSE connection dropped! Will auto-reconnect...");
+      isVisionConnected = false;
+      visionMcpClient = null;
+    };
   } catch (err) {
     console.error(`❌ \x1b[31mFailed to bind Vision MCP Client at ${LAPTOP_B_IP}:\x1b[0m`, err.message);
     isVisionConnected = false;
@@ -144,6 +150,12 @@ async function startRobotMcpClient() {
     await robotMcpClient.connect(transport);
     isRobotConnected = true;
     console.log(`✅ \x1b[32mRobot MCP Server connected via SSE at ${LAPTOP_B_IP}:8002\x1b[0m`);
+    // Detect silent SSE connection drops
+    robotMcpClient.onclose = () => {
+      console.error("⚠️ Robot MCP SSE connection dropped! Will auto-reconnect...");
+      isRobotConnected = false;
+      robotMcpClient = null;
+    };
   } catch (err) {
     console.error("❌ \x1b[31mFailed to bind Robot MCP Client:\x1b[0m", err.message);
     isRobotConnected = false;
@@ -166,7 +178,7 @@ setInterval(() => {
     console.log("🔌 Attempting to reconnect to Robot MCP Server...");
     startRobotMcpClient();
   }
-}, 10000);
+}, 5000);
 
 async function getStatusEmoji(state) {
   if (!mcpEmojiClient) return state === "answering" ? "🤖" : "🤗";
@@ -1143,6 +1155,12 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           logToolCall(question, "locate_object", args, "Orchestrating autonomous scan & pick in background...");
           sendProgress(`Initiating workspace scan for "${args.target_name}"...`, true);
           
+          // Auto-reconnect Vision MCP if connection dropped
+          if (!visionMcpClient) {
+            console.log("🔌 Vision MCP not connected — attempting immediate reconnect...");
+            await startVisionMcpClient();
+          }
+
           if (visionMcpClient) {
             // Fire-and-forget background pipeline
             visionMcpClient.callTool({ 
