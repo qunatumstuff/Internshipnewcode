@@ -1,460 +1,6 @@
 [
   {
-    "timestamp": "2026-06-25T04:54:42.656Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I have finished picking and placing the requested object, black marker.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-25T04:55:31.089Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_request",
-    "args": {
-      "size": 33286,
-      "mimetype": "audio/webm"
-    },
-    "result": "Transcription request received."
-  },
-  {
-    "timestamp": "2026-06-25T04:55:33.422Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_success",
-    "args": {},
-    "result": "Transcription result: \"Need help with plumbing?\""
-  },
-  {
-    "timestamp": "2026-06-25T04:55:33.459Z",
-    "userQuestion": "Need help with plumbing?",
-    "toolName": "ask-gpt_prompt",
-    "args": {},
-    "result": "GPT request received."
-  },
-  {
-    "timestamp": "2026-06-25T04:55:35.227Z",
-    "userQuestion": "Need help with plumbing?",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "pipe"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
-    "timestamp": "2026-06-25T04:55:35.236Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Initiating workspace scan for \"pipe\"...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-25T04:55:35.254Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-25T04:55:35.264Z",
-    "userQuestion": "Need help with plumbing?",
-    "toolName": "ask-gpt_response",
-    "args": {
-      "persona": "john",
-      "emoji": "🤖"
-    },
-    "result": "I am checking the workspace for the pipe. Once the path is clear, I will pick it up for you."
-  },
-  {
-    "timestamp": "2026-06-25T04:55:35.292Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I am checking the workspace for the pipe. Once the path is clear, I will pick it up for you."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-25T04:55:36.191Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I am checking the workspace for the pipe. Once the path is clear, I will pick it up for you.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-25T04:57:05.502Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": true,
-      "hasTts": true
-    },
-    "result": "I will pick up the requested object now after relocating."
-  },
-  {
-    "timestamp": "2026-06-25T04:57:05.640Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I will pick up the requested object now after relocating."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-25T04:57:06.639Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I will pick up the requested object now after relocating.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-25T04:57:32.078Z",
-    "userQuestion": "Need help with plumbing?",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "pipe"
-    },
-    "result": "Target located"
-  },
-  {
-    "timestamp": "2026-06-25T04:57:32.085Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Target \"pipe\" clear! Instructing robot to pick it up...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-25T04:58:39.985Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Successfully picked up the pipe!",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-25T04:58:42.995Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": false,
-      "hasTts": true
-    },
-    "result": "I have finished picking and placing the requested object, pipe."
-  },
-  {
-    "timestamp": "2026-06-25T04:58:43.032Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I have finished picking and placing the requested object, pipe."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-25T04:58:44.313Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I have finished picking and placing the requested object, pipe.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-25T04:59:10.530Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Robot pick error: Timeout waiting for robot completion event.",
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-25T04:59:15.538Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": false,
-      "hasTts": true
-    },
-    "result": "Sorry, I could not complete the action because: Timeout waiting for robot completion event."
-  },
-  {
-    "timestamp": "2026-06-25T04:59:15.568Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "Sorry, I could not complete the action because: Timeout waiting for robot completion event."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-25T04:59:16.351Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "Sorry, I could not complete the action because: Timeout waiting for robot completion event.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-25T05:02:12.985Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Robot pick error: Timeout waiting for robot completion event.",
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-25T05:02:18.005Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": false,
-      "hasTts": true
-    },
-    "result": "Sorry, I could not complete the action because: Timeout waiting for robot completion event."
-  },
-  {
-    "timestamp": "2026-06-25T05:02:18.050Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "Sorry, I could not complete the action because: Timeout waiting for robot completion event."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-25T05:02:19.346Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "Sorry, I could not complete the action because: Timeout waiting for robot completion event.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-25T05:12:12.050Z",
-    "userQuestion": "System Command",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "john"
-    },
-    "result": "switched to john"
-  },
-  {
-    "timestamp": "2026-06-25T05:12:12.056Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-25T05:12:12.065Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "idle"
-    },
-    "result": "updated to 🤗"
-  },
-  {
-    "timestamp": "2026-06-25T05:12:12.661Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?"
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-25T05:12:13.675Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-25T05:12:30.067Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_request",
-    "args": {
-      "size": 17257,
-      "mimetype": "audio/webm"
-    },
-    "result": "Transcription request received."
-  },
-  {
-    "timestamp": "2026-06-25T05:12:32.285Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_success",
-    "args": {},
-    "result": "Transcription result: \"I am sick.\""
-  },
-  {
-    "timestamp": "2026-06-25T05:12:32.336Z",
-    "userQuestion": "I am sick.",
-    "toolName": "ask-gpt_prompt",
-    "args": {},
-    "result": "GPT request received."
-  },
-  {
-    "timestamp": "2026-06-25T05:12:34.267Z",
-    "userQuestion": "I am sick.",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "medicine"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
-    "timestamp": "2026-06-25T05:12:34.275Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Initiating workspace scan for \"medicine\"...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-25T05:12:34.287Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-25T05:12:34.291Z",
-    "userQuestion": "I am sick.",
-    "toolName": "ask-gpt_response",
-    "args": {
-      "persona": "john",
-      "emoji": "🤖"
-    },
-    "result": "I am checking the workspace for the medicine. Once the path is clear, I will pick it up for you."
-  },
-  {
-    "timestamp": "2026-06-25T05:12:34.344Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I am checking the workspace for the medicine. Once the path is clear, I will pick it up for you."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-25T05:12:35.081Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I am checking the workspace for the medicine. Once the path is clear, I will pick it up for you.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-25T05:14:00.427Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": true,
-      "hasTts": true
-    },
-    "result": "I will pick up the requested object now after relocating."
-  },
-  {
-    "timestamp": "2026-06-25T05:14:00.529Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I will pick up the requested object now after relocating."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-25T05:14:01.632Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I will pick up the requested object now after relocating.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-25T05:14:32.311Z",
-    "userQuestion": "I am sick.",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "medicine"
-    },
-    "result": "Target located"
-  },
-  {
-    "timestamp": "2026-06-25T05:14:32.317Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Target \"medicine\" clear! Instructing robot to pick it up...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-25T05:15:58.517Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Successfully picked up the medicine!",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-25T05:16:01.539Z",
+    "timestamp": "2026-06-25T07:44:39.328Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
@@ -465,7 +11,7 @@
     "result": "I have finished picking and placing the requested object, medicine."
   },
   {
-    "timestamp": "2026-06-25T05:16:01.681Z",
+    "timestamp": "2026-06-25T07:44:39.431Z",
     "userQuestion": "System Event",
     "toolName": "tts_request",
     "args": {
@@ -474,11 +20,443 @@
     "result": "Generating TTS..."
   },
   {
-    "timestamp": "2026-06-25T05:16:03.524Z",
+    "timestamp": "2026-06-25T07:44:41.542Z",
     "userQuestion": "System Event",
     "toolName": "tts_success",
     "args": {
       "text": "I have finished picking and placing the requested object, medicine.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-25T07:45:18.704Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 45759,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-25T07:45:22.302Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"Um, avatar, wait a second.\""
+  },
+  {
+    "timestamp": "2026-06-25T07:45:22.433Z",
+    "userQuestion": "Um, avatar, wait a second.",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-06-25T07:45:25.405Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-06-25T07:45:25.412Z",
+    "userQuestion": "Um, avatar, wait a second.",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-06-25T07:45:26.947Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-25T07:45:26.950Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-25T07:45:26.966Z",
+    "userQuestion": "Um, avatar, wait a second.",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "john",
+      "emoji": "🤖"
+    },
+    "result": "Sure, take your time. I’ll wait here."
+  },
+  {
+    "timestamp": "2026-06-25T07:45:27.052Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Sure, take your time. I’ll wait here."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-25T07:45:29.231Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Sure, take your time. I’ll wait here.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-25T07:45:32.306Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 13832,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-25T07:46:04.376Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"\""
+  },
+  {
+    "timestamp": "2026-06-25T07:46:28.024Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 133417,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-25T07:46:31.971Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"Yes. Can you be female? Maybe Linda, sorry. Something building. Of course, usually this kind of stuff.\""
+  },
+  {
+    "timestamp": "2026-06-25T07:46:32.015Z",
+    "userQuestion": "Yes. Can you be female? Maybe Linda, sorry. Someth...",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-06-25T07:46:34.324Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "linda"
+    },
+    "result": "switched to linda"
+  },
+  {
+    "timestamp": "2026-06-25T07:46:34.329Z",
+    "userQuestion": "Yes. Can you be female? Maybe Linda, sorry. Someth...",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "linda"
+    },
+    "result": "switched to linda"
+  },
+  {
+    "timestamp": "2026-06-25T07:46:35.591Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-25T07:46:35.594Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-25T07:46:35.606Z",
+    "userQuestion": "Yes. Can you be female? Maybe Linda, sorry. Someth...",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "linda",
+      "emoji": "🤖"
+    },
+    "result": "Of course, Linda it is. What would you like help with?"
+  },
+  {
+    "timestamp": "2026-06-25T07:46:35.645Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Of course, Linda it is. What would you like help with?"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-25T07:46:36.487Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Of course, Linda it is. What would you like help with?",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-25T07:46:54.291Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 143224,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-25T07:46:58.985Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"Info lags somewhat. Okay guys, any other questions? Linda, can you pick up nuts and?\""
+  },
+  {
+    "timestamp": "2026-06-25T07:46:59.019Z",
+    "userQuestion": "Info lags somewhat. Okay guys, any other questions...",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-06-25T07:47:20.879Z",
+    "userQuestion": "Info lags somewhat. Okay guys, any other questions...",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "nut"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-25T07:47:20.887Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Initiating workspace scan for \"nut\"...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-25T07:47:20.903Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-25T07:47:20.916Z",
+    "userQuestion": "Info lags somewhat. Okay guys, any other questions...",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "linda",
+      "emoji": "🤖"
+    },
+    "result": "I am checking the workspace for the nut. Once the path is clear, I will pick it up for you."
+  },
+  {
+    "timestamp": "2026-06-25T07:47:20.962Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I am checking the workspace for the nut. Once the path is clear, I will pick it up for you."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-25T07:47:23.131Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I am checking the workspace for the nut. Once the path is clear, I will pick it up for you.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-25T07:47:42.363Z",
+    "userQuestion": "Info lags somewhat. Okay guys, any other questions...",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "nut"
+    },
+    "result": "Target located"
+  },
+  {
+    "timestamp": "2026-06-25T07:47:42.369Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Target \"nut\" clear! Instructing robot to pick it up...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-25T07:49:12.354Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Successfully picked up the nut!",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-25T07:49:15.364Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": true
+    },
+    "result": "I have finished picking and placing the requested object, nut."
+  },
+  {
+    "timestamp": "2026-06-25T07:49:15.515Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I have finished picking and placing the requested object, nut."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-25T07:49:16.721Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I have finished picking and placing the requested object, nut.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-25T07:49:37.080Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 167338,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-25T07:49:50.170Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_error",
+    "args": {},
+    "result": "Transcription failed: {\"error\":{\"message\":\"The engine is currently overloaded. Please try again later.\",\"type\":\"server_error\",\"param\":null,\"code\":null},\"usage\":{\"type\":\"duration\",\"seconds\":0}}"
+  },
+  {
+    "timestamp": "2026-06-25T07:50:02.409Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 158149,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-25T07:50:12.064Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"And you can see it saves costs because it makes things more scalable. Think of not just Roboas arms, but we can also connect...\""
+  },
+  {
+    "timestamp": "2026-06-25T07:50:12.100Z",
+    "userQuestion": "And you can see it saves costs because it makes th...",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-06-25T07:50:14.019Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-25T07:50:14.026Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-25T07:50:14.038Z",
+    "userQuestion": "And you can see it saves costs because it makes th...",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "linda",
+      "emoji": "🤖"
+    },
+    "result": "Got it. Do you want me to help with the next step, or should I pick up the nut now?"
+  },
+  {
+    "timestamp": "2026-06-25T07:50:14.172Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Got it. Do you want me to help with the next step, or should I pick up the nut now?"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-25T07:50:16.417Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Got it. Do you want me to help with the next step, or should I pick up the nut now?",
       "attempt": 1
     },
     "result": "OpenAI TTS generated successfully."
