@@ -90,24 +90,16 @@ MAX_PLANNING_ITERATIONS = 5
 # to determine if an object is stacked on another.
 # ==========================================
 OBJECT_CATALOGUE = {
+    "yellow cube":  {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
+    "blue cube":    {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
+    "green cube":   {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
+    "red cube":     {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
+    "nut":          {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
     "black marker": {"size": "134 x 20.53 x 20.53 mm", "height_m": 0.02053,
                      "length_m": 0.134,   "breadth_m": 0.02053},
-    "blue marker":  {"size": "134 x 20.53 x 20.53 mm", "height_m": 0.02053,
-                     "length_m": 0.134,   "breadth_m": 0.02053},
-    "cube":         {"size": "40 x 40 x 40 mm",         "height_m": 0.040,
-                     "length_m": 0.040,   "breadth_m": 0.040},
-    "green marker": {"size": "134 x 20.53 x 20.53 mm",  "height_m": 0.02053,
-                     "length_m": 0.134,   "breadth_m": 0.02053},
-    "medicine":     {"size": "115.72 x 51.17 x 18.95 mm","height_m": 0.01895,
-                     "length_m": 0.11572, "breadth_m": 0.05117},
-    "nut":          {"size": "34.6 x 30 x 17 mm",        "height_m": 0.017,
-                     "length_m": 0.0346,  "breadth_m": 0.030},
-    "pipe":         {"size": "120 x 110 x 54.5 mm",      "height_m": 0.0545,
-                     "length_m": 0.120,   "breadth_m": 0.110,
-                     "notes": "Smart grasp via segmentation mask"},
-    "sponge":       {"size": "112.58 x 80 x 15.4 mm",    "height_m": 0.01540,
-                     "length_m": 0.11258, "breadth_m": 0.080,
-                     "notes": "Angled grasp configuration"},
+    "medicine":     {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
+    "sponge":       {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
+    "screwdriver":  {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
 }
 
 # Camera-to-robot base frame transformation matrix.
