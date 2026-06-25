@@ -955,7 +955,7 @@ ROBOTIC ARM — PICK AND PLACE RULES:
 - When the user asks you to pick up an object, you MUST simply call the 'locate_object' tool.
 - Once you call 'locate_object', the system will automatically find the coordinates and trigger the robot arm for you.
 - You do NOT need to call 'pick_and_place_object' yourself.
-- Approved objects the robot can pick: black marker, blue marker, cube, green marker, medicine, nut, pipe, sponge.
+- Approved objects the robot can pick: yellow cube, blue cube, green cube, red cube, nut, black marker, medicine, sponge, screwdriver.
 
 IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualContext
       },
@@ -993,7 +993,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                 target_name: { 
                   type: "string", 
                   description: "Name of the object to locate.", 
-                  enum: ["black marker", "blue marker", "cube", "green marker", "medicine", "nut", "pipe", "sponge"] 
+                  enum: ["yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"] 
                 }
               },
               required: ["target_name"]
@@ -1057,7 +1057,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                 object_name: {
                   type: "string",
                   description: "Object to pick.",
-                  enum: ["black marker", "blue marker", "cube", "green marker", "medicine", "nut", "pipe", "sponge"]
+                  enum: ["yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"]
                 },
                 x: { type: "number", description: "Robot-frame X in metres." },
                 y: { type: "number", description: "Robot-frame Y in metres." },
@@ -1079,7 +1079,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                 obstacle_name: {
                   type: "string",
                   description: "Name of the object to relocate.",
-                  enum: ["black marker", "blue marker", "cube", "green marker", "medicine", "nut", "pipe", "sponge"]
+                  enum: ["yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"]
                 },
                 obstacle_x: { type: "number", description: "Robot-frame X of obstacle in metres." },
                 obstacle_y: { type: "number", description: "Robot-frame Y of obstacle in metres." },

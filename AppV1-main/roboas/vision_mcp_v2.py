@@ -23,7 +23,7 @@ import uvicorn
 
 # Import camera.py — hardware layer.
 # Provides: current_rgb_frame, get_camera_snapshot(), vision_loop()
-import camera_v2 as camera
+import camera
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("vision-mcp")
@@ -90,13 +90,13 @@ MAX_PLANNING_ITERATIONS = 5
 # to determine if an object is stacked on another.
 # ==========================================
 OBJECT_CATALOGUE = {
-    "black marker": {"size": "134 x 20.53 x 20.53 mm", "height_m": 0.02053,
-                     "length_m": 0.134,   "breadth_m": 0.02053},
     "yellow cube":  {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
     "blue cube":    {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
     "green cube":   {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
     "red cube":     {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
     "nut":          {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
+    "black marker": {"size": "134 x 20.53 x 20.53 mm", "height_m": 0.02053,
+                     "length_m": 0.134,   "breadth_m": 0.02053},
     "medicine":     {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
     "sponge":       {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
     "screwdriver":  {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
@@ -216,13 +216,13 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
     """
     Run detection on all catalogue objects using a two-pass approach:
 
-    Pass 1 — OBB model (best (11).pt) on the full image:
+    Pass 1 — OBB model (best16.pt) on the full image:
         Detects all objects and extracts their trained orientation angle.
         For non-pipe/sponge objects this also gives the final centre position.
         For pipe and sponge, we keep only the OBB angle here and use
         segmentation for their centre/endpoint positions in Pass 2.
 
-    Pass 2 — Segmentation model (best (12).pt) for pipe and sponge:
+    Pass 2 — Segmentation model (best13.pt) for pipe and sponge:
         Gets accurate mask-based centre/endpoint positions.
         Uses the OBB angle from Pass 1 for orientation (more reliable than
         minAreaRect on a complex L-shaped or flat contour).
