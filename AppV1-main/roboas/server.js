@@ -74,22 +74,31 @@ function logToolCall(userQuestion, toolName, args, result) {
 // === MCP Emoji Server Client ===
 let mcpEmojiClient = null;
 let isEmojiConnected = false;
+let emojiConnectPromise = null;
 async function startMcpClient() {
   if (isEmojiConnected) return;
-  try {
-    const transport = new StdioClientTransport({
-      command: "python",
-      args: [path.join(__dirname, "mcp_emoji_server.py")]
-    });
-    mcpEmojiClient = new Client({ name: "roboas-main", version: "1.0.0" }, { capabilities: {} });
-    await mcpEmojiClient.connect(transport);
-    isEmojiConnected = true;
-    console.log("✅ \x1b[32mMCP Emoji Server (Python) connected via Stdio\x1b[0m");
-  } catch (err) {
-    console.error("❌ \x1b[31mFailed to bind MCP Client:\x1b[0m", err.message);
-    isEmojiConnected = false;
-    mcpEmojiClient = null;
-  }
+  if (emojiConnectPromise) return emojiConnectPromise;
+  
+  emojiConnectPromise = (async () => {
+    try {
+      const transport = new StdioClientTransport({
+        command: "python",
+        args: [path.join(__dirname, "mcp_emoji_server.py")]
+      });
+      const client = new Client({ name: "roboas-main", version: "1.0.0" }, { capabilities: {} });
+      await client.connect(transport);
+      mcpEmojiClient = client;
+      isEmojiConnected = true;
+      console.log("✅ \x1b[32mMCP Emoji Server (Python) connected via Stdio\x1b[0m");
+    } catch (err) {
+      console.error("❌ \x1b[31mFailed to bind MCP Client:\x1b[0m", err.message);
+      isEmojiConnected = false;
+      mcpEmojiClient = null;
+    } finally {
+      emojiConnectPromise = null;
+    }
+  })();
+  return emojiConnectPromise;
 }
 startMcpClient();
 
@@ -117,50 +126,68 @@ function startWakeWordServer() {
 // === Vision MCP Server Client (Remote on Laptop B) ===
 let visionMcpClient = null;
 let isVisionConnected = false;
+let visionConnectPromise = null;
 async function startVisionMcpClient() {
   if (isVisionConnected) return;
-  try {
-    const transport = new SSEClientTransport(new URL(`http://${LAPTOP_B_IP}:8001/sse`));
-    visionMcpClient = new Client({ name: "roboas-main", version: "1.0.0" }, { capabilities: {} });
-    await visionMcpClient.connect(transport);
-    isVisionConnected = true;
-    console.log(`✅ \x1b[32mVision MCP Server connected via SSE at ${LAPTOP_B_IP}:8001\x1b[0m`);
-    // Detect silent SSE connection drops
-    visionMcpClient.onclose = () => {
-      console.error("⚠️ Vision MCP SSE connection dropped! Will auto-reconnect...");
+  if (visionConnectPromise) return visionConnectPromise;
+
+  visionConnectPromise = (async () => {
+    try {
+      const transport = new SSEClientTransport(new URL(`http://${LAPTOP_B_IP}:8001/sse`));
+      const client = new Client({ name: "roboas-main", version: "1.0.0" }, { capabilities: {} });
+      await client.connect(transport);
+      visionMcpClient = client;
+      isVisionConnected = true;
+      console.log(`✅ \x1b[32mVision MCP Server connected via SSE at ${LAPTOP_B_IP}:8001\x1b[0m`);
+      // Detect silent SSE connection drops
+      client.onclose = () => {
+        console.error("⚠️ Vision MCP SSE connection dropped! Will auto-reconnect...");
+        isVisionConnected = false;
+        visionMcpClient = null;
+      };
+    } catch (err) {
+      console.error(`❌ \x1b[31mFailed to bind Vision MCP Client at ${LAPTOP_B_IP}:\x1b[0m`, err.message);
       isVisionConnected = false;
       visionMcpClient = null;
-    };
-  } catch (err) {
-    console.error(`❌ \x1b[31mFailed to bind Vision MCP Client at ${LAPTOP_B_IP}:\x1b[0m`, err.message);
-    isVisionConnected = false;
-    visionMcpClient = null;
-  }
+    } finally {
+      visionConnectPromise = null;
+    }
+  })();
+  return visionConnectPromise;
 }
 startVisionMcpClient();
 
 // === Robot MCP Server Client (Local/Ethernet via SSE) ===
 let robotMcpClient = null;
 let isRobotConnected = false;
+let robotConnectPromise = null;
 async function startRobotMcpClient() {
   if (isRobotConnected) return;
-  try {
-    const transport = new SSEClientTransport(new URL(`http://${LAPTOP_B_IP}:8002/sse`));
-    robotMcpClient = new Client({ name: "roboas-robot-mcp", version: "1.0.0" }, { capabilities: {} });
-    await robotMcpClient.connect(transport);
-    isRobotConnected = true;
-    console.log(`✅ \x1b[32mRobot MCP Server connected via SSE at ${LAPTOP_B_IP}:8002\x1b[0m`);
-    // Detect silent SSE connection drops
-    robotMcpClient.onclose = () => {
-      console.error("⚠️ Robot MCP SSE connection dropped! Will auto-reconnect...");
+  if (robotConnectPromise) return robotConnectPromise;
+
+  robotConnectPromise = (async () => {
+    try {
+      const transport = new SSEClientTransport(new URL(`http://${LAPTOP_B_IP}:8002/sse`));
+      const client = new Client({ name: "roboas-robot-mcp", version: "1.0.0" }, { capabilities: {} });
+      await client.connect(transport);
+      robotMcpClient = client;
+      isRobotConnected = true;
+      console.log(`✅ \x1b[32mRobot MCP Server connected via SSE at ${LAPTOP_B_IP}:8002\x1b[0m`);
+      // Detect silent SSE connection drops
+      client.onclose = () => {
+        console.error("⚠️ Robot MCP SSE connection dropped! Will auto-reconnect...");
+        isRobotConnected = false;
+        robotMcpClient = null;
+      };
+    } catch (err) {
+      console.error("❌ \x1b[31mFailed to bind Robot MCP Client:\x1b[0m", err.message);
       isRobotConnected = false;
       robotMcpClient = null;
-    };
-  } catch (err) {
-    console.error("❌ \x1b[31mFailed to bind Robot MCP Client:\x1b[0m", err.message);
-    isRobotConnected = false;
-    robotMcpClient = null;
-  }
+    } finally {
+      robotConnectPromise = null;
+    }
+  })();
+  return robotConnectPromise;
 }
 startRobotMcpClient();
 

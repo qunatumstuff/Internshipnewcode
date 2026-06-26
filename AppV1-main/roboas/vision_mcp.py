@@ -894,6 +894,16 @@ async def call_robot_tool(tool_name: str, arguments: dict) -> dict:
     try:
         result = await loop.run_in_executor(None, fetch)
         logger.info(f"Robot MCP [{tool_name}]: {str(result)[:120]}")
+        
+        # Intercept string-based error messages returned gracefully from the robot server
+        res_data = result.get("result", {})
+        if isinstance(res_data, dict):
+            content = res_data.get("content", [])
+            if content and isinstance(content, list) and isinstance(content[0], dict):
+                text = content[0].get("text", "")
+                if isinstance(text, str) and text.startswith("Error:"):
+                    return {"error": text}
+                    
         return result
     except Exception as e:
         logger.error(f"Robot MCP call failed [{tool_name}]: {e}")

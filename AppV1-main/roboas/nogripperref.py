@@ -3553,10 +3553,10 @@ def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, tar
 
     Returns [x, y] or raises RuntimeError if no spot found.
     """
-    RELOCATION_CLEARANCE_M = 0.04   # minimum edge-to-edge gap from other objects
-    TARGET_CLEARANCE_M     = 0.08   # extra edge-to-edge clearance from target specifically
+    RELOCATION_CLEARANCE_M = 0.01   # minimum edge-to-edge gap from other objects
+    TARGET_CLEARANCE_M     = 0.01   # extra edge-to-edge clearance from target specifically
     GRID_STEP_M            = 0.02   # search grid resolution (finer grid)
-    BORDER_M               = 0.07   # minimum distance from workspace edge
+    BORDER_M               = 0.02   # minimum distance from workspace edge
 
     def get_effective_radius(obj_name):
         info = OBJECT_CATALOGUE.get(obj_name, {})
