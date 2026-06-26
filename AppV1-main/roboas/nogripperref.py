@@ -588,31 +588,42 @@ def select_object_profile_by_name(object_name):
 
     name = str(object_name).strip().lower()
 
-    marker_aliases = {
+    # Aliases: short names → canonical catalogue labels
+    aliases = {
+        "yellow": "yellow cube",
+        "blue": "blue cube",
+        "green": "green cube",
+        "red": "red cube",
         "marker": "black marker",
         "black": "black marker",
-        "blue": "blue marker",
-        "green": "green marker",
+        "med": "medicine",
+        "medicine box": "medicine",
+        "hex nut": "nut",
+        "hexagonal nut": "nut",
     }
-    name = marker_aliases.get(name, name)
+    name = aliases.get(name, name)
 
     match name:
+        case "yellow cube":
+            target_labels = {"yellow cube"}
+        case "blue cube":
+            target_labels = {"blue cube"}
+        case "green cube":
+            target_labels = {"green cube"}
+        case "red cube":
+            target_labels = {"red cube"}
         case "cube":
-            target_labels = {"cube"}
-        case "medicine" | "med":
-            target_labels = {"medicine"}
+            target_labels = {"yellow cube", "blue cube", "green cube", "red cube"}
         case "nut":
             target_labels = {"nut"}
-        case "pipe":
-            target_labels = {"pipe"}
-        case "sponge":
-            target_labels = {"sponge"}
         case "black marker":
             target_labels = {"black marker"}
-        case "blue marker":
-            target_labels = {"blue marker"}
-        case "green marker":
-            target_labels = {"green marker"}
+        case "medicine":
+            target_labels = {"medicine"}
+        case "sponge":
+            target_labels = {"sponge"}
+        case "screwdriver":
+            target_labels = {"screwdriver"}
         case _:
             target_labels = {name}
 
@@ -1919,11 +1930,19 @@ def _placement_score(x, y, length, width, selected_object=None, placement_angle_
     score += wall_gap_penalty
 
     if PLACED_OBJECTS:
-        nearest_obj = min(
-            ((x - obj["x"]) ** 2 + (y - obj["y"]) ** 2) ** 0.5
-            for obj in PLACED_OBJECTS
-        )
-        score -= nearest_obj * SMART_EXISTING_OBJECT_SPREAD_WEIGHT
+        # Calculate minimum edge-to-edge distance for spreading
+        nearest_edge_dist = 999.0
+        for obj in PLACED_OBJECTS:
+            center_dist = math.hypot(x - obj["x"], y - obj["y"])
+            # Approximate the radius of both candidate and placed object
+            cand_radius = math.hypot(length, width) / 2.0
+            obj_radius = math.hypot(obj["length_m"], obj["width_m"]) / 2.0
+            
+            edge_dist = center_dist - cand_radius - obj_radius
+            if edge_dist < nearest_edge_dist:
+                nearest_edge_dist = edge_dist
+                
+        score -= nearest_edge_dist * SMART_EXISTING_OBJECT_SPREAD_WEIGHT
 
     return score
 
@@ -3089,24 +3108,26 @@ def mcp_find_object_profile(object_name):
     name = str(object_name or "").strip().lower()
 
     match name:
-        case "cube" | "box" | "unknown_blocker":
+        case "yellow cube" | "yellow":
+            keys = ["1"]
+        case "blue cube" | "blue":
+            keys = ["2"]
+        case "green cube" | "green":
             keys = ["3"]
-        case "medicine" | "medicine box" | "med":
-            keys = ["5"]
+        case "red cube" | "red":
+            keys = ["4"]
+        case "cube" | "box" | "unknown_blocker":
+            keys = ["1", "2", "3", "4"]
         case "nut" | "hex nut" | "hexagonal nut":
+            keys = ["5"]
+        case "black marker" | "black" | "marker":
             keys = ["6"]
-        case "pipe" | "elbow pipe":
+        case "medicine" | "medicine box" | "med":
             keys = ["7"]
         case "sponge":
             keys = ["8"]
-        case "black marker" | "black":
-            keys = ["1"]
-        case "blue marker" | "blue":
-            keys = ["2"]
-        case "green marker" | "green":
-            keys = ["4"]
-        case "marker":
-            keys = ["1", "2", "4"]
+        case "screwdriver":
+            keys = ["9"]
         case _:
             keys = []
 
@@ -3125,7 +3146,7 @@ def mcp_find_object_profile(object_name):
 
     raise ValueError(
         f"Unsupported object_name={object_name!r}. "
-        "Use cube, medicine, nut, pipe, sponge, black marker, blue marker, green marker, or unknown_blocker."
+        "Use yellow cube, blue cube, green cube, red cube, nut, black marker, medicine, sponge, screwdriver, or unknown_blocker."
     )
 
 
@@ -3532,10 +3553,18 @@ def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, tar
 
     Returns [x, y] or raises RuntimeError if no spot found.
     """
-    RELOCATION_CLEARANCE_M = 0.08   # minimum gap from other objects (reduced from 0.12 to find more central options)
-    TARGET_CLEARANCE_M     = 0.15   # extra clearance from target specifically (prevents overlap warning trigger)
+    RELOCATION_CLEARANCE_M = 0.04   # minimum edge-to-edge gap from other objects
+    TARGET_CLEARANCE_M     = 0.08   # extra edge-to-edge clearance from target specifically
     GRID_STEP_M            = 0.02   # search grid resolution (finer grid)
-    BORDER_M               = 0.07   # minimum distance from workspace edge (increased from 0.04 to avoid boundary singularities/joint limits)
+    BORDER_M               = 0.07   # minimum distance from workspace edge
+
+    def get_effective_radius(obj_name):
+        info = OBJECT_CATALOGUE.get(obj_name, {})
+        l = float(info.get("length_m", 0.04))
+        w = float(info.get("breadth_m", 0.04))
+        return math.hypot(l, w) / 2.0
+
+    obs_radius = get_effective_radius(obstacle_name)
 
     # Build list of positions to avoid: all detections + obstacle's own position.
     avoid = []
@@ -3544,11 +3573,12 @@ def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, tar
         det_name = det.get("object_name")
         det_x = float(det.get("x", 0))
         det_y = float(det.get("y", 0))
+        det_radius = get_effective_radius(det_name)
         if target_name and det_name == target_name:
-            target_positions.append((det_x, det_y))
+            target_positions.append((det_x, det_y, det_radius))
         else:
-            avoid.append((det_x, det_y))
-    avoid.append((float(obstacle_x), float(obstacle_y)))
+            avoid.append((det_x, det_y, det_radius))
+    avoid.append((float(obstacle_x), float(obstacle_y), obs_radius))
 
     best_score = -1
     best_xy = None
@@ -3567,28 +3597,30 @@ def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, tar
 
             # Check clearance from all regular objects.
             too_close = False
-            for (ox, oy) in avoid:
-                if math.hypot(x - ox, y - oy) < RELOCATION_CLEARANCE_M:
+            for (ox, oy, oradius) in avoid:
+                edge_dist = math.hypot(x - ox, y - oy) - obs_radius - oradius
+                if edge_dist < RELOCATION_CLEARANCE_M:
                     too_close = True
                     break
 
             # Check clearance from target specifically.
             if not too_close:
-                for (tx, ty) in target_positions:
-                    if math.hypot(x - tx, y - ty) < TARGET_CLEARANCE_M:
+                for (tx, ty, tradius) in target_positions:
+                    edge_dist = math.hypot(x - tx, y - ty) - obs_radius - tradius
+                    if edge_dist < TARGET_CLEARANCE_M:
                         too_close = True
                         break
 
             if not too_close:
-                min_dist = min(
-                    (math.hypot(x - ox, y - oy) for ox, oy in avoid),
+                min_edge_dist = min(
+                    (math.hypot(x - ox, y - oy) - obs_radius - oradius for ox, oy, oradius in avoid),
                     default=999.0
                 )
-                target_min_dist = min(
-                    (math.hypot(x - tx, y - ty) for tx, ty in target_positions),
+                target_min_edge_dist = min(
+                    (math.hypot(x - tx, y - ty) - obs_radius - tradius for tx, ty, tradius in target_positions),
                     default=999.0
                 )
-                score = min(min_dist, target_min_dist)
+                score = min(min_edge_dist, target_min_edge_dist)
                 if score > best_score:
                     best_score = score
                     best_xy = [x, y]

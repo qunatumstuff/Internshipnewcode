@@ -690,23 +690,49 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
                 plausible.append(obj_name)
 
         if d["object_name"] == target:
-            # TARGET has an anomalously high surface Z.
-            lines.append(
-                f"  - CAUTION: Target '{target}' has an anomalously high surface (Z={d['z']*1000:.0f}mm). "
-                f"Look at the image carefully. If you see a smaller object (like a 'cube') resting on top of OR inside/blocking the {target}, you MUST output 'relocate' for that object."
-            )
+            # TARGET is elevated — it's sitting ON something else.
+            # Check if any nearby object has HIGHER Z (i.e., something is on top of the target).
+            blocker_on_top = None
+            if target_det:
+                for other in detections:
+                    if other["object_name"] == target or is_inside_placement_box(other):
+                        continue
+                    odist = math.hypot(other["x"] - target_det["x"], other["y"] - target_det["y"])
+                    if odist < 0.080 and other["z"] > d["z"]:
+                        blocker_on_top = other["object_name"]
+                        break
+            if blocker_on_top:
+                lines.append(
+                    f"  - WARNING: Target '{target}' is elevated (Z={d['z']*1000:.0f}mm) "
+                    f"AND '{blocker_on_top}' has even higher Z, likely ON TOP of the target. "
+                    f"MUST relocate {blocker_on_top} first."
+                )
+            else:
+                lines.append(
+                    f"  - INFO: Target '{target}' is elevated (Z={d['z']*1000:.0f}mm) "
+                    f"but has the highest Z among nearby objects. Target is ON TOP and accessible. "
+                    f"Safe to pick directly."
+                )
         else:
             # NON-TARGET is elevated — check if it might be sitting ON the target
             # Only flag as block if it is physically close/overlapping in XY to the target
+            # AND the non-target has HIGHER Z than the target (it's on top)
             dist = 9999.0
+            target_z = target_det["z"] if target_det else 0.0
             if target_det:
                 dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
 
-            if dist < 0.080 and target in plausible:
+            if dist < 0.080 and target in plausible and d["z"] > target_z:
                 lines.append(
-                    f"  - WARNING: {d['object_name']} is elevated (Z={d['z']*1000:.0f}mm) "
+                    f"  - WARNING: {d['object_name']} is elevated (Z={d['z']*1000:.0f}mm, target Z={target_z*1000:.0f}mm) "
                     f"and is likely sitting ON TOP OF target '{target}'. "
                     f"MUST relocate {d['object_name']} first."
+                )
+            elif dist < 0.080 and target in plausible and d["z"] <= target_z:
+                lines.append(
+                    f"  - INFO: {d['object_name']} is elevated (Z={d['z']*1000:.0f}mm) "
+                    f"but target '{target}' has higher Z ({target_z*1000:.0f}mm). "
+                    f"Target is ON TOP and accessible. Safe to pick directly."
                 )
             elif plausible:
                 lines.append(
@@ -740,7 +766,18 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
                 continue
             if check_overlap_obb(d, target_det, clearance=0.015):
                 overlap_found = True
-                lines.append(f"  - WARNING: {d['object_name']} overlaps with target {target}.")
+                if d["z"] > target_det["z"]:
+                    lines.append(
+                        f"  - WARNING: {d['object_name']} overlaps with target {target} "
+                        f"AND has higher Z ({d['z']*1000:.0f}mm vs {target_det['z']*1000:.0f}mm). "
+                        f"Likely ON TOP — MUST relocate {d['object_name']} first."
+                    )
+                else:
+                    lines.append(
+                        f"  - INFO: {d['object_name']} overlaps with target {target} in XY "
+                        f"but target has higher Z ({target_det['z']*1000:.0f}mm vs {d['z']*1000:.0f}mm). "
+                        f"Target is ON TOP and accessible. Safe to pick."
+                    )
 
     if not target_det:
         lines.append(f"  - Target '{target}' not currently detected by YOLO.")
@@ -1058,9 +1095,13 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 # Check 1: Z-axis elevation mismatch (Stacked target)
                 if expected_h is not None and target_detections:
                     expected_z = expected_h / 2
-                    excess = target_detections[0]["z"] - expected_z
+                    target_z = target_detections[0]["z"]
+                    excess = target_z - expected_z
                     if excess > 0.020:
-                        # Find overlapping or closest detected obstacle to target
+                        # Target is elevated. Find nearby objects with HIGHER Z
+                        # (meaning they are ON TOP of the target and must be relocated).
+                        # If no nearby object has higher Z, the target itself is on top
+                        # and is accessible — do NOT force relocate.
                         target_x = target_detections[0]["x"]
                         target_y = target_detections[0]["y"]
                         best_obstacle = None
@@ -1071,11 +1112,16 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                             dx = d["x"] - target_x
                             dy = d["y"] - target_y
                             dist = (dx*dx + dy*dy)**0.5
-                            if dist < 0.080 and dist < min_dist:
+                            # Only consider objects that are HIGHER than the target (on top of it)
+                            if dist < 0.080 and dist < min_dist and d["z"] > target_z:
                                 min_dist = dist
                                 best_obstacle = d.get("object_name")
-                        sensor_obstacle = best_obstacle if best_obstacle else "cube"
-                        sensor_reasoning = f"Depth sensor override: Target '{target}' surface is {excess*1000:.0f}mm higher than expected, indicating overlapping object '{sensor_obstacle}' is on top."
+                        if best_obstacle:
+                            sensor_obstacle = best_obstacle
+                            sensor_reasoning = f"Depth sensor override: Target '{target}' is elevated (+{excess*1000:.0f}mm) and '{best_obstacle}' has higher Z — it is on top of the target."
+                        else:
+                            # Target is elevated but has the highest Z — it's on top, accessible
+                            logger.info(f"Target '{target}' is elevated (+{excess*1000:.0f}mm) but has highest Z among nearby objects. Target is on top and accessible.")
 
                 # Check 2: XY overlap
                 if not sensor_obstacle and target_detections:
@@ -1088,18 +1134,24 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     overlapping_obstacle = None
                     min_overlap_dist = 9999.0
 
+                    target_z = target_det["z"]
                     for d in detections:
                         if d["object_name"] == target or is_inside_placement_box(d):
                             continue
                         if check_overlap_obb(d, target_det, clearance=0.015):
-                            dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
-                            if dist < min_overlap_dist:
-                                min_overlap_dist = dist
-                                overlapping_obstacle = d["object_name"]
+                            # Only flag as obstacle if the overlapping object has HIGHER Z
+                            # (it's physically on top of the target, blocking access)
+                            if d["z"] > target_z:
+                                dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
+                                if dist < min_overlap_dist:
+                                    min_overlap_dist = dist
+                                    overlapping_obstacle = d["object_name"]
+                            else:
+                                logger.info(f"XY overlap with '{d['object_name']}' but target '{target}' has higher Z ({target_z*1000:.0f}mm vs {d['z']*1000:.0f}mm) — target is on top, accessible.")
 
                     if overlapping_obstacle:
                         sensor_obstacle = overlapping_obstacle
-                        sensor_reasoning = f"XY overlap override: Target '{target}' is physically overlapping with '{overlapping_obstacle}' (distance {min_overlap_dist*1000:.1f}mm), requiring relocation."
+                        sensor_reasoning = f"XY overlap override: '{overlapping_obstacle}' overlaps with target '{target}' AND has higher Z — it is on top, requiring relocation."
 
                 if sensor_obstacle:
                     logger.warning(f"SENSOR OVERRIDE: Bypassing Qwen due to deterministic block '{sensor_obstacle}'.")
@@ -1134,9 +1186,10 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         expected_z = expected_h / 2
                         excess = target_detections[0]["z"] - expected_z
                         if excess > 0.020:
-                            # Find overlapping or closest detected obstacle to target
+                            # Find nearby object with HIGHER Z than target (on top of it)
                             target_x = target_detections[0]["x"]
                             target_y = target_detections[0]["y"]
+                            target_z = target_detections[0]["z"]
                             best_obstacle = None
                             min_dist = 9999.0
                             for d in detections:
@@ -1145,18 +1198,21 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                                 dx = d["x"] - target_x
                                 dy = d["y"] - target_y
                                 dist = (dx*dx + dy*dy)**0.5
-                                if dist < 0.080 and dist < min_dist:
+                                if dist < 0.080 and dist < min_dist and d["z"] > target_z:
                                     min_dist = dist
                                     best_obstacle = d.get("object_name")
-                            obstacle_name = best_obstacle if best_obstacle else "cube"
 
-                            logger.warning(f"QWEN FAILSAFE OVERRIDE: Target '{target}' Z is anomalously high (+{excess*1000:.0f}mm). Forcing relocate of '{obstacle_name}'.")
-                            plan = {
-                                "next_action": "relocate",
-                                "obstacle_name": obstacle_name,
-                                "reasoning": f"Depth sensor failsafe: Target '{target}' surface is {excess*1000:.0f}mm higher than expected, indicating an undetected or overlapping object '{obstacle_name}' is inside or on top of it.",
-                                "raw_output": plan.get("raw_output", "") + f"\n\n(OVERRIDDEN BY DEPTH SENSOR FAILSAFE: Relocating {obstacle_name})"
-                            }
+                            if best_obstacle:
+                                logger.warning(f"QWEN FAILSAFE OVERRIDE: Target '{target}' Z is anomalously high (+{excess*1000:.0f}mm) and '{best_obstacle}' has higher Z. Forcing relocate.")
+                                plan = {
+                                    "next_action": "relocate",
+                                    "obstacle_name": best_obstacle,
+                                    "reasoning": f"Depth sensor failsafe: '{best_obstacle}' has higher Z than target '{target}', indicating it is on top.",
+                                    "raw_output": plan.get("raw_output", "") + f"\n\n(OVERRIDDEN BY DEPTH SENSOR FAILSAFE: Relocating {best_obstacle})"
+                                }
+                            else:
+                                # Target is elevated but has highest Z — it's on top, accessible
+                                logger.info(f"Qwen failsafe: Target '{target}' elevated (+{excess*1000:.0f}mm) but has highest Z. Target is on top — proceeding with pick.")
 
                     # XY Overlap Failsafe: If Qwen hallucinated that it is clear, but YOLO detects an overlap
                     if plan.get("next_action") == "pick" and target_detections:
@@ -1170,22 +1226,26 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         overlapping_obstacle = None
                         min_overlap_dist = 9999.0
 
+                        target_z = target_det["z"]
                         for d in detections:
                             if d["object_name"] == target or is_inside_placement_box(d):
                                 continue
                             if check_overlap_obb(d, target_det, clearance=0.015):
-                                dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
-                                # Overlaps! Find the closest overlapping object
-                                if dist < min_overlap_dist:
-                                    min_overlap_dist = dist
-                                    overlapping_obstacle = d["object_name"]
+                                # Only flag if overlapping object has HIGHER Z (on top of target)
+                                if d["z"] > target_z:
+                                    dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
+                                    if dist < min_overlap_dist:
+                                        min_overlap_dist = dist
+                                        overlapping_obstacle = d["object_name"]
+                                else:
+                                    logger.info(f"XY overlap failsafe: '{d['object_name']}' overlaps but target has higher Z — target is on top, accessible.")
 
                         if overlapping_obstacle:
-                            logger.warning(f"QWEN FAILSAFE OVERRIDE: Overlapping object '{overlapping_obstacle}' detected in XY. Forcing relocate.")
+                            logger.warning(f"QWEN FAILSAFE OVERRIDE: '{overlapping_obstacle}' overlaps with target AND has higher Z. Forcing relocate.")
                             plan = {
                                 "next_action": "relocate",
                                 "obstacle_name": overlapping_obstacle,
-                                "reasoning": f"XY overlap failsafe: Target '{target}' is physically overlapping with '{overlapping_obstacle}' (distance {min_overlap_dist*1000:.1f}mm), requiring relocation.",
+                                "reasoning": f"XY overlap failsafe: '{overlapping_obstacle}' overlaps with target '{target}' and has higher Z — it is on top, requiring relocation.",
                                 "raw_output": plan.get("raw_output", "") + f"\n\n(OVERRIDDEN BY XY OVERLAP FAILSAFE: Relocating {overlapping_obstacle})"
                             }
 
