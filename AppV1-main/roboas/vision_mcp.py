@@ -102,6 +102,8 @@ OBJECT_CATALOGUE = {
                      "length_m": 0.112, "breadth_m": 0.028},
     "nut":          {"size": "34.6 x 30 x 17 mm",        "height_m": 0.017,
                      "length_m": 0.0346,  "breadth_m": 0.030},
+    "cube":         {"size": "30 x 30 x 30 mm",         "height_m": 0.030,
+                     "length_m": 0.030,   "breadth_m": 0.030},
     "yellow cube":  {"size": "25 x 25 x 25 mm", "height_m": 0.025,
                      "length_m": 0.025,   "breadth_m": 0.025,},
     "sponge":       {"size": "75 x 18 x 30 mm",    "height_m": 0.018,
@@ -442,7 +444,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         "images": [raw_b64],
         "options": {
             "temperature": 0.1,
-            "num_predict": 1024
+            "num_predict": 4096
         }
     }
 
@@ -660,7 +662,7 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
     """
     lines = []
     # Find the target detection, excluding any that are already in the placement box
-    target_det = next((d for d in detections if d["object_name"] == target and not is_inside_placement_box(d)), None)
+    target_det = next((d for d in detections if target in d.get("object_name", "") and not is_inside_placement_box(d)), None)
 
     # 1. Analyze Elevation (Z-axis)
     lines.append("ELEVATION ANALYSIS:")
@@ -689,13 +691,13 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
             if abs(h - implied_height) <= MATCH_TOLERANCE:
                 plausible.append(obj_name)
 
-        if d["object_name"] == target:
+        if target in d.get("object_name", ""):
             # TARGET is elevated — it's sitting ON something else.
             # Check if any nearby object has HIGHER Z (i.e., something is on top of the target).
             blocker_on_top = None
             if target_det:
                 for other in detections:
-                    if other["object_name"] == target or is_inside_placement_box(other):
+                    if target in other.get("object_name", "") or is_inside_placement_box(other):
                         continue
                     odist = math.hypot(other["x"] - target_det["x"], other["y"] - target_det["y"])
                     if odist < 0.080 and other["z"] > d["z"]:
@@ -762,7 +764,7 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
         ) / 2
 
         for d in detections:
-            if d["object_name"] == target or is_inside_placement_box(d):
+            if target in d.get("object_name", "") or is_inside_placement_box(d):
                 continue
             if check_overlap_obb(d, target_det, clearance=0.015):
                 overlap_found = True
@@ -815,24 +817,37 @@ async def qwen_plan_next_action(
         user_context_section = (
             f"USER INSTRUCTION CONTEXT:\n"
             f"  The user said: \"{user_context}\"\n"
-            f"  Use this as a hint when the scene is ambiguous.\n\n"
+            f"  Use this as a hint when the scene is ambiguous or when you need to identify a specific sticker, icon, text, or letters on an object.\n\n"
         )
+
+    # Build target candidate list with IDs so Qwen can pick the correct identical object (e.g., specific sticker)
+    target_dets = [d for d in detections if target in d.get("object_name", "") and not is_inside_placement_box(d)]
+    target_list_str = ""
+    if len(target_dets) > 1:
+        target_list_str = "MULTIPLE TARGET CANDIDATES DETECTED:\n"
+        for i, d in enumerate(target_dets):
+            target_list_str += f"  - [ID: {i}] {d['object_name']} at X:{d['x']:.3f}, Y:{d['y']:.3f}\n"
+        target_list_str += "Visually identify which of these candidates matches the user's sticker/icon/text request, and return its ID as 'target_id'.\n\n"
+    else:
+        target_list_str = "SINGLE TARGET CANDIDATE DETECTED. (Use target_id: 0)\n\n"
 
     prompt = (
         f"You are the visual safety gate for a robotic arm.\n\n"
         f"GOAL: Pick up the '{target}'\n\n"
         f"{user_context_section}"
+        f"{target_list_str}"
         f"KNOWN OBJECT CATALOGUE: {catalogue_list}\n\n"
         f"PYTHON SENSOR ANALYSIS (Depth Elevation & XY Overlap):\n"
         f"{scene_analysis}\n\n"
         f"HISTORY:\n{history_summary}\n\n"
         f"INSTRUCTIONS:\n"
         f"  1. Look at the image AND read the Python sensor analysis.\n"
-        f"  2. If the analysis shows a WARNING that another object is ON TOP of or overlapping with the target, output 'relocate' for that blocking object.\n"
-        f"  3. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one (like a 'cube'), output 'relocate' for that object. If it is clear, output 'pick'.\n"
-        f"  4. If the analysis says the target is clear, verify visually. If it looks clear and nothing is inside/blocking it, output 'pick'.\n"
-        f"  5. If you see an unknown object (not in catalogue) blocking the target, output 'abort'.\n"
-        f"  6. Do not re-relocate already moved objects (check history).\n\n"
+        f"  2. If the user context mentions a specific sticker, color, icon, letters, text, or QR code, carefully inspect the target candidates in the image to find the one matching the description. Output its ID in 'target_id'.\n"
+        f"  3. If the analysis shows a WARNING that another object is ON TOP of or overlapping with the target, output 'relocate' for that blocking object.\n"
+        f"  4. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one, output 'relocate' for that object. If clear, output 'pick'.\n"
+        f"  5. If the analysis says the target is clear, verify visually. If it looks clear, output 'pick'.\n"
+        f"  6. If you see an unknown object blocking the target, output 'abort'.\n"
+        f"  7. Do not re-relocate already moved objects (check history).\n\n"
         f"AVAILABLE ACTIONS:\n"
         f"  - relocate: move one blocking object to a safe spot.\n"
         f"  - pick: pick the target.\n"
@@ -840,11 +855,11 @@ async def qwen_plan_next_action(
         f"CRITICAL INSTRUCTION: You may think first, but your final output MUST be a valid JSON block enclosed in '```json' and '```' markers.\n"
         f"NO EXPLANATIONS AFTER THE JSON. ONLY OUTPUT JSON AS THE FINAL RESULT.\n\n"
         f"Pick format:\n"
-        f'{{"next_action":"pick","obstacle_name":null,"reasoning":"target is visible and safe"}}\n\n'
+        f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"reasoning":"target is visible and safe"}}\n\n'
         f"Relocate format:\n"
-        f'{{"next_action":"relocate","obstacle_name":"[name_of_blocking_object]","reasoning":"[name] is blocking the target"}}\n\n'
+        f'{{"next_action":"relocate","obstacle_name":"[name_of_blocking_object]","target_id":0,"reasoning":"[name] is blocking the target"}}\n\n'
         f"Abort format:\n"
-        f'{{"next_action":"abort","obstacle_name":null,"reasoning":"target cannot be safely reached"}}'
+        f'{{"next_action":"abort","obstacle_name":null,"target_id":0,"reasoning":"target cannot be safely reached"}}'
     )
     raw = await ask_qwen_vision(prompt, base64_image)
     print("RAW QWEN PLAN:", repr(raw))
@@ -1048,7 +1063,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
             target_detections = [
                 d for d in detections
-                if d.get("object_name") == target and not is_inside_placement_box(d)
+                if target in d.get("object_name", "") and not is_inside_placement_box(d)
             ]
 
             if not target_detections:
@@ -1146,7 +1161,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
                     target_z = target_det["z"]
                     for d in detections:
-                        if d["object_name"] == target or is_inside_placement_box(d):
+                        if target in d.get("object_name", "") or is_inside_placement_box(d):
                             continue
                         if check_overlap_obb(d, target_det, clearance=0.015):
                             # Only flag as obstacle if the overlapping object has HIGHER Z
@@ -1238,7 +1253,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
                         target_z = target_det["z"]
                         for d in detections:
-                            if d["object_name"] == target or is_inside_placement_box(d):
+                            if target in d.get("object_name", "") or is_inside_placement_box(d):
                                 continue
                             if check_overlap_obb(d, target_det, clearance=0.015):
                                 # Only flag if overlapping object has HIGHER Z (on top of target)
@@ -1365,7 +1380,11 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 continue
 
             if next_action == "pick":
-                target_det = target_detections[0]
+                target_id = plan.get("target_id", 0)
+                if 0 <= target_id < len(target_detections):
+                    target_det = target_detections[target_id]
+                else:
+                    target_det = target_detections[0]
 
                 if target_det["object_name"] == "pipe" and target_det.get("grasp_label"):
                     grasp_label = target_det["grasp_label"]
@@ -1380,7 +1399,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     type="text",
                     text=json.dumps({
                         "status": "SUCCESS",
-                        "target": target,
+                        "target": target_det["object_name"],
                         "coordinates": {
                             "x": target_det["x"],
                             "y": target_det["y"],
