@@ -3538,47 +3538,55 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
     }
 
 
-def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, target_name=None):
+def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, target_name=None, obstacle_angle=None):
     """
-    Find a safe XY drop position for an obstacle being relocated within the
-    pick workspace (NOT the placement box).
-
-    Strategy:
-      - Stay inside the camera scan zone (CAM_X_MIN/MAX, CAM_Y_MIN/MAX) so
-        YOLO can re-detect the object after relocation.
-      - Stay away from all other detected objects by at least RELOCATION_CLEARANCE_M.
-      - Stay away from the target object specifically by at least TARGET_CLEARANCE_M.
-      - Stay away from the conveyor and camera stand no-go zones.
-      - Stay away from the current obstacle position itself.
+    Finds a safe spot to drop the obstacle.
+    - Stay inside the camera scan zone (CAM_X_MIN/MAX, CAM_Y_MIN/MAX) so
+      YOLO can see it on the next scan.
+    - Stay away from other objects by at least RELOCATION_CLEARANCE_M.
+    - Stay away from the target object specifically by at least TARGET_CLEARANCE_M.
+    - Stay away from the conveyor and camera stand no-go zones.
+    - Stay away from the current obstacle position itself.
 
     Returns [x, y] or raises RuntimeError if no spot found.
     """
+    import cv2
+    import math
+
     RELOCATION_CLEARANCE_M = 0.01   # minimum edge-to-edge gap from other objects
     TARGET_CLEARANCE_M     = 0.01   # extra edge-to-edge clearance from target specifically
     GRID_STEP_M            = 0.02   # search grid resolution (finer grid)
     BORDER_M               = 0.02   # minimum distance from workspace edge
 
-    def get_effective_radius(obj_name):
+    def get_obb(obj_name, cx, cy, angle_deg, extra_clearance=0.0):
         info = OBJECT_CATALOGUE.get(obj_name, {})
         l = float(info.get("length_m", 0.04))
         w = float(info.get("breadth_m", 0.04))
-        return math.hypot(l, w) / 2.0
+        return ((float(cx), float(cy)), (l + extra_clearance * 2, w + extra_clearance * 2), float(angle_deg))
 
-    obs_radius = get_effective_radius(obstacle_name)
+    obs_angle = obstacle_angle if obstacle_angle is not None else 0.0
+    if obstacle_angle is None:
+        for det in (detections or []):
+            if det.get("object_name") == obstacle_name:
+                obs_angle = float(det.get("angle_deg", 0.0))
+                break
 
-    # Build list of positions to avoid: all detections + obstacle's own position.
-    avoid = []
-    target_positions = []
+    avoid_rects = []
+    target_rects = []
+
+    # The obstacle's original position is a no-go zone
+    avoid_rects.append(get_obb(obstacle_name, obstacle_x, obstacle_y, obs_angle, RELOCATION_CLEARANCE_M))
+
     for det in (detections or []):
         det_name = det.get("object_name")
         det_x = float(det.get("x", 0))
         det_y = float(det.get("y", 0))
-        det_radius = get_effective_radius(det_name)
+        det_angle = float(det.get("angle_deg", 0.0))
+        
         if target_name and det_name == target_name:
-            target_positions.append((det_x, det_y, det_radius))
+            target_rects.append(get_obb(det_name, det_x, det_y, det_angle, TARGET_CLEARANCE_M))
         else:
-            avoid.append((det_x, det_y, det_radius))
-    avoid.append((float(obstacle_x), float(obstacle_y), obs_radius))
+            avoid_rects.append(get_obb(det_name, det_x, det_y, det_angle, RELOCATION_CLEARANCE_M))
 
     best_score = -1
     best_xy = None
@@ -3595,29 +3603,30 @@ def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, tar
                 y += GRID_STEP_M
                 continue
 
-            # Check clearance from all regular objects.
+            cand_rect = get_obb(obstacle_name, x, y, obs_angle, 0.0)
+
             too_close = False
-            for (ox, oy, oradius) in avoid:
-                edge_dist = math.hypot(x - ox, y - oy) - obs_radius - oradius
-                if edge_dist < RELOCATION_CLEARANCE_M:
+            for rect in avoid_rects:
+                ret, _ = cv2.rotatedRectangleIntersection(cand_rect, rect)
+                if ret != cv2.INTERSECT_NONE:
                     too_close = True
                     break
 
-            # Check clearance from target specifically.
             if not too_close:
-                for (tx, ty, tradius) in target_positions:
-                    edge_dist = math.hypot(x - tx, y - ty) - obs_radius - tradius
-                    if edge_dist < TARGET_CLEARANCE_M:
+                for rect in target_rects:
+                    ret, _ = cv2.rotatedRectangleIntersection(cand_rect, rect)
+                    if ret != cv2.INTERSECT_NONE:
                         too_close = True
                         break
 
             if not too_close:
+                # Score based on distance to nearest object center
                 min_edge_dist = min(
-                    (math.hypot(x - ox, y - oy) - obs_radius - oradius for ox, oy, oradius in avoid),
+                    (math.hypot(x - r[0][0], y - r[0][1]) for r in avoid_rects),
                     default=999.0
                 )
                 target_min_edge_dist = min(
-                    (math.hypot(x - tx, y - ty) - obs_radius - tradius for tx, ty, tradius in target_positions),
+                    (math.hypot(x - r[0][0], y - r[0][1]) for r in target_rects),
                     default=999.0
                 )
                 score = min(min_edge_dist, target_min_edge_dist)
@@ -3673,7 +3682,7 @@ def run_mcp_relocate_object(
 
         # Step 1: find a safe drop spot in the workspace.
         reloc_xy = _find_relocation_spot(
-            obstacle_name, obstacle_x, obstacle_y, detections, target_name=target_name
+            obstacle_name, obstacle_x, obstacle_y, detections, target_name=target_name, obstacle_angle=obstacle_angle
         )
         reloc_x, reloc_y = reloc_xy
 
