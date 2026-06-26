@@ -80,7 +80,7 @@ async def handle_list_tools() -> list[Tool]:
                 "properties": {
                     "object_name": {
                         "type": "string",
-                        "description": "Object to pick, e.g. cube, medicine, nut, pipe, sponge, black marker."
+                        "description": "Object to pick, e.g. red cube, blue cube, green cube, yellow cube, medicine, nut, sponge, black marker."
                     },
                     "x": {"type": "number", "description": "Robot-frame X in metres."},
                     "y": {"type": "number", "description": "Robot-frame Y in metres."},

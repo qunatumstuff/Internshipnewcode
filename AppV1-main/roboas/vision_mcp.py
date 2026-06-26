@@ -90,16 +90,26 @@ MAX_PLANNING_ITERATIONS = 5
 # to determine if an object is stacked on another.
 # ==========================================
 OBJECT_CATALOGUE = {
-    "yellow cube":  {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
-    "blue cube":    {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
-    "green cube":   {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
-    "red cube":     {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
-    "nut":          {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
     "black marker": {"size": "134 x 20.53 x 20.53 mm", "height_m": 0.02053,
                      "length_m": 0.134,   "breadth_m": 0.02053},
-    "medicine":     {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
-    "sponge":       {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
-    "screwdriver":  {"size": "", "height_m": 0.0, "length_m": 0.0, "breadth_m": 0.0},
+    "blue cube":    {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+    "red cube":     {"size": "30 x 30 x 30 mm",         "height_m": 0.030,
+                     "length_m": 0.030,   "breadth_m": 0.030},
+    "green cube":   {"size": "30 x 30 x 30 mm",  "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+    "medicine":     {"size": "112 x 28 x 23 mm","height_m": 0.023,
+                     "length_m": 0.112, "breadth_m": 0.028},
+    "nut":          {"size": "34.6 x 30 x 17 mm",        "height_m": 0.017,
+                     "length_m": 0.0346,  "breadth_m": 0.030},
+    "yellow cube":  {"size": "25 x 25 x 25 mm", "height_m": 0.025,
+                     "length_m": 0.025,   "breadth_m": 0.025,},
+    "sponge":       {"size": "75 x 18 x 30 mm",    "height_m": 0.018,
+                     "length_m": 0.071, "breadth_m": 0.03,
+                     "notes": "Angled grasp configuration"},
+    "screwdriver":  {"size": "104 x 25 x 25 mm",    "height_m": 0.025,
+                     "length_m": 0.104, "breadth_m": 0.025,
+                     "notes": "Angled grasp configuration"},
 }
 
 # Camera-to-robot base frame transformation matrix.

@@ -272,10 +272,10 @@ OBJECT_CATALOGUE = {
     "1": {
         "label": "yellow cube",
         "name": "Yellow Cube",
-        "length_m": 0.0,
-        "width_m": 0.0,
-        "breadth_m": 0.0,
-        "height_m": 0.0,
+        "length_m": 0.025,
+        "width_m": 0.025,
+        "breadth_m": 0.025,
+        "height_m": 0.025,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
         "description": "Yellow cube",
@@ -284,10 +284,10 @@ OBJECT_CATALOGUE = {
     "2": {
         "label": "blue cube",
         "name": "Blue Cube",
-        "length_m": 0.0,
-        "width_m": 0.0,
-        "breadth_m": 0.0,
-        "height_m": 0.0,
+        "length_m": 0.03,
+        "width_m": 0.03,
+        "breadth_m": 0.03,
+        "height_m": 0.03,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
         "description": "Blue cube",
@@ -296,10 +296,10 @@ OBJECT_CATALOGUE = {
     "3": {
         "label": "green cube",
         "name": "Green Cube",
-        "length_m": 0.0,
-        "width_m": 0.0,
-        "breadth_m": 0.0,
-        "height_m": 0.0,
+        "length_m": 0.03,
+        "width_m": 0.03,
+        "breadth_m": 0.03,
+        "height_m": 0.03,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
         "description": "Green cube",
@@ -308,10 +308,10 @@ OBJECT_CATALOGUE = {
     "4": {
         "label": "red cube",
         "name": "Red Cube",
-        "length_m": 0.0,
-        "width_m": 0.0,
-        "breadth_m": 0.0,
-        "height_m": 0.0,
+        "length_m": 0.030,
+        "width_m": 0.030,
+        "breadth_m": 0.030,
+        "height_m": 0.030,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
         "description": "Red cube",
@@ -320,10 +320,10 @@ OBJECT_CATALOGUE = {
     "5": {
         "label": "nut",
         "name": "Nut",
-        "length_m": 0.0,
-        "width_m": 0.0,
-        "breadth_m": 0.0,
-        "height_m": 0.0,
+        "length_m": 0.0346,
+        "width_m": 0.03,
+        "breadth_m": 0.03,
+        "height_m": 0.017,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
         "description": "Nut",
@@ -344,10 +344,10 @@ OBJECT_CATALOGUE = {
     "7": {
         "label": "medicine",
         "name": "Medicine",
-        "length_m": 0.0,
-        "width_m": 0.0,
-        "breadth_m": 0.0,
-        "height_m": 0.0,
+        "length_m": 0.112,
+        "width_m": 0.028,
+        "breadth_m": 0.028,
+        "height_m": 0.023,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
         "description": "Medicine",
@@ -356,26 +356,34 @@ OBJECT_CATALOGUE = {
     "8": {
         "label": "sponge",
         "name": "Sponge",
-        "length_m": 0.0,
-        "width_m": 0.0,
-        "breadth_m": 0.0,
-        "height_m": 0.0,
+        "length_m": 0.075,
+        "width_m": 0.03,
+        "breadth_m": 0.03,
+        "height_m": 0.015,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
         "description": "Sponge",
     },
 
-    "9": {
-        "label": "screwdriver",
-        "name": "Screwdriver",
-        "length_m": 0.0,
-        "width_m": 0.0,
-        "breadth_m": 0.0,
-        "height_m": 0.0,
-        "object_orientation_deg": 90.0,
-        "preferred_grasp_angle_deg": 0.0,
-        "description": "Screwdriver",
-    },
+    "9":{
+    "label": "screwdriver",
+    "name": "Screwdriver",
+
+    # Overall object footprint
+    "length_m": 0.104,
+    "width_m": 0.0244,      # thickest end / maximum width
+    "breadth_m": 0.0244,
+    "height_m": 0.0244,
+
+    # Grasping info
+    "grasp_width_m": 0.0181,        # narrower midpoint grasp area
+    "grasp_offset_m": 0.0,          # start with centre grasp
+    "preferred_grasp_region": "middle",
+    "object_orientation_deg": 90.0,
+    "preferred_grasp_angle_deg": 0.0,
+
+    "description": "Asymmetric screwdriver; maximum width at thick end is 24.4 mm, preferred grasp region is the narrower middle section at around 18.1 mm."
+    }
 }
 GRIP_EXTRA_SPACE_M = 0.000        # no extra stroke gap; grip target stays at actual object width
 PRE_PICK_EXTRA_RATIO = 0.30       # open 30% wider before descending/releasing so fingers do not scrape the object

@@ -44,8 +44,8 @@ def smooth_coord(old_val, new_val, alpha=0.2, snap_thresh=0.05):
 # Initialize F                                                                                                                                                          1`astMCP Server
 mcp = FastMCP("TIEFA_Module_B_Vision")
 
-model=YOLO("best16.pt")
-segment=YOLO("best13.pt")
+model=YOLO("best12.pt")
+segment=YOLO("best11.pt")
 
 # -----------------------------------------------------------------------------
 # 2. MCP Tools Definition (Exposed to System 2 / ZBook)
@@ -158,12 +158,12 @@ def _vision_loop_inner():
             if frame_counter % 4 == 0:
                 with inference_lock:
                     results = model(color_image, verbose=False, agnostic_nms=False, iou=0.35, conf=0.35)
-                    sponge_detection = segment(color_image, verbose=False, agnostic_nms=False, iou=0.35, conf=0.35)
+                    segmentation_results = segment(color_image, verbose=False, agnostic_nms=False, iou=0.35, conf=0.35)
 
             current_boxes = []
 
             # Draw segmentation masks for sponge/pipe
-            for sponge in sponge_detection:
+            for sponge in segmentation_results:
                 if sponge.masks is None:
                     continue
 
