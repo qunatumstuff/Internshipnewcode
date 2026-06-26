@@ -1484,7 +1484,12 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 print("RETURNING COORDINATES:", target_det)
 
                 # Generate zoomed-in snapshot of target area (does NOT touch live feed)
-                snapshot_b64 = crop_target_snapshot(target_detections)
+                try:
+                    snapshot_b64 = crop_target_snapshot(target_detections)
+                except Exception as e:
+                    import traceback
+                    logger.error(f"Snapshot error: {traceback.format_exc()}")
+                    snapshot_b64 = None
 
                 return [TextContent(
                     type="text",
