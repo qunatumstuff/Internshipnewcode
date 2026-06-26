@@ -295,6 +295,10 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                 "z":           coords["z"],
                 "angle_deg":   coords["angle_deg"],
                 "confidence":  round(conf, 3),
+                "cx_px":       cx_px,
+                "cy_px":       cy_px,
+                "w_px":        float(obb.xywhr[0][2]),
+                "h_px":        float(obb.xywhr[0][3]),
             })
 
     # ── Pass 2: Segmentation — pipe and sponge centre/endpoint positions ────────
@@ -355,6 +359,8 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                     "angle_deg":   best["angle_deg"],
                     "confidence":  round(float(conf), 3),
                     "grasp_label": best["label"],
+                    "cx_px":       float(cx_px),
+                    "cy_px":       float(cy_px),
                 })
             else:
                 # Sponge — mask centre deprojected through depth with OBB angle
@@ -368,6 +374,8 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                     "z":           coords["z"],
                     "angle_deg":   coords["angle_deg"],
                     "confidence":  round(float(conf), 3),
+                    "cx_px":       float(cx_px),
+                    "cy_px":       float(cy_px),
                 })
 
     logger.info(
@@ -418,6 +426,86 @@ def get_frame_as_base64():
         parts = raw.split(",")
         return parts[1] if len(parts) > 1 else None
     return raw
+
+
+def crop_target_snapshot(target_dets: list[dict], zoom_factor: float = 2.5) -> str | None:
+    """
+    Create a zoomed-in snapshot centred on the target candidates.
+    Uses the stored pixel coordinates from YOLO detections to crop
+    the current RGB frame around the targets, then encodes as base64 JPEG.
+    Does NOT touch the live camera feed — works on a copy.
+    Returns base64 JPEG string (no data URL prefix), or None on failure.
+    """
+    frame = camera.current_rgb_frame
+    if frame is None:
+        return None
+
+    # Work on a copy so the live feed is never modified
+    frame = frame.copy()
+    img_h, img_w = frame.shape[:2]
+
+    # Filter targets that have pixel coordinates
+    targets_with_px = [d for d in target_dets if "cx_px" in d and "cy_px" in d]
+    if not targets_with_px:
+        return None
+
+    # Compute bounding box that encloses all target candidates
+    min_x = img_w
+    min_y = img_h
+    max_x = 0
+    max_y = 0
+    for d in targets_with_px:
+        cx = d["cx_px"]
+        cy = d["cy_px"]
+        w = d.get("w_px", 60)
+        h = d.get("h_px", 60)
+        half_diag = math.hypot(w, h) / 2  # accounts for rotation
+        min_x = min(min_x, cx - half_diag)
+        min_y = min(min_y, cy - half_diag)
+        max_x = max(max_x, cx + half_diag)
+        max_y = max(max_y, cy + half_diag)
+
+    # Add generous padding around the bounding box for context
+    pad_x = (max_x - min_x) * (zoom_factor - 1) / 2
+    pad_y = (max_y - min_y) * (zoom_factor - 1) / 2
+    # Ensure minimum crop size of 200px in each dimension
+    crop_w = max(max_x - min_x + 2 * pad_x, 200)
+    crop_h = max(max_y - min_y + 2 * pad_y, 200)
+    center_x = (min_x + max_x) / 2
+    center_y = (min_y + max_y) / 2
+
+    x1 = int(max(0, center_x - crop_w / 2))
+    y1 = int(max(0, center_y - crop_h / 2))
+    x2 = int(min(img_w, center_x + crop_w / 2))
+    y2 = int(min(img_h, center_y + crop_h / 2))
+
+    if x2 - x1 < 10 or y2 - y1 < 10:
+        return None
+
+    cropped = frame[y1:y2, x1:x2]
+
+    # Upscale the crop to a reasonable display size (at least 480px wide)
+    scale = max(1.0, 480.0 / cropped.shape[1])
+    if scale > 1.0:
+        cropped = cv2.resize(cropped, None, fx=scale, fy=scale, interpolation=cv2.INTER_LANCZOS4)
+
+    _, buffer = cv2.imencode('.jpg', cropped, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    
+    # Save to disk and open natively on the laptop screen
+    try:
+        import os
+        snapshot_path = os.path.abspath('snapshot.jpg')
+        cv2.imwrite(snapshot_path, cropped)
+        if os.name == 'nt':
+            os.startfile(snapshot_path)
+        logger.info(f"Opened snapshot natively at {snapshot_path}")
+    except Exception as e:
+        logger.error(f"Failed to open snapshot natively: {e}")
+
+    b64_str = base64.b64encode(buffer).decode('utf-8')
+    logger.info(f"Cropped snapshot: {x2-x1}x{y2-y1}px region, {len(b64_str)} b64 chars")
+    return b64_str
+
 
 
 # ==========================================
@@ -1395,6 +1483,9 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
                 print("RETURNING COORDINATES:", target_det)
 
+                # Generate zoomed-in snapshot of target area (does NOT touch live feed)
+                snapshot_b64 = crop_target_snapshot(target_detections)
+
                 return [TextContent(
                     type="text",
                     text=json.dumps({
@@ -1412,8 +1503,10 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         "qwen_raw_output": raw_output,
                         "iterations": iteration,
                         "qwen_reasoning": reasoning,
+                        "snapshot_b64": snapshot_b64,
                     })
                 )]
+
 
         return [TextContent(type="text", text=json.dumps({
             "status": "FAILED",

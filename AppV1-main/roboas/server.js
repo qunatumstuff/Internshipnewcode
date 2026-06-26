@@ -585,6 +585,19 @@ function sendProgress(status, isRobotMoving = false, ttsMessage = null) {
   });
 }
 
+function sendSnapshot(snapshotB64, targetName) {
+  if (!snapshotB64) return;
+  console.log(`📸 [SSE Snapshot] Sending zoomed snapshot for "${targetName}" (${snapshotB64.length} b64 chars)`);
+  progressClients.forEach(client => {
+    try {
+      client.write(`data: ${JSON.stringify({ snapshot_image: snapshotB64, snapshot_target: targetName })}\n\n`);
+    } catch (e) {
+      console.error('❌ SSE snapshot write error:', e.message);
+    }
+  });
+}
+
+
 // Arduino LED endpoint removed.
 
 // Upload PDF
@@ -1201,6 +1214,10 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               logToolCall(question, "locate_object", args, parsed.status === "SUCCESS" ? "Target located" : "Scan failed");
               
               if (parsed.status === "SUCCESS") {
+                // Send zoomed-in snapshot of the detected target to the frontend
+                if (parsed.snapshot_b64) {
+                  sendSnapshot(parsed.snapshot_b64, parsed.target || args.target_name);
+                }
                 sendProgress(`Target "${args.target_name}" clear! Instructing robot to pick it up...`, true);
                 if (robotMcpClient) {
                   try {

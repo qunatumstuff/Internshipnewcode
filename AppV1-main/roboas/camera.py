@@ -44,8 +44,8 @@ def smooth_coord(old_val, new_val, alpha=0.2, snap_thresh=0.05):
 # Initialize F                                                                                                                                                          1`astMCP Server
 mcp = FastMCP("TIEFA_Module_B_Vision")
 
-model=YOLO("best12.pt")
-segment=YOLO("best11.pt")
+model=YOLO("best (12).pt")
+segment=YOLO("best (11).pt")
 
 # -----------------------------------------------------------------------------
 # 2. MCP Tools Definition (Exposed to System 2 / ZBook)
@@ -61,6 +61,21 @@ def get_camera_snapshot() -> str:
     If a question is provided, asks the question to Qwen and returns the text response.
     """
     global current_rgb_frame
+    zoom = 1.0
+    height,width,_=current_rgb_frame.shape
+    new_width=int(width/zoom)
+    new_height=int(height/zoom)
+
+    miny=max(int(0,(height-new_height)/2))
+    maxy=min(int(height,miny+new_height))
+    minx=max(int(0,(width-new_width)/2))
+    maxx=min(int(width,minx+new_width))
+
+    cropped=current_rgb_frame[minx:maxx,miny:maxy]
+    current_rgb_frame_cropped=cv2.resize(cropped,(width,height))
+    current_rgb_frame=current_rgb_frame.copy()
+
+
     if current_rgb_frame is None:
         return "Error: Camera frame not ready."
     

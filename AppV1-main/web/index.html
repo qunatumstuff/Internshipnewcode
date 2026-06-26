@@ -159,6 +159,12 @@
             onEventCallback('robot_moving_status:' + data.isRobotMoving);
           }
         }
+        if (data.snapshot_image) {
+          console.log(`[JS] Received snapshot for "${data.snapshot_target}" (${data.snapshot_image.length} b64 chars)`);
+          if (onEventCallback) {
+            onEventCallback('snapshot:' + data.snapshot_target + ':' + data.snapshot_image);
+          }
+        }
       } catch (e) {
         console.error('[JS] Error parsing SSE:', e);
       }

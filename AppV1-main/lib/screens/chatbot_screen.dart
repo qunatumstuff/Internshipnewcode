@@ -1493,6 +1493,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
 
     if (eventName.startsWith('tts:')) {
+
       final msg = eventName.substring('tts:'.length);
       _addUiLog('[FLUTTER] Received TTS event: $msg');
       if (mounted) {
@@ -2036,6 +2037,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       ),
     );
   }
+
 
   Widget _circleBtn(IconData icon, Color color, VoidCallback onTap,
       {double radius = 22}) {
