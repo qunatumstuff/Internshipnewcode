@@ -66,12 +66,12 @@ def get_camera_snapshot() -> str:
     new_width=int(width/zoom)
     new_height=int(height/zoom)
 
-    miny=max(int(0,(height-new_height)/2))
-    maxy=min(int(height,miny+new_height))
-    minx=max(int(0,(width-new_width)/2))
-    maxx=min(int(width,minx+new_width))
+    miny = max(0, int((height - new_height) / 2))
+    maxy = min(height, miny + new_height)
+    minx = max(0, int((width - new_width) / 2))
+    maxx = min(width, minx + new_width)
 
-    cropped=current_rgb_frame[minx:maxx,miny:maxy]
+    cropped=current_rgb_frame[miny:maxy,minx:maxx]
     current_rgb_frame_cropped=cv2.resize(cropped,(width,height))
     current_rgb_frame=current_rgb_frame.copy()
 

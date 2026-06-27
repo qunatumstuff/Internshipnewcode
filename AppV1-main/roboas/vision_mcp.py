@@ -427,20 +427,18 @@ def get_frame_as_base64():
         return parts[1] if len(parts) > 1 else None
     return raw
 
-
 def crop_target_snapshot(target_dets: list[dict], zoom_factor: float = 2.5) -> str | None:
     """
     Create a zoomed-in snapshot centred on the target candidates.
     Uses the stored pixel coordinates from YOLO detections to crop
     the current RGB frame around the targets, then encodes as base64 JPEG.
-    Does NOT touch the live camera feed — works on a copy.
-    Returns base64 JPEG string (no data URL prefix), or None on failure.
+    Does NOT touch the live camera feed - works on a copy.
+    Returns base64 JPEG string (no data URL prefix), or None on fail
     """
+    import base64
     frame = camera.current_rgb_frame
     if frame is None:
         return None
-
-    # Work on a copy so the live feed is never modified
     frame = frame.copy()
     img_h, img_w = frame.shape[:2]
 
@@ -490,23 +488,9 @@ def crop_target_snapshot(target_dets: list[dict], zoom_factor: float = 2.5) -> s
         cropped = cv2.resize(cropped, None, fx=scale, fy=scale, interpolation=cv2.INTER_LANCZOS4)
 
     _, buffer = cv2.imencode('.jpg', cropped, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    
-    # Save to disk and open natively on the laptop screen
-    try:
-        import os
-        snapshot_path = os.path.abspath('snapshot.jpg')
-        cv2.imwrite(snapshot_path, cropped)
-        if os.name == 'nt':
-            os.startfile(snapshot_path)
-        logger.info(f"Opened snapshot natively at {snapshot_path}")
-    except Exception as e:
-        logger.error(f"Failed to open snapshot natively: {e}")
-
     b64_str = base64.b64encode(buffer).decode('utf-8')
     logger.info(f"Cropped snapshot: {x2-x1}x{y2-y1}px region, {len(b64_str)} b64 chars")
     return b64_str
-
-
 
 # ==========================================
 # QWEN COMMUNICATION
@@ -905,7 +889,7 @@ async def qwen_plan_next_action(
         user_context_section = (
             f"USER INSTRUCTION CONTEXT:\n"
             f"  The user said: \"{user_context}\"\n"
-            f"  Use this as a hint when the scene is ambiguous or when you need to identify a specific sticker, icon, text, or letters on an object.\n\n"
+            f"  Use this as a hint when the scene is ambiguous or when you need to identify a specific sticker/icon.\n\n"
         )
 
     # Build target candidate list with IDs so Qwen can pick the correct identical object (e.g., specific sticker)
@@ -915,7 +899,7 @@ async def qwen_plan_next_action(
         target_list_str = "MULTIPLE TARGET CANDIDATES DETECTED:\n"
         for i, d in enumerate(target_dets):
             target_list_str += f"  - [ID: {i}] {d['object_name']} at X:{d['x']:.3f}, Y:{d['y']:.3f}\n"
-        target_list_str += "Visually identify which of these candidates matches the user's sticker/icon/text request, and return its ID as 'target_id'.\n\n"
+        target_list_str += "Visually identify which of these candidates matches the user's sticker/icon request, and return its ID as 'target_id'.\n\n"
     else:
         target_list_str = "SINGLE TARGET CANDIDATE DETECTED. (Use target_id: 0)\n\n"
 
@@ -930,7 +914,7 @@ async def qwen_plan_next_action(
         f"HISTORY:\n{history_summary}\n\n"
         f"INSTRUCTIONS:\n"
         f"  1. Look at the image AND read the Python sensor analysis.\n"
-        f"  2. If the user context mentions a specific sticker, color, icon, letters, text, or QR code, carefully inspect the target candidates in the image to find the one matching the description. Output its ID in 'target_id'.\n"
+        f"  2. If the user context mentions a specific sticker, color, or icon, carefully inspect the target candidates in the image to find the one matching the description. Output its ID in 'target_id'.\n"
         f"  3. If the analysis shows a WARNING that another object is ON TOP of or overlapping with the target, output 'relocate' for that blocking object.\n"
         f"  4. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one, output 'relocate' for that object. If clear, output 'pick'.\n"
         f"  5. If the analysis says the target is clear, verify visually. If it looks clear, output 'pick'.\n"
@@ -1277,9 +1261,17 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 else:
                     # ── Normal flow: Qwen safety gate ────────────────────────
                     print("BEFORE QWEN")
+                    snapshot_b64 = None
+                    try:
+                        snapshot_b64 = crop_target_snapshot(target_detections)
+                    except Exception as e:
+                        import traceback
+                        logger.error(f"Snapshot error: {traceback.format_exc()}")
+                        
+                    image_to_send = snapshot_b64 if snapshot_b64 else frame_b64
                     plan = await qwen_plan_next_action(
                         target,
-                        frame_b64,
+                        image_to_send,
                         detections,
                         action_history,
                         user_context,
@@ -1483,14 +1475,6 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
                 print("RETURNING COORDINATES:", target_det)
 
-                # Generate zoomed-in snapshot of target area (does NOT touch live feed)
-                try:
-                    snapshot_b64 = crop_target_snapshot(target_detections)
-                except Exception as e:
-                    import traceback
-                    logger.error(f"Snapshot error: {traceback.format_exc()}")
-                    snapshot_b64 = None
-
                 return [TextContent(
                     type="text",
                     text=json.dumps({
@@ -1508,10 +1492,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         "qwen_raw_output": raw_output,
                         "iterations": iteration,
                         "qwen_reasoning": reasoning,
-                        "snapshot_b64": snapshot_b64,
                     })
                 )]
-
 
         return [TextContent(type="text", text=json.dumps({
             "status": "FAILED",
