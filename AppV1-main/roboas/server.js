@@ -1204,13 +1204,49 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           }
 
           if (visionMcpClient) {
+            // Fuzzy-match generic names like "cube" to catalogue-specific names
+            const CATALOGUE_NAMES = ['black marker', 'blue cube', 'red cube', 'green cube', 'medicine', 'nut', 'yellow cube', 'sponge', 'screwdriver'];
+            let resolvedTarget = args.target_name;
+            if (!CATALOGUE_NAMES.includes(resolvedTarget)) {
+              // Check if it's a partial match (e.g. "cube" matches "blue cube", "red cube", etc.)
+              const partialMatches = CATALOGUE_NAMES.filter(n => n.includes(resolvedTarget));
+              if (partialMatches.length > 0) {
+                resolvedTarget = partialMatches[0]; // Pick first match — vision pipeline will find the right one
+                console.log(`🔄 Fuzzy-matched "${args.target_name}" → "${resolvedTarget}" (${partialMatches.length} candidates)`);
+              }
+            }
+
+            // Helper: call locate_object, retrying without user_context if remote schema rejects it
+            const callLocateObject = async () => {
+              try {
+                return await visionMcpClient.callTool({ 
+                  name: "locate_object", 
+                  arguments: { target_name: resolvedTarget, user_context: question } 
+                }, undefined, { timeout: 900000 });
+              } catch (firstErr) {
+                // If the remote MCP rejects user_context (schema mismatch), retry without it
+                if (firstErr.message && firstErr.message.includes("Invalid")) {
+                  console.log("⚠️ Vision MCP rejected user_context — retrying without it...");
+                  return await visionMcpClient.callTool({ 
+                    name: "locate_object", 
+                    arguments: { target_name: resolvedTarget } 
+                  }, undefined, { timeout: 900000 });
+                }
+                throw firstErr;
+              }
+            };
+
             // Fire-and-forget background pipeline
-            visionMcpClient.callTool({ 
-              name: "locate_object", 
-              arguments: { target_name: args.target_name, user_context: question } 
-            }, undefined, { timeout: 900000 })
+            callLocateObject()
             .then(async res => {
-              const parsed = JSON.parse(res.content[0].text);
+              const rawText = res.content[0].text;
+              let parsed;
+              try {
+                parsed = JSON.parse(rawText);
+              } catch (jsonErr) {
+                // If the response isn't JSON, it's likely an error message from the MCP SDK
+                throw new Error(rawText.substring(0, 300));
+              }
               logToolCall(question, "locate_object", args, parsed.status === "SUCCESS" ? "Target located" : "Scan failed");
               
               if (parsed.status === "SUCCESS") {
