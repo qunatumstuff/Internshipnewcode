@@ -653,7 +653,7 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
     """
     lines = []
     # Find the target detection, excluding any that are already in the placement box
-    target_det = next((d for d in detections if target in d.get("object_name", "") and not is_inside_placement_box(d)), None)
+    target_det = next((d for d in detections if target in d.get("object_name", "") and is_inside_placement_box(d)), None)
 
     # 1. Analyze Elevation (Z-axis)
     lines.append("ELEVATION ANALYSIS:")
@@ -812,16 +812,47 @@ async def qwen_plan_next_action(
         )
 
     # Build target candidate list with IDs so Qwen can pick the correct identical object (e.g., specific sticker)
-    target_dets = [d for d in detections if target in d.get("object_name", "") and not is_inside_placement_box(d)]
+    target_base = "cube" if "cube" in target.lower() else target.lower()
+
+# For Qwen candidate selection, DO NOT filter by placement box yet.
+# Let Qwen see all possible target candidates first.
+    target_dets = [
+    d for d in detections
+    if target_base in d.get("object_name", "").lower()
+    ]
+
     target_list_str = ""
+
     if len(target_dets) > 1:
         target_list_str = "MULTIPLE TARGET CANDIDATES DETECTED:\n"
-        for i, d in enumerate(target_dets):
-            target_list_str += f"  - [ID: {i}] {d['object_name']} at X:{d['x']:.3f}, Y:{d['y']:.3f}\n"
-        target_list_str += "Visually identify which of these candidates matches the user's sticker/icon request, and return its ID as 'target_id'.\n\n"
-    else:
-        target_list_str = "SINGLE TARGET CANDIDATE DETECTED. (Use target_id: 0)\n\n"
 
+        for i, d in enumerate(target_dets):
+          target_list_str += (
+            f"  - [ID: {i}] {d['object_name']} "
+            f"at X:{d['x']:.3f}, Y:{d['y']:.3f}, "
+            f"inside_placement_box:{is_inside_placement_box(d)}\n"
+        )
+
+        target_list_str += (
+        "Use the image to identify which candidate matches the user's sticker/icon/color request. "
+        "Return that candidate ID as 'target_id'.\n\n"
+    )
+
+    elif len(target_dets) == 1:
+        target_list_str = (
+        "SINGLE TARGET CANDIDATE DETECTED:\n"
+        f"  - [ID: 0] {target_dets[0]['object_name']} "
+        f"at X:{target_dets[0]['x']:.3f}, Y:{target_dets[0]['y']:.3f}, "
+        f"inside_placement_box:{is_inside_placement_box(target_dets[0])}\n"
+        "Use target_id: 0.\n\n"
+    )
+
+    else:
+        target_list_str = (
+        "NO TARGET CANDIDATES DETECTED BY PYTHON.\n"
+        "Use the image to check if the target is visible. "
+        "If it is not visible, output abort.\n\n"
+    )
     prompt = (
         f"You are the visual safety gate for a robotic arm.\n\n"
         f"GOAL: Pick up the '{target}'\n\n"
@@ -856,6 +887,22 @@ async def qwen_plan_next_action(
     print("RAW QWEN PLAN:", repr(raw))
     try:
         plan = extract_qwen_json(raw)
+
+        target_id = plan.get("target_id", 0)
+
+        if target_dets and isinstance(target_id, int) and 0 <= target_id < len(target_dets):
+           chosen_target_det = target_dets[target_id]
+           plan["chosen_target_name"] = chosen_target_det.get("object_name")
+           plan["chosen_target_x"] = chosen_target_det.get("x")
+           plan["chosen_target_y"] = chosen_target_det.get("y")
+
+           print("===== QWEN CHOSEN TARGET =====")
+           print("target_id:", target_id)
+           print("object:", chosen_target_det.get("object_name"))
+           print("x:", chosen_target_det.get("x"))
+           print("y:", chosen_target_det.get("y"))
+        else:
+           print("WARNING: Qwen target_id invalid or no target_dets available.")
     except Exception as e:
         logger.error(f"Failed to parse Qwen JSON: {e}")
         
@@ -874,6 +921,14 @@ async def qwen_plan_next_action(
         
     print("PARSED QWEN ACTION:", plan)
     plan["raw_output"]=raw
+
+    print("===== FINAL PICK TARGET DEBUG =====")
+    print("original target:", target)
+    print("target_base:", target_base)
+    print("qwen target_id:", plan.get("target_id"))
+    print("chosen_target_name:", plan.get("chosen_target_name"))
+    print("chosen_target_x:", plan.get("chosen_target_x"))
+    print("chosen_target_y:", plan.get("chosen_target_y"))
     
     return plan
 
