@@ -102,8 +102,6 @@ OBJECT_CATALOGUE = {
                      "length_m": 0.112, "breadth_m": 0.028},
     "nut":          {"size": "34.6 x 30 x 17 mm",        "height_m": 0.017,
                      "length_m": 0.0346,  "breadth_m": 0.030},
-    "cube":         {"size": "30 x 30 x 30 mm",         "height_m": 0.030,
-                     "length_m": 0.030,   "breadth_m": 0.030},
     "yellow cube":  {"size": "25 x 25 x 25 mm", "height_m": 0.025,
                      "length_m": 0.025,   "breadth_m": 0.025,},
     "sponge":       {"size": "75 x 18 x 30 mm",    "height_m": 0.018,
@@ -176,52 +174,6 @@ def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics):
         "z":         round(float(robot_pt[2]) + Z_OFFSET_M, 4),  # +25mm height offset
         "angle_deg": round(math.degrees(yaw),  2),
     }
-
-
-def _compute_pipe_grasp(mask_binary, depth_frame, intrinsics, angle_rad):
-    """
-    Use the pipe segmentation mask to find the two physical pipe ends,
-    deproject both through depth, and return the one needing least wrist
-    rotation from home (angle = 0 deg robot frame).
-
-    Returns a detection dict with grasp_label, or None if mask is too small.
-    """
-    contours, _ = cv2.findContours(
-        mask_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-    if not contours:
-        return None
-
-    largest = max(contours, key=cv2.contourArea)
-    if cv2.contourArea(largest) < 500:
-        return None
-
-    rect = cv2.minAreaRect(largest)
-    box  = cv2.boxPoints(rect).astype(np.int32)
-    w, h = rect[1]
-
-    # Short sides of the rectangle = the two physical pipe ends
-    if w < h:
-        end_a_px = ((box[0] + box[3]) / 2).astype(int)
-        end_b_px = ((box[1] + box[2]) / 2).astype(int)
-    else:
-        end_a_px = ((box[0] + box[1]) / 2).astype(int)
-        end_b_px = ((box[2] + box[3]) / 2).astype(int)
-
-    candidates = []
-    for label, px in [("grasp_A", end_a_px), ("grasp_B", end_b_px)]:
-        coords = _pixel_to_robot(px[0], px[1], angle_rad, depth_frame, intrinsics)
-        if coords is None:
-            continue
-        coords["label"] = label
-        candidates.append(coords)
-
-    if not candidates:
-        return None
-
-    # Pick the end requiring least wrist rotation from home (0 deg)
-    best = min(candidates, key=lambda c: abs(c["angle_deg"]))
-    return best
 
 
 def run_yolo_detection(color_image, depth_frame, intrinsics):
@@ -322,8 +274,6 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
 
         for mask, class_id, conf in zip(masks, class_ids, confs):
             cls_name = camera.model.names[class_id].lower()
-            if cls_name not in ("pipe", "sponge"):
-                continue
 
             mask_bin = cv2.resize(mask, (color_image.shape[1], color_image.shape[0]))
             mask_bin = ((mask_bin > 0.5) * 255).astype(np.uint8)
@@ -346,37 +296,6 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                 angle_rad = math.radians(rect[2])
                 logger.info(f"[{cls_name}] OBB angle not available, using minAreaRect: {rect[2]:.1f}deg")
 
-            if cls_name == "pipe":
-                # Compute two physical pipe ends, select the one needing least rotation
-                best = _compute_pipe_grasp(mask_bin, depth_frame, intrinsics, angle_rad)
-                if best is None:
-                    continue
-                detections.append({
-                    "object_name": "pipe",
-                    "x":           best["x"],
-                    "y":           best["y"],
-                    "z":           best["z"],
-                    "angle_deg":   best["angle_deg"],
-                    "confidence":  round(float(conf), 3),
-                    "grasp_label": best["label"],
-                    "cx_px":       float(cx_px),
-                    "cy_px":       float(cy_px),
-                })
-            else:
-                # Sponge — mask centre deprojected through depth with OBB angle
-                coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics)
-                if coords is None:
-                    continue
-                detections.append({
-                    "object_name": "sponge",
-                    "x":           coords["x"],
-                    "y":           coords["y"],
-                    "z":           coords["z"],
-                    "angle_deg":   coords["angle_deg"],
-                    "confidence":  round(float(conf), 3),
-                    "cx_px":       float(cx_px),
-                    "cy_px":       float(cy_px),
-                })
 
     logger.info(
         f"Detection: {len(detections)} object(s) — "
@@ -1466,10 +1385,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 else:
                     target_det = target_detections[0]
 
-                if target_det["object_name"] == "pipe" and target_det.get("grasp_label"):
-                    grasp_label = target_det["grasp_label"]
-                else:
-                    grasp_label = target_det.get("grasp_label")
+                grasp_label = target_det.get("grasp_label")
 
                 action_history.append(f"Vision located '{target}' — {reasoning}")
 
