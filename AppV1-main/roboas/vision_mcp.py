@@ -943,6 +943,7 @@ async def qwen_plan_next_action(
         f"  5. If the analysis says the target is clear, verify visually. If it looks clear, output 'pick'.\n"
         f"  6. If you see an unknown object blocking the target, output 'abort'.\n"
         f"  7. Do not re-relocate already moved objects (check history).\n\n"
+        f"Analyze the provided image containing colored cubes and a yellow taped boundary line. You need to act as an intelligent task coordinator. Step 1: Understand the User's Request.Interpret the following user intent: '[Insert User Request Here, e.g., I need shelter from the rain]'. Infer which sticker icon on the cubes best solves or matches this request (e.g., an umbrella for rain, a wrench for fixing something, a hat for sun protection).Step 2: Catalog the Environment.Identify all visible cubes by their color. For each cube, determine its physical location: is it fully inside, fully outside, or partially on the boundary of the yellow taped area?Step 3: Target and Locate.Match the inferred sticker icon from Step 1 to the correct cube. State clearly:The inferred target item.The color of the cube it is on.The exact position of that cube relative to the yellow line."
         f"AVAILABLE ACTIONS:\n"
         f"  - relocate: move one blocking object to a safe spot.\n"
         f"  - pick: pick the target.\n"
