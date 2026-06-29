@@ -837,7 +837,21 @@ async def qwen_plan_next_action(
         )
 
     # Build target candidate list with IDs so Qwen can pick the correct identical object (e.g., specific sticker)
-    target_base = "cube" if "cube" in target.lower() else target.lower()
+    STICKER_MAPPINGS = {
+        "umbrella": "yellow",
+        "wrench": "blue",
+        "soy milk": "green",
+        "soymilk": "green",
+        "hat": "red"
+    }
+
+    target_base = target.lower()
+    for sticker in STICKER_MAPPINGS.keys():
+        if sticker in target_base or sticker in user_context.lower():
+            target_base = "cube"
+            break
+    if "cube" in target_base:
+        target_base = "cube"
 
 # For Qwen candidate selection, DO NOT filter by placement box yet.
 # Let Qwen see all possible target candidates first.
@@ -852,8 +866,13 @@ async def qwen_plan_next_action(
     # "blue cube" needs no vision model — this is 100% reliable and instant.
     # Only genuinely visual requests (stickers/icons) fall through to Qwen.
     COLOUR_WORDS = ["blue", "red", "green", "yellow", "black", "white", "orange", "purple"]
+    
     request_text = f"{target} {user_context}".lower()
     mentioned_colours = [c for c in COLOUR_WORDS if c in request_text]
+    
+    for sticker, mapped_color in STICKER_MAPPINGS.items():
+        if sticker in request_text and mapped_color not in mentioned_colours:
+            mentioned_colours.append(mapped_color)
 
     if mentioned_colours:
         colour_matches = [
@@ -889,7 +908,7 @@ async def qwen_plan_next_action(
 
         target_list_str += (
         "Use the image to identify which candidate matches the user's sticker/icon/color request. "
-        "Return that candidate ID as 'target_id'.\n\n"
+        "Return that candidate ID as 'target_id' and set 'next_action' to 'pick'.\n\n"
     )
 
     elif len(target_dets) == 1:
@@ -1242,7 +1261,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 sensor_reasoning = ""
 
                 # Check 1: Z-axis elevation mismatch (Stacked target)
-                if expected_h is not None and target_detections:
+                if expected_h is not None and len(target_detections) == 1:
                     expected_z = expected_h / 2
                     target_z = target_detections[0]["z"]
                     excess = target_z - expected_z
@@ -1273,7 +1292,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                             logger.info(f"Target '{target}' is elevated (+{excess*1000:.0f}mm) but has highest Z among nearby objects. Target is on top and accessible.")
 
                 # Check 2: XY overlap
-                if not sensor_obstacle and target_detections:
+                if not sensor_obstacle and len(target_detections) == 1:
                     target_det = target_detections[0]
                     target_radius = math.hypot(
                         target_info.get("length_m", 0.04),
@@ -1333,24 +1352,35 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         "reasoning": "No camera frame — aborting for safety.",
                         "raw_output": "No camera frame available, did not run qwen",
                     }
+                if "next_action" not in plan and "target_id" in plan:
+                    plan["next_action"] = "pick"
+
                 print("AFTER QWEN/SENSOR PLAN:", plan)
+
+                try:
+                    target_id = int(plan.get("target_id", 0))
+                except (ValueError, TypeError):
+                    target_id = 0
+                if not (0 <= target_id < len(target_detections)):
+                    target_id = 0
+                target_det = target_detections[target_id] if target_detections else None
 
                 if plan.get("next_action") == "pick":
                     # Failsafe: If Qwen hallucinated that the path is clear, but depth sensor knows there is an anomaly.
                     target_info = OBJECT_CATALOGUE.get(target, {})
                     expected_h = target_info.get("height_m")
-                    if expected_h is not None and target_detections:
+                    if expected_h is not None and target_det:
                         expected_z = expected_h / 2
-                        excess = target_detections[0]["z"] - expected_z
+                        excess = target_det["z"] - expected_z
                         if excess > 0.020:
                             # Find nearby object with HIGHER Z than target (on top of it)
-                            target_x = target_detections[0]["x"]
-                            target_y = target_detections[0]["y"]
-                            target_z = target_detections[0]["z"]
+                            target_x = target_det["x"]
+                            target_y = target_det["y"]
+                            target_z = target_det["z"]
                             best_obstacle = None
                             min_dist = 9999.0
                             for d in detections:
-                                if d is target_detections[0] or is_inside_placement_box(d):
+                                if d is target_det or is_inside_placement_box(d):
                                     continue
                                 dx = d["x"] - target_x
                                 dy = d["y"] - target_y
@@ -1372,8 +1402,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                                 logger.info(f"Qwen failsafe: Target '{target}' elevated (+{excess*1000:.0f}mm) but has highest Z. Target is on top — proceeding with pick.")
 
                     # XY Overlap Failsafe: If Qwen hallucinated that it is clear, but YOLO detects an overlap
-                    if plan.get("next_action") == "pick" and target_detections:
-                        target_det = target_detections[0]
+                    if plan.get("next_action") == "pick" and target_det:
                         target_info = OBJECT_CATALOGUE.get(target, {})
                         target_radius = math.hypot(
                             target_info.get("length_m", 0.04),
@@ -1445,7 +1474,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
                 if obstacle_name and obstacle_dets:
                     obs = obstacle_dets[0]
-                elif obstacle_name and target_detections:
+                elif obstacle_name and target_det:
                     # Qwen visually saw a blocker that YOLO missed.
                     # DANGEROUS fallback: using the target's own coordinates means
                     # the robot may physically pick up the TARGET, not the blocker.
@@ -1456,7 +1485,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     target_known_h = OBJECT_CATALOGUE.get(target, {}).get("height_m", None)
                     target_elevated = False
                     if target_known_h is not None:
-                        t = target_detections[0]
+                        t = target_det
                         target_elevated = (t["z"] - target_known_h / 2) > 0.020
 
                     if fallback_used or not target_elevated:
@@ -1472,7 +1501,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                             f"Qwen requested relocate '{obstacle_name}' not in YOLO detections. "
                             f"Target IS elevated — using target coordinates as blocker position (one-time)."
                         )
-                        obs = target_detections[0].copy()
+                        obs = target_det.copy()
                         obs["object_name"] = obstacle_name
                         detections.append(obs)
                         action_history.append(
