@@ -110,6 +110,8 @@ OBJECT_CATALOGUE = {
     "screwdriver":  {"size": "104 x 25 x 25 mm",    "height_m": 0.025,
                      "length_m": 0.104, "breadth_m": 0.025,
                      "notes": "Angled grasp configuration"},
+    "cube":         {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
 }
 
 # Camera-to-robot base frame transformation matrix.
