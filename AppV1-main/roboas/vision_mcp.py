@@ -112,6 +112,14 @@ OBJECT_CATALOGUE = {
                      "notes": "Angled grasp configuration"},
     "cube":         {"size": "30 x 30 x 30 mm", "height_m": 0.03,
                      "length_m": 0.03,   "breadth_m": 0.03},
+    "soy milk":     {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+    "umbrella":     {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+    "wrench":       {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+    "hat":          {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
 }
 
 # Camera-to-robot base frame transformation matrix.
@@ -595,6 +603,12 @@ def is_inside_placement_box(det: dict) -> bool:
         return False
 
 
+def is_target_match(target: str, object_name: str) -> bool:
+    """Helper to match logical target names against YOLO object_names."""
+    if target in ["soy milk", "soymilk", "umbrella", "wrench", "hat"]:
+        return "cube" in object_name
+    return target in object_name
+
 def check_overlap_obb(d1: dict, d2: dict, clearance: float = 0.0) -> bool:
     """Check if two oriented bounding boxes overlap in XY plane using Separating Axis Theorem (SAT)."""
     # Retrieve catalogue sizes
@@ -678,7 +692,7 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
     """
     lines = []
     # Find the target detection, excluding any that are already in the placement box
-    target_det = next((d for d in detections if target in d.get("object_name", "") and is_inside_placement_box(d)), None)
+    target_det = next((d for d in detections if is_target_match(target, d.get("object_name", "")) and not is_inside_placement_box(d)), None)
 
     # 1. Analyze Elevation (Z-axis)
     lines.append("ELEVATION ANALYSIS:")
@@ -707,13 +721,13 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
             if abs(h - implied_height) <= MATCH_TOLERANCE:
                 plausible.append(obj_name)
 
-        if target in d.get("object_name", ""):
+        if is_target_match(target, d.get("object_name", "")):
             # TARGET is elevated — it's sitting ON something else.
             # Check if any nearby object has HIGHER Z (i.e., something is on top of the target).
             blocker_on_top = None
             if target_det:
                 for other in detections:
-                    if target in other.get("object_name", "") or is_inside_placement_box(other):
+                    if is_target_match(target, other.get("object_name", "")) or is_inside_placement_box(other):
                         continue
                     odist = math.hypot(other["x"] - target_det["x"], other["y"] - target_det["y"])
                     if odist < 0.080 and other["z"] > d["z"]:
@@ -780,7 +794,7 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
         ) / 2
 
         for d in detections:
-            if target in d.get("object_name", "") or is_inside_placement_box(d):
+            if is_target_match(target, d.get("object_name", "")) or is_inside_placement_box(d):
                 continue
             if check_overlap_obb(d, target_det, clearance=0.015):
                 overlap_found = True
@@ -857,7 +871,7 @@ async def qwen_plan_next_action(
 # Let Qwen see all possible target candidates first.
     target_dets = [
     d for d in detections
-    if target_base in d.get("object_name", "").lower()
+    if is_target_match(target_base, d.get("object_name", "").lower())
     ]
 
     # ── Python colour/name disambiguation (skip Qwen when possible) ──────────
@@ -1207,7 +1221,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
             target_detections = [
                 d for d in detections
-                if target in d.get("object_name", "") and not is_inside_placement_box(d)
+                if is_target_match(target, d.get("object_name", "")) and not is_inside_placement_box(d)
             ]
 
             if not target_detections:
@@ -1305,7 +1319,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
                     target_z = target_det["z"]
                     for d in detections:
-                        if target in d.get("object_name", "") or is_inside_placement_box(d):
+                        if is_target_match(target, d.get("object_name", "")) or is_inside_placement_box(d):
                             continue
                         if check_overlap_obb(d, target_det, clearance=0.015):
                             # Only flag as obstacle if the overlapping object has HIGHER Z
@@ -1415,7 +1429,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
                         target_z = target_det["z"]
                         for d in detections:
-                            if target in d.get("object_name", "") or is_inside_placement_box(d):
+                            if is_target_match(target, d.get("object_name", "")) or is_inside_placement_box(d):
                                 continue
                             if check_overlap_obb(d, target_det, clearance=0.015):
                                 # Only flag if overlapping object has HIGHER Z (on top of target)

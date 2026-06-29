@@ -996,7 +996,7 @@ ROBOTIC ARM — PICK AND PLACE RULES:
 - Once you call 'locate_object', the system will automatically find the coordinates and trigger the robot arm for you.
 - You do NOT need to call 'pick_and_place_object' yourself.
 - Approved objects the robot can pick: cube, yellow cube, blue cube, green cube, red cube, nut, black marker, medicine, sponge, screwdriver.
-- IMPORTANT: If the user asks for 'soy milk', 'umbrella', 'wrench', or 'hat', these are stickers on the generic cubes. You MUST call 'locate_object' with 'cube'. Do NOT use 'soy milk', 'umbrella', 'wrench', or 'hat' as the tool parameter.
+
 
 IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualContext
       },
@@ -1034,7 +1034,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                 target_name: { 
                   type: "string", 
                   description: "Name of the object to locate.", 
-                  enum: ["cube", "object", "yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"] 
+                  enum: ["soy milk", "umbrella", "wrench", "hat", "cube", "object", "yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"] 
                 }
               },
               required: ["target_name"]
@@ -1098,7 +1098,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                 object_name: {
                   type: "string",
                   description: "Object to pick.",
-                  enum: ["yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"]
+                  enum: ["soy milk", "umbrella", "wrench", "hat", "yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"]
                 },
                 x: { type: "number", description: "Robot-frame X in metres." },
                 y: { type: "number", description: "Robot-frame Y in metres." },
@@ -1120,7 +1120,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                 obstacle_name: {
                   type: "string",
                   description: "Name of the object to relocate.",
-                  enum: ["yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"]
+                  enum: ["soy milk", "umbrella", "wrench", "hat", "yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"]
                 },
                 obstacle_x: { type: "number", description: "Robot-frame X of obstacle in metres." },
                 obstacle_y: { type: "number", description: "Robot-frame Y of obstacle in metres." },
