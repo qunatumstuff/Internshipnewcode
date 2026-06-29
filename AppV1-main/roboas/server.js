@@ -1007,7 +1007,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
 
     // Call GPT with tool support
     const completion = await openai.createChatCompletion({
-      model: "gpt-4o",
+      model: "gpt-5.5",
       messages: messages,
       tools: [
         {
