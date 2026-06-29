@@ -995,7 +995,7 @@ ROBOTIC ARM — PICK AND PLACE RULES:
 - When the user asks you to pick up an object, you MUST simply call the 'locate_object' tool.
 - Once you call 'locate_object', the system will automatically find the coordinates and trigger the robot arm for you.
 - You do NOT need to call 'pick_and_place_object' yourself.
-- Approved objects the robot can pick: cube, yellow cube, blue cube, green cube, red cube, nut, black marker, medicine, sponge, screwdriver, object.
+- Approved objects the robot can pick: cube, yellow cube, blue cube, green cube, red cube, nut, black marker, medicine, sponge, screwdriver, object, umbrella, wrench, soy milk, hat.
 
 IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualContext
       },
@@ -1007,7 +1007,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
 
     // Call GPT with tool support
     const completion = await openai.createChatCompletion({
-      model: "gpt-5.4-mini",
+      model: "gpt-4o",
       messages: messages,
       tools: [
         {
@@ -1033,7 +1033,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                 target_name: { 
                   type: "string", 
                   description: "Name of the object to locate.", 
-                  enum: ["cube", "object", "yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"] 
+                  enum: ["cube", "object", "yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver", "umbrella", "wrench", "soy milk", "hat"] 
                 }
               },
               required: ["target_name"]
