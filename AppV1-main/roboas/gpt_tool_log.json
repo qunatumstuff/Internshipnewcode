@@ -1,33 +1,6 @@
 [
   {
-    "timestamp": "2026-06-29T05:39:16.514Z",
-    "userQuestion": "With the soya milk.",
-    "toolName": "ask-gpt_prompt",
-    "args": {},
-    "result": "GPT request received."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:18.213Z",
-    "userQuestion": "With the soya milk.",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "medicine"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:18.219Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Initiating workspace scan for \"medicine\"...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:18.231Z",
+    "timestamp": "2026-06-29T08:05:23.319Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -36,198 +9,7 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-29T05:39:18.235Z",
-    "userQuestion": "With the soya milk.",
-    "toolName": "ask-gpt_response",
-    "args": {
-      "persona": "john",
-      "emoji": "🤖"
-    },
-    "result": "I am checking the workspace for the medicine. Once the path is clear, I will pick it up for you."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:18.259Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I am checking the workspace for the medicine. Once the path is clear, I will pick it up for you."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:19.035Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I am checking the workspace for the medicine. Once the path is clear, I will pick it up for you.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:19.466Z",
-    "userQuestion": "With the soya milk.",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "medicine"
-    },
-    "result": "Scan failed"
-  },
-  {
-    "timestamp": "2026-06-29T05:39:19.471Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Scan stopped: 'medicine' not found.",
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:24.481Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": false,
-      "hasTts": true
-    },
-    "result": "Scan stopped. 'medicine' not found."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:37.063Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_request",
-    "args": {
-      "size": 82606,
-      "mimetype": "audio/webm"
-    },
-    "result": "Transcription request received."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:39.135Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_success",
-    "args": {},
-    "result": "Transcription result: \"Cube, find cube with soya milk sticker.\""
-  },
-  {
-    "timestamp": "2026-06-29T05:39:39.194Z",
-    "userQuestion": "Cube, find cube with soya milk sticker.",
-    "toolName": "ask-gpt_prompt",
-    "args": {},
-    "result": "GPT request received."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:40.955Z",
-    "userQuestion": "Cube, find cube with soya milk sticker.",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:40.959Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Initiating workspace scan for \"cube\"...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:40.970Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-29T05:39:40.975Z",
-    "userQuestion": "Cube, find cube with soya milk sticker.",
-    "toolName": "ask-gpt_response",
-    "args": {
-      "persona": "john",
-      "emoji": "🤖"
-    },
-    "result": "I am checking the workspace for the cube. Once the path is clear, I will pick it up for you."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:41.045Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I am checking the workspace for the cube. Once the path is clear, I will pick it up for you."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:41.782Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I am checking the workspace for the cube. Once the path is clear, I will pick it up for you.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:42.227Z",
-    "userQuestion": "Cube, find cube with soya milk sticker.",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
-    },
-    "result": "Scan failed"
-  },
-  {
-    "timestamp": "2026-06-29T05:39:42.233Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Scan stopped: 'blue cube' not found.",
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-29T05:39:47.245Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": false,
-      "hasTts": true
-    },
-    "result": "Scan stopped. 'blue cube' not found."
-  },
-  {
-    "timestamp": "2026-06-29T05:40:16.800Z",
-    "userQuestion": "System Command",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "john"
-    },
-    "result": "switched to john"
-  },
-  {
-    "timestamp": "2026-06-29T05:40:16.809Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-29T05:40:16.822Z",
+    "timestamp": "2026-06-29T08:05:23.326Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -236,7 +18,7 @@
     "result": "updated to 🤗"
   },
   {
-    "timestamp": "2026-06-29T05:40:20.305Z",
+    "timestamp": "2026-06-29T08:05:23.857Z",
     "userQuestion": "System Event",
     "toolName": "tts_request",
     "args": {
@@ -245,7 +27,7 @@
     "result": "Generating TTS..."
   },
   {
-    "timestamp": "2026-06-29T05:40:21.927Z",
+    "timestamp": "2026-06-29T08:05:25.716Z",
     "userQuestion": "System Event",
     "toolName": "tts_success",
     "args": {
@@ -255,136 +37,32 @@
     "result": "OpenAI TTS generated successfully."
   },
   {
-    "timestamp": "2026-06-29T05:40:36.262Z",
+    "timestamp": "2026-06-29T08:05:39.583Z",
     "userQuestion": "System Event",
     "toolName": "transcribe_request",
     "args": {
-      "size": 36885,
+      "size": 52955,
       "mimetype": "audio/webm"
     },
     "result": "Transcription request received."
   },
   {
-    "timestamp": "2026-06-29T05:40:38.673Z",
+    "timestamp": "2026-06-29T08:05:44.612Z",
     "userQuestion": "System Event",
     "toolName": "transcribe_success",
     "args": {},
-    "result": "Transcription result: \"With the Soyamilk sticker.\""
+    "result": "Transcription result: \"Pick up the cube with the soy milk sticker.\""
   },
   {
-    "timestamp": "2026-06-29T05:40:38.710Z",
-    "userQuestion": "With the Soyamilk sticker.",
+    "timestamp": "2026-06-29T08:05:44.722Z",
+    "userQuestion": "Pick up the cube with the soy milk sticker.",
     "toolName": "ask-gpt_prompt",
     "args": {},
     "result": "GPT request received."
   },
   {
-    "timestamp": "2026-06-29T05:40:40.493Z",
-    "userQuestion": "With the Soyamilk sticker.",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "object"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
-    "timestamp": "2026-06-29T05:40:40.500Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Initiating workspace scan for \"object\"...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-29T05:40:40.515Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-29T05:40:40.525Z",
-    "userQuestion": "With the Soyamilk sticker.",
-    "toolName": "ask-gpt_response",
-    "args": {
-      "persona": "john",
-      "emoji": "🤖"
-    },
-    "result": "I am checking the workspace for the object. Once the path is clear, I will pick it up for you."
-  },
-  {
-    "timestamp": "2026-06-29T05:40:40.549Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Vision MCP Error: Input validation error: 'object' is not one of ['black marker', 'blue cube', 'red cube', 'green cube', 'medicine', 'nut', 'yellow cube', 'sponge', 'screwdriver']",
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-29T05:40:40.611Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I am checking the workspace for the object. Once the path is clear, I will pick it up for you."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-29T05:40:42.793Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I am checking the workspace for the object. Once the path is clear, I will pick it up for you.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-29T05:40:45.561Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-29T05:40:57.646Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_request",
-    "args": {
-      "size": 56909,
-      "mimetype": "audio/webm"
-    },
-    "result": "Transcription request received."
-  },
-  {
-    "timestamp": "2026-06-29T05:41:00.069Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_success",
-    "args": {},
-    "result": "Transcription result: \"Find the cube. Pick up the cube with the soya milk sticker.\""
-  },
-  {
-    "timestamp": "2026-06-29T05:41:00.125Z",
-    "userQuestion": "Find the cube. Pick up the cube with the soya milk...",
-    "toolName": "ask-gpt_prompt",
-    "args": {},
-    "result": "GPT request received."
-  },
-  {
-    "timestamp": "2026-06-29T05:41:01.344Z",
-    "userQuestion": "Find the cube. Pick up the cube with the soya milk...",
+    "timestamp": "2026-06-29T08:05:46.364Z",
+    "userQuestion": "Pick up the cube with the soy milk sticker.",
     "toolName": "locate_object",
     "args": {
       "target_name": "cube"
@@ -392,7 +70,7 @@
     "result": "Orchestrating autonomous scan & pick in background..."
   },
   {
-    "timestamp": "2026-06-29T05:41:01.349Z",
+    "timestamp": "2026-06-29T08:05:46.370Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
@@ -403,7 +81,7 @@
     "result": "No TTS message."
   },
   {
-    "timestamp": "2026-06-29T05:41:01.355Z",
+    "timestamp": "2026-06-29T08:05:46.377Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -412,8 +90,8 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-29T05:41:01.361Z",
-    "userQuestion": "Find the cube. Pick up the cube with the soya milk...",
+    "timestamp": "2026-06-29T08:05:46.381Z",
+    "userQuestion": "Pick up the cube with the soy milk sticker.",
     "toolName": "ask-gpt_response",
     "args": {
       "persona": "john",
@@ -422,7 +100,7 @@
     "result": "I am checking the workspace for the cube. Once the path is clear, I will pick it up for you."
   },
   {
-    "timestamp": "2026-06-29T05:41:01.388Z",
+    "timestamp": "2026-06-29T08:05:46.403Z",
     "userQuestion": "System Event",
     "toolName": "tts_request",
     "args": {
@@ -431,27 +109,7 @@
     "result": "Generating TTS..."
   },
   {
-    "timestamp": "2026-06-29T05:41:02.680Z",
-    "userQuestion": "Find the cube. Pick up the cube with the soya milk...",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "cube"
-    },
-    "result": "Scan failed"
-  },
-  {
-    "timestamp": "2026-06-29T05:41:02.686Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Scan stopped: 'blue cube' not found.",
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-29T05:41:02.920Z",
+    "timestamp": "2026-06-29T08:05:47.442Z",
     "userQuestion": "System Event",
     "toolName": "tts_success",
     "args": {
@@ -461,7 +119,27 @@
     "result": "OpenAI TTS generated successfully."
   },
   {
-    "timestamp": "2026-06-29T05:41:07.696Z",
+    "timestamp": "2026-06-29T08:06:02.445Z",
+    "userQuestion": "Pick up the cube with the soy milk sticker.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Scan failed"
+  },
+  {
+    "timestamp": "2026-06-29T08:06:02.449Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Scan stopped: Obstacle blockage",
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-29T08:06:07.468Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
@@ -469,6 +147,324 @@
       "isRobotMoving": false,
       "hasTts": true
     },
-    "result": "Scan stopped. 'blue cube' not found."
+    "result": "Scan stopped. Obstacle blockage"
+  },
+  {
+    "timestamp": "2026-06-29T08:07:37.026Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-06-29T08:07:37.034Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-29T08:07:37.042Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "idle"
+    },
+    "result": "updated to 🤗"
+  },
+  {
+    "timestamp": "2026-06-29T08:07:37.514Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-29T08:07:38.513Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-29T08:07:54.542Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 68596,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-29T08:07:57.881Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"Pick up the cube with soy milk sticker.\""
+  },
+  {
+    "timestamp": "2026-06-29T08:07:57.909Z",
+    "userQuestion": "Pick up the cube with soy milk sticker.",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-06-29T08:07:59.911Z",
+    "userQuestion": "Pick up the cube with soy milk sticker.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-29T08:07:59.915Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Initiating workspace scan for \"cube\"...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-29T08:07:59.923Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-29T08:07:59.929Z",
+    "userQuestion": "Pick up the cube with soy milk sticker.",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "john",
+      "emoji": "🤖"
+    },
+    "result": "I am checking the workspace for the cube. Once the path is clear, I will pick it up for you."
+  },
+  {
+    "timestamp": "2026-06-29T08:07:59.986Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I am checking the workspace for the cube. Once the path is clear, I will pick it up for you."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-29T08:08:00.774Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I am checking the workspace for the cube. Once the path is clear, I will pick it up for you.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-29T08:08:06.108Z",
+    "userQuestion": "Pick up the cube with soy milk sticker.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Scan failed"
+  },
+  {
+    "timestamp": "2026-06-29T08:08:06.115Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Scan stopped: Obstacle blockage",
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-29T08:08:11.124Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": true
+    },
+    "result": "Scan stopped. Obstacle blockage"
+  },
+  {
+    "timestamp": "2026-06-29T08:09:00.299Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-06-29T08:09:00.305Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-29T08:09:00.313Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "idle"
+    },
+    "result": "updated to 🤗"
+  },
+  {
+    "timestamp": "2026-06-29T08:09:00.695Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-29T08:09:01.668Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-29T08:09:18.828Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 60137,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-29T08:09:25.001Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"Pop the cube with soy milk sticker.\""
+  },
+  {
+    "timestamp": "2026-06-29T08:09:25.133Z",
+    "userQuestion": "Pop the cube with soy milk sticker.",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-06-29T08:09:26.364Z",
+    "userQuestion": "Pop the cube with soy milk sticker.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Orchestrating autonomous scan & pick in background..."
+  },
+  {
+    "timestamp": "2026-06-29T08:09:26.369Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Initiating workspace scan for \"cube\"...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-29T08:09:26.376Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-29T08:09:26.382Z",
+    "userQuestion": "Pop the cube with soy milk sticker.",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "john",
+      "emoji": "🤖"
+    },
+    "result": "I am checking the workspace for the cube. Once the path is clear, I will pick it up for you."
+  },
+  {
+    "timestamp": "2026-06-29T08:09:26.430Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I am checking the workspace for the cube. Once the path is clear, I will pick it up for you."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-29T08:09:28.003Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I am checking the workspace for the cube. Once the path is clear, I will pick it up for you.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-29T08:09:37.782Z",
+    "userQuestion": "Pop the cube with soy milk sticker.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "cube"
+    },
+    "result": "Scan failed"
+  },
+  {
+    "timestamp": "2026-06-29T08:09:37.787Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Scan stopped: Obstacle blockage",
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-29T08:09:42.797Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": true
+    },
+    "result": "Scan stopped. Obstacle blockage"
   }
 ]

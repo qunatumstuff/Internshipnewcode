@@ -404,15 +404,42 @@ def crop_target_snapshot(target_dets: list[dict], zoom_factor: float = 2.5) -> s
     cropped = frame[y1:y2, x1:x2]
 
     # Upscale the crop to a reasonable display size (at least 480px wide)
-    scale = max(1.0, 480.0 / cropped.shape[1])
+    scale = max(1.0, 900.0 / cropped.shape[1])
     if scale > 1.0:
         cropped = cv2.resize(cropped, None, fx=scale, fy=scale, interpolation=cv2.INTER_LANCZOS4)
 
-    _, buffer = cv2.imencode('.jpg', cropped, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    _, buffer = cv2.imencode('.jpg', cropped, [cv2.IMWRITE_JPEG_QUALITY, 95])
     b64_str = base64.b64encode(buffer).decode('utf-8')
     logger.info(f"Cropped snapshot: {x2-x1}x{y2-y1}px region, {len(b64_str)} b64 chars")
     return b64_str
 
+def crop_single_target(det: dict, out_size: int = 768, pad_ratio: float = 0.6) -> str | None:
+    """Crop ONE detection to its own image, upscaled large. For sticker reading."""
+    import base64
+    frame = camera.current_rgb_frame
+    if frame is None or "cx_px" not in det:
+        return None
+    frame = frame.copy()
+    img_h, img_w = frame.shape[:2]
+
+    cx, cy = det["cx_px"], det["cy_px"]
+    w = det.get("w_px", 60)
+    h = det.get("h_px", 60)
+    half = math.hypot(w, h) / 2
+    pad = half * pad_ratio
+
+    x1 = int(max(0, cx - half - pad))
+    y1 = int(max(0, cy - half - pad))
+    x2 = int(min(img_w, cx + half + pad))
+    y2 = int(min(img_h, cy + half + pad))
+    if x2 - x1 < 10 or y2 - y1 < 10:
+        return None
+
+    crop = frame[y1:y2, x1:x2]
+    scale = max(1.0, out_size / crop.shape[1])
+    crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_LANCZOS4)
+    _, buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    return base64.b64encode(buf).decode('utf-8')
 # ==========================================
 # QWEN COMMUNICATION
 # ==========================================
@@ -428,22 +455,25 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
 
     # Removed /no_think because it caused qwen3-vl:2b to return empty responses.
     prompt_with_directive = prompt
-
+    
     payload = {
         "model": QWEN_MODEL,
-        "prompt": prompt_with_directive,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+                "images": [raw_b64]
+            }
+        ],
         "stream": False,
-        "think": False,   # Stops Qwen3 burning all tokens on 'thinking' before the answer
-        "images": [raw_b64],
-        "options": {
-            "temperature": 0.1,
-            "num_predict": 4096
-        }
+        "think": False,
+        "options": {"temperature": 0.1, "num_predict": 2048}
     }
 
     print("IMAGE SIZE:", len(raw_b64))
 
-    url = f"http://{OLLAMA_IP}:11434/api/generate"
+    url = f"http://{OLLAMA_IP}:11434/api/chat"
+    
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -468,23 +498,17 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         
         print("RESULT KEYS:", result.keys())
 
-        response_text = result.get("response", "")
-        
-        # Qwen3 thinking mode fallback: Ollama splits output into
-        # "thinking" + "response". If the model spent all tokens
-        # thinking, "response" is empty but the answer may be
-        # inside the "thinking" field.
+        # /api/chat returns text in message.content (NOT "response")
+        message = result.get("message", {})
+        response_text = message.get("content", "")
+
+        # Empty content means the model burned its whole token budget thinking
+        # (done_reason 'length') and never wrote an answer. Do NOT parse the
+        # thinking ramble — it contains no JSON and will fail. Surface honestly.
         if not response_text.strip():
-            thinking_text = result.get("thinking", "")
-            if thinking_text.strip():
-                logger.warning("Qwen 'response' empty but 'thinking' has content — using it.")
-                print("QWEN THINKING FIELD:", thinking_text[:500])
-                response_text = thinking_text
-            else:
-                logger.error("Ollama returned empty in both 'response' and 'thinking'.")
-                print("FULL OLLAMA RESULT KEYS:", list(result.keys()))
-                print("FULL OLLAMA RESULT:", json.dumps(result, indent=2)[:2000])
-                return "Ollama API Error: Model returned empty string."
+            dr = result.get("done_reason", "")
+            logger.error(f"Qwen returned empty content (done_reason={dr}). No answer produced.")
+            return "Ollama API Error: Model returned empty string."
             
         logger.info(f"[Qwen] {response_text[:120]}")
         return response_text
@@ -493,7 +517,6 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         traceback.print_exc()
         print(f"Qwen network error: {e}")
         return f"Ollama API Error: {e}"
-
 
 # ==========================================
 # QWEN PLANNING
@@ -823,6 +846,35 @@ async def qwen_plan_next_action(
     if target_base in d.get("object_name", "").lower()
     ]
 
+    # ── Python colour/name disambiguation (skip Qwen when possible) ──────────
+    # If the user named a colour (or specific object name) that matches exactly
+    # ONE detection, pick it directly. YOLO already labels cubes by colour, so
+    # "blue cube" needs no vision model — this is 100% reliable and instant.
+    # Only genuinely visual requests (stickers/icons) fall through to Qwen.
+    COLOUR_WORDS = ["blue", "red", "green", "yellow", "black", "white", "orange", "purple"]
+    request_text = f"{target} {user_context}".lower()
+    mentioned_colours = [c for c in COLOUR_WORDS if c in request_text]
+
+    if mentioned_colours:
+        colour_matches = [
+            d for d in target_dets
+            if any(c in d.get("object_name", "").lower() for c in mentioned_colours)
+        ]
+        if len(colour_matches) == 1:
+            chosen = colour_matches[0]
+            chosen_id = target_dets.index(chosen)
+            logger.info(f"Python colour-match: '{mentioned_colours}' → {chosen['object_name']} (ID {chosen_id}). Skipping Qwen.")
+            return {
+                "next_action": "pick",
+                "obstacle_name": None,
+                "target_id": chosen_id,
+                "chosen_target_name": chosen.get("object_name"),
+                "chosen_target_x": chosen.get("x"),
+                "chosen_target_y": chosen.get("y"),
+                "reasoning": f"Python matched colour request to {chosen['object_name']} — no vision model needed.",
+                "raw_output": "Python colour-match (Qwen skipped)",
+            }
+        
     target_list_str = ""
 
     if len(target_dets) > 1:
@@ -877,18 +929,24 @@ async def qwen_plan_next_action(
         f"  - pick: pick the target.\n"
         f"  - abort: cannot safely reach the target.\n\n"
         f"CRITICAL INSTRUCTION: You may think first, but your final output MUST be a valid JSON block enclosed in '```json' and '```' markers.\n"
+        f"IMPORTANT: Do NOT over-think. Look at the image, decide in 2-3 sentences maximum, then output the JSON immediately. If you cannot clearly see the requested sticker/icon, output target_id of the best visual match rather than looping.\n\n"
         f"NO EXPLANATIONS AFTER THE JSON. ONLY OUTPUT JSON AS THE FINAL RESULT.\n\n"
         f"Pick format:\n"
-        f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"reasoning":"target is visible and safe"}}\n\n'
-        f"Relocate format:\n"
-        f'{{"next_action":"relocate","obstacle_name":"[name_of_blocking_object]","target_id":0,"reasoning":"[name] is blocking the target"}}\n\n'
-        f"Abort format:\n"
-        f'{{"next_action":"abort","obstacle_name":null,"target_id":0,"reasoning":"target cannot be safely reached"}}'
+        #f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"reasoning":"target is visible and safe"}}\n\n'
+        #f"Relocate format:\n"
+        #f'{{"next_action":"relocate","obstacle_name":"[name_of_blocking_object]","target_id":0,"reasoning":"[name] is blocking the target"}}\n\n'
+        #f"Abort format:\n"
+        #f'{{"next_action":"abort","obstacle_name":null,"target_id":0,"reasoning":"target cannot be safely reached"}}'
     )
+    
     raw = await ask_qwen_vision(prompt, base64_image)
     print("RAW QWEN PLAN:", repr(raw))
     try:
-        plan = extract_qwen_json(raw)
+        import re
+        clean = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL)
+        clean = re.sub(r'<think>.*$', '', clean, flags=re.DOTALL)  # unterminated think block
+        plan = extract_qwen_json(clean)
+    
 
         target_id = plan.get("target_id", 0)
 
@@ -915,11 +973,23 @@ async def qwen_plan_next_action(
         # elevation) has already gated this point. If sensors said the target
         # was blocked, the relocate would have been forced earlier. Aborting
         # because the LLM rambled is the wrong failure mode.
-        plan = {
-            "next_action": "pick",
-            "obstacle_name": None,
-            "reasoning": f"Qwen unparseable ({clean_reason}) — sensor analysis clear, proceeding with direct pick."
-        }
+        
+        if target_dets and len(target_dets) > 1:
+            # Multiple identical candidates (e.g. 4 cubes). We genuinely don't
+            # know which one was requested — do NOT silently default to [0].
+            plan = {
+                "next_action": "abort",
+                "obstacle_name": None,
+                "reasoning": f"Could not identify which {target_base} was requested ({clean_reason}). Please specify by colour or position."
+            }
+        else:
+            # Single candidate — [0] is correct, safe to proceed.
+            plan = {
+                "next_action": "pick",
+                "obstacle_name": None,
+                "reasoning": f"Qwen unparseable ({clean_reason}) — single candidate, proceeding with direct pick."
+            }
+        
         
     print("PARSED QWEN ACTION:", plan)
     plan["raw_output"]=raw
@@ -1060,7 +1130,13 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     if name == "analyse_surroundings":
         prompt    = args.get("prompt") or (
             "Describe all objects in the workspace, their positions relative to each "
-            "other, and whether any appear stacked or blocking others."
+            "other, and whether any appear stacked or blocking others. Ignore yellow tape if any."
+
+           "Identify all cubes visible in the image by their color (e.g., blue, red, yellow, green)."
+
+           "Look closely at the sticker illustration on top of each cube. Identify the icon depicted (e.g., wrench, hat, umbrella)."
+
+           "If I asked for sticker, then if my target sticker is '[Insert Target Sticker Here, e.g., wrench]', state which cube color matches it and clarify its current position relative to the yellow boundary."
         )
         frame_b64 = get_frame_as_base64()
         if frame_b64 is None:
