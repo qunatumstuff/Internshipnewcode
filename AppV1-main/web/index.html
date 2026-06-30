@@ -172,6 +172,7 @@
 
     let engine = null;
     let isListening = false;
+    let framesCount = 0;
     let lastActiveTime = Date.now();
     let watchdogTimer = null;
     let lastAudioActiveLogged = 0;
@@ -223,7 +224,6 @@
         });
         detectCallbackAttached = true;
 
-        let framesCount = 0;
         let lastScoreRmsLogged = 0;
         let chunkCount = 0;
         let lastChunkCountTime = Date.now();
@@ -441,8 +441,8 @@
         if (!isListening) return;
         const idleTime = Date.now() - lastActiveTime;
         const zeroRmsTime = Date.now() - (window.lastNonZeroRmsTime || Date.now());
-        if (idleTime > 4000) {
-          console.warn(`[JS] Watchdog trigger: idleTime=${idleTime}ms. Restarting engine...`);
+        if (idleTime > 60000 || zeroRmsTime > 60000) {
+          console.warn(`[JS] Watchdog trigger: idleTime=${idleTime}ms, zeroRmsTime=${zeroRmsTime}ms. Restarting engine...`);
           if (onEventCallback) onEventCallback('no_audio_detected');
           await window.restartWakeWordEngine();
         }
@@ -470,6 +470,7 @@
           await engine._audioContext.resume();
         }
         isListening = true;
+        framesCount = 0;
         lastActiveTime = Date.now();
         startWatchdog();
         if (onEventCallback) onEventCallback('started');
@@ -526,6 +527,7 @@
             await engine._audioContext.resume();
           }
           isListening = true;
+          framesCount = 0;
           startWatchdog();
           if (onEventCallback) onEventCallback('started');
           return true;

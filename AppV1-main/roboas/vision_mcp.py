@@ -704,20 +704,20 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
         known_h = OBJECT_CATALOGUE.get(d["object_name"], {}).get("height_m", None)
         if known_h is None:
             continue
-        expected_z = known_h / 2
-        excess = d["z"] - expected_z
+        top_surface_z = d["z"] - Z_OFFSET_M
+        excess = top_surface_z - known_h
         if excess <= 0.020:
             continue
 
         elevation_found = True
-        implied_height = excess * 2
+        implied_support_height = excess
         MATCH_TOLERANCE = 0.015
         plausible = []
         for obj_name, obj_info in OBJECT_CATALOGUE.items():
             if obj_name == d["object_name"]:
                 continue
             h = obj_info["height_m"]
-            if abs(h - implied_height) <= MATCH_TOLERANCE:
+            if abs(h - implied_support_height) <= MATCH_TOLERANCE:
                 plausible.append(obj_name)
 
         if is_target_match(target, d.get("object_name", "")):
@@ -940,13 +940,14 @@ async def qwen_plan_next_action(
         f"HISTORY:\n{history_summary}\n\n"
         f"INSTRUCTIONS:\n"
         f"  1. Look at the image AND read the Python sensor analysis.\n"
-        f"  2. IMPORTANT: The items (like 'soy milk', 'umbrella', 'wrench', 'hat') are STICKERS placed on the colored cubes. You MUST select one of the provided target candidate cubes by outputting its ID in 'target_id'. Do NOT select background objects like medicine boxes.\n"
-        f"  3. If the user context mentions a specific sticker, color, or icon, carefully inspect the target candidate cubes in the image to find the one matching the description. Output its ID in 'target_id'.\n"
-        f"  4. If the analysis shows a WARNING that another object is ON TOP of or overlapping with the target, output 'relocate' for that blocking object.\n"
-        f"  5. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one, output 'relocate' for that object. If clear, output 'pick'.\n"
-        f"  6. If the analysis says the target is clear, verify visually. If it looks clear, output 'pick'.\n"
-        f"  7. If you see an unknown object blocking the target, output 'abort'.\n"
-        f"  8. Do not re-relocate already moved objects (check history).\n\n"
+        f"  2. IMPORTANT: Do NOT try to visually look for the stickers on the cubes. The camera cannot see them clearly. You MUST blindly trust the following mapping.\n"
+        f"  3. EXPLICIT MAPPING: 'soy milk' = GREEN cube. 'hat' = RED cube. 'wrench' = BLUE cube. 'umbrella' = YELLOW cube. If the user asks for one of these, you MUST output 'pick' and select the corresponding colored cube. Do NOT abort. Do NOT visually verify the sticker.\n"
+        f"  4. If the user asks for an object NOT in this list, output 'abort'.\n"
+        f"  5. HIDDEN OBJECT DEDUCTION: If your target cube is visually missing, BUT the Python Sensor Analysis says an obstacle is 'Likely resting on' your target cube, you MUST deduce the target is hidden underneath it. Output 'relocate' and set 'obstacle_name' to the blocking object.\n"
+        f"  6. RELOCATE OVERRIDE: If the Python Sensor Analysis explicitly says 'MUST relocate [object] first', you MUST immediately output 'relocate' and set 'obstacle_name' to that object. Do NOT second-guess it. Do NOT try to pick the target.\n"
+        f"  7. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one, output 'relocate' for that object. If clear, output 'pick'.\n"
+        f"  8. If you see an unknown object blocking the target, output 'abort'.\n"
+        f"  9. Do not re-relocate already moved objects (check history).\n\n"
         f"AVAILABLE ACTIONS:\n"
         f"  - relocate: move one blocking object to a safe spot.\n"
         f"  - pick: pick the target.\n"
@@ -1200,7 +1201,10 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         while iteration < MAX_PLANNING_ITERATIONS:
             iteration += 1
             camera.current_target_class = target
-            await asyncio.sleep(1.0)
+            
+            logger.info("Moving robot to home position before taking snapshot...")
+            await call_robot_tool("return_home", {})
+            await asyncio.sleep(1.5)  # Give camera time to settle after arm moves out of view
 
             detections = get_current_detections()
             frame_b64 = get_frame_as_base64()
