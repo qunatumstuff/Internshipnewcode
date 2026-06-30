@@ -474,7 +474,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
             }
         ],
         "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 2048}
+        "options": {"temperature": 0.1, "num_predict": 4096}
     }
 
     print("IMAGE SIZE:", len(raw_b64))
@@ -940,25 +940,27 @@ async def qwen_plan_next_action(
         f"HISTORY:\n{history_summary}\n\n"
         f"INSTRUCTIONS:\n"
         f"  1. Look at the image AND read the Python sensor analysis.\n"
+        f"  2. IMPORTANT: The following words are allocated to these items soy milk for green cube hat for red cube wrench for blue cue and umbrella for green cube treat these items as if they were the real object.\n"
         f"  2. If the user context mentions a specific sticker, color, or icon, carefully inspect the target candidates in the image to find the one matching the description. Output its ID in 'target_id'.\n"
         f"  3. If the analysis shows a WARNING that another object is ON TOP of or overlapping with the target, output 'relocate' for that blocking object.\n"
         f"  4. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one, output 'relocate' for that object. If clear, output 'pick'.\n"
         f"  5. If the analysis says the target is clear, verify visually. If it looks clear, output 'pick'.\n"
         f"  6. If you see an unknown object blocking the target, output 'abort'.\n"
         f"  7. Do not re-relocate already moved objects (check history).\n\n"
+        f"Analyze the provided image containing colored cubes and a yellow taped boundary line. You need to act as an intelligent task coordinator. Step 1: Understand the User's Request.Interpret the following user intent: '[Insert User Request Here, e.g., I need shelter from the rain]'. Infer which sticker icon on the cubes best solves or matches this request (e.g., an umbrella for rain, a wrench for fixing something, a hat for sun protection).Step 2: Catalog the Environment.Identify all visible cubes by their color. For each cube, determine its physical location: is it fully inside, fully outside, or partially on the boundary of the yellow taped area?Step 3: Target and Locate.Match the inferred sticker icon from Step 1 to the correct cube. State clearly:The inferred target item.The color of the cube it is on.The exact position of that cube relative to the yellow line."
         f"AVAILABLE ACTIONS:\n"
         f"  - relocate: move one blocking object to a safe spot.\n"
         f"  - pick: pick the target.\n"
         f"  - abort: cannot safely reach the target.\n\n"
         f"CRITICAL INSTRUCTION: You may think first, but your final output MUST be a valid JSON block enclosed in '```json' and '```' markers.\n"
-        f"IMPORTANT: Do NOT over-think. Do NOT enter infinite loops. Keep your reasoning concise (under 100 words). If you cannot clearly see the requested sticker/icon, pick the best visual match or output abort.\n\n"
+        f"IMPORTANT: Do NOT over-think. Look at the image, decide in 2-3 sentences maximum, then output the JSON immediately. If you cannot clearly see the requested sticker/icon, output target_id of the best visual match rather than looping.\n\n"
         f"NO EXPLANATIONS AFTER THE JSON. ONLY OUTPUT JSON AS THE FINAL RESULT.\n\n"
         f"Pick format:\n"
-        f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"reasoning":"target is visible and safe"}}\n\n'
-        f"Relocate format:\n"
-        f'{{"next_action":"relocate","obstacle_name":"[name_of_blocking_object]","target_id":0,"reasoning":"[name] is blocking the target"}}\n\n'
-        f"Abort format:\n"
-        f'{{"next_action":"abort","obstacle_name":null,"target_id":0,"reasoning":"target cannot be safely reached"}}'
+        #f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"reasoning":"target is visible and safe"}}\n\n'
+        #f"Relocate format:\n"
+        #f'{{"next_action":"relocate","obstacle_name":"[name_of_blocking_object]","target_id":0,"reasoning":"[name] is blocking the target"}}\n\n'
+        #f"Abort format:\n"
+        #f'{{"next_action":"abort","obstacle_name":null,"target_id":0,"reasoning":"target cannot be safely reached"}}'
     )
     
     raw = await ask_qwen_vision(prompt, base64_image)
