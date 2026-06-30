@@ -441,8 +441,8 @@
         if (!isListening) return;
         const idleTime = Date.now() - lastActiveTime;
         const zeroRmsTime = Date.now() - (window.lastNonZeroRmsTime || Date.now());
-        if (idleTime > 4000 || zeroRmsTime > 5000) {
-          console.warn(`[JS] Watchdog trigger: idleTime=${idleTime}ms, zeroRmsTime=${zeroRmsTime}ms. Restarting engine...`);
+        if (idleTime > 4000) {
+          console.warn(`[JS] Watchdog trigger: idleTime=${idleTime}ms. Restarting engine...`);
           if (onEventCallback) onEventCallback('no_audio_detected');
           await window.restartWakeWordEngine();
         }

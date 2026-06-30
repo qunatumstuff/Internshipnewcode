@@ -1,75 +1,129 @@
 [
   {
-    "timestamp": "2026-06-30T03:07:23.069Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Initiating workspace scan for \"wrench\"...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-30T03:07:23.075Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-30T03:07:23.080Z",
-    "userQuestion": "I want the wrench!",
+    "timestamp": "2026-06-30T04:05:01.943Z",
+    "userQuestion": "I need something to drink.",
     "toolName": "ask-gpt_response",
     "args": {
       "persona": "john",
       "emoji": "🤖"
     },
-    "result": "I am checking the workspace for the wrench. Once the path is clear, I will pick it up for you."
+    "result": "I am checking the workspace for the soy milk. Once the path is clear, I will pick it up for you."
   },
   {
-    "timestamp": "2026-06-30T03:07:23.124Z",
+    "timestamp": "2026-06-30T04:05:02.007Z",
     "userQuestion": "System Event",
     "toolName": "tts_request",
     "args": {
-      "text": "I am checking the workspace for the wrench. Once the path is clear, I will pick it up for you."
+      "text": "I am checking the workspace for the soy milk. Once the path is clear, I will pick it up for you."
     },
     "result": "Generating TTS..."
   },
   {
-    "timestamp": "2026-06-30T03:07:23.938Z",
+    "timestamp": "2026-06-30T04:05:02.724Z",
     "userQuestion": "System Event",
     "toolName": "tts_success",
     "args": {
-      "text": "I am checking the workspace for the wrench. Once the path is clear, I will pick it up for you.",
+      "text": "I am checking the workspace for the soy milk. Once the path is clear, I will pick it up for you.",
       "attempt": 1
     },
     "result": "OpenAI TTS generated successfully."
   },
   {
-    "timestamp": "2026-06-30T03:07:24.293Z",
-    "userQuestion": "I want the wrench!",
+    "timestamp": "2026-06-30T04:05:27.766Z",
+    "userQuestion": "I need something to drink.",
     "toolName": "locate_object",
     "args": {
-      "target_name": "wrench"
+      "target_name": "soy milk"
     },
     "result": "Scan failed"
   },
   {
-    "timestamp": "2026-06-30T03:07:24.299Z",
+    "timestamp": "2026-06-30T04:05:27.772Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
-      "status": "Scan stopped: Could not identify which cube was requested (Ollama API Error: HTTP Error 400: Bad Request). Please specify by colour or position.",
+      "status": "Scan stopped: Could not identify which cube was requested (Ollama API Error: Model returned empty string.). Please specify by colour or position.",
       "isRobotMoving": false,
       "hasTts": false
     },
     "result": "No TTS message."
   },
   {
-    "timestamp": "2026-06-30T03:07:29.314Z",
+    "timestamp": "2026-06-30T04:05:29.111Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Emergency stop activated. Halting the robot.",
+      "isRobotMoving": true,
+      "hasTts": true
+    },
+    "result": "Emergency stop activated. Halting the robot."
+  },
+  {
+    "timestamp": "2026-06-30T04:05:29.290Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Emergency stop activated. Halting the robot.",
+      "isRobotMoving": true,
+      "hasTts": true
+    },
+    "result": "Emergency stop activated. Halting the robot."
+  },
+  {
+    "timestamp": "2026-06-30T04:05:29.347Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Emergency stop activated. Halting the robot."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-30T04:05:29.352Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Emergency stop activated. Halting the robot."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-30T04:05:29.645Z",
+    "userQuestion": "System Emergency Button",
+    "toolName": "emergency_stop",
+    "args": {},
+    "result": "Robot halted"
+  },
+  {
+    "timestamp": "2026-06-30T04:05:30.678Z",
+    "userQuestion": "System Emergency Button",
+    "toolName": "emergency_stop",
+    "args": {},
+    "result": "Robot halted"
+  },
+  {
+    "timestamp": "2026-06-30T04:05:30.945Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Emergency stop activated. Halting the robot.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-30T04:05:31.061Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Emergency stop activated. Halting the robot.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-30T04:05:32.798Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
@@ -77,56 +131,32 @@
       "isRobotMoving": false,
       "hasTts": true
     },
-    "result": "Scan stopped. Could not identify which cube was requested (Ollama API Error: HTTP Error 400: Bad Request). Please specify by colour or position."
+    "result": "Scan stopped. Could not identify which cube was requested (Ollama API Error: Model returned empty string.). Please specify by colour or position."
   },
   {
-    "timestamp": "2026-06-30T03:07:29.356Z",
+    "timestamp": "2026-06-30T04:05:33.155Z",
     "userQuestion": "System Event",
-    "toolName": "tts_request",
+    "toolName": "progress_sse",
     "args": {
-      "text": "Scan stopped. Could not identify which cube was requested (Ollama API Error: HTTP Error 400: Bad Request). Please specify by colour or position."
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": false
     },
-    "result": "Generating TTS..."
+    "result": "No TTS message."
   },
   {
-    "timestamp": "2026-06-30T03:07:30.272Z",
+    "timestamp": "2026-06-30T04:05:34.196Z",
     "userQuestion": "System Event",
-    "toolName": "tts_success",
+    "toolName": "progress_sse",
     "args": {
-      "text": "Scan stopped. Could not identify which cube was requested (Ollama API Error: HTTP Error 400: Bad Request). Please specify by colour or position.",
-      "attempt": 1
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": false
     },
-    "result": "OpenAI TTS generated successfully."
+    "result": "No TTS message."
   },
   {
-    "timestamp": "2026-06-30T03:14:18.078Z",
-    "userQuestion": "System Command",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "john"
-    },
-    "result": "switched to john"
-  },
-  {
-    "timestamp": "2026-06-30T03:14:18.085Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-30T03:14:18.093Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "idle"
-    },
-    "result": "updated to 🤗"
-  },
-  {
-    "timestamp": "2026-06-30T03:14:18.498Z",
+    "timestamp": "2026-06-30T04:16:43.588Z",
     "userQuestion": "System Event",
     "toolName": "tts_request",
     "args": {
@@ -135,7 +165,7 @@
     "result": "Generating TTS..."
   },
   {
-    "timestamp": "2026-06-30T03:14:21.283Z",
+    "timestamp": "2026-06-30T04:16:44.399Z",
     "userQuestion": "System Event",
     "toolName": "tts_success",
     "args": {
@@ -145,32 +175,32 @@
     "result": "OpenAI TTS generated successfully."
   },
   {
-    "timestamp": "2026-06-30T03:14:53.133Z",
+    "timestamp": "2026-06-30T04:16:59.650Z",
     "userQuestion": "System Event",
     "toolName": "transcribe_request",
     "args": {
-      "size": 38835,
+      "size": 30473,
       "mimetype": "audio/webm"
     },
     "result": "Transcription request received."
   },
   {
-    "timestamp": "2026-06-30T03:14:54.974Z",
+    "timestamp": "2026-06-30T04:17:02.948Z",
     "userQuestion": "System Event",
     "toolName": "transcribe_success",
     "args": {},
-    "result": "Transcription result: \"I want to drink.\""
+    "result": "Transcription result: \"I need a drink.\""
   },
   {
-    "timestamp": "2026-06-30T03:14:55.005Z",
-    "userQuestion": "I want to drink.",
+    "timestamp": "2026-06-30T04:17:02.993Z",
+    "userQuestion": "I need a drink.",
     "toolName": "ask-gpt_prompt",
     "args": {},
     "result": "GPT request received."
   },
   {
-    "timestamp": "2026-06-30T03:14:56.255Z",
-    "userQuestion": "I want to drink.",
+    "timestamp": "2026-06-30T04:17:04.547Z",
+    "userQuestion": "I need a drink.",
     "toolName": "locate_object",
     "args": {
       "target_name": "soy milk"
@@ -178,7 +208,7 @@
     "result": "Orchestrating autonomous scan & pick in background..."
   },
   {
-    "timestamp": "2026-06-30T03:14:56.263Z",
+    "timestamp": "2026-06-30T04:17:04.550Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
@@ -189,7 +219,7 @@
     "result": "No TTS message."
   },
   {
-    "timestamp": "2026-06-30T03:14:56.279Z",
+    "timestamp": "2026-06-30T04:17:04.571Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -198,8 +228,8 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-30T03:14:56.290Z",
-    "userQuestion": "I want to drink.",
+    "timestamp": "2026-06-30T04:17:04.575Z",
+    "userQuestion": "I need a drink.",
     "toolName": "ask-gpt_response",
     "args": {
       "persona": "john",
@@ -208,7 +238,7 @@
     "result": "I am checking the workspace for the soy milk. Once the path is clear, I will pick it up for you."
   },
   {
-    "timestamp": "2026-06-30T03:14:56.354Z",
+    "timestamp": "2026-06-30T04:17:04.607Z",
     "userQuestion": "System Event",
     "toolName": "tts_request",
     "args": {
@@ -217,7 +247,7 @@
     "result": "Generating TTS..."
   },
   {
-    "timestamp": "2026-06-30T03:14:57.200Z",
+    "timestamp": "2026-06-30T04:17:06.301Z",
     "userQuestion": "System Event",
     "toolName": "tts_success",
     "args": {
@@ -227,38 +257,27 @@
     "result": "OpenAI TTS generated successfully."
   },
   {
-    "timestamp": "2026-06-30T03:14:57.768Z",
-    "userQuestion": "I want to drink.",
+    "timestamp": "2026-06-30T04:17:30.545Z",
+    "userQuestion": "I need a drink.",
     "toolName": "locate_object",
     "args": {
       "target_name": "soy milk"
     },
-    "result": "Target located"
+    "result": "Scan failed"
   },
   {
-    "timestamp": "2026-06-30T03:14:57.774Z",
+    "timestamp": "2026-06-30T04:17:30.553Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
-      "status": "Target \"soy milk\" clear! Instructing robot to pick it up...",
-      "isRobotMoving": true,
+      "status": "Scan stopped: Could not identify which cube was requested (Ollama API Error: Model returned empty string.). Please specify by colour or position.",
+      "isRobotMoving": false,
       "hasTts": false
     },
     "result": "No TTS message."
   },
   {
-    "timestamp": "2026-06-30T03:16:21.896Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Successfully picked up the soy milk!",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-30T03:16:24.910Z",
+    "timestamp": "2026-06-30T04:17:35.563Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
@@ -266,119 +285,34 @@
       "isRobotMoving": false,
       "hasTts": true
     },
-    "result": "I have finished picking and placing the requested object, soy milk."
+    "result": "Scan stopped. Could not identify which cube was requested (Ollama API Error: Model returned empty string.). Please specify by colour or position."
   },
   {
-    "timestamp": "2026-06-30T03:16:25.044Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I have finished picking and placing the requested object, soy milk."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-30T03:16:25.983Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I have finished picking and placing the requested object, soy milk.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-30T03:31:56.509Z",
-    "userQuestion": "System Command",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "john"
-    },
-    "result": "switched to john"
-  },
-  {
-    "timestamp": "2026-06-30T03:31:56.515Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-06-30T03:31:56.522Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "idle"
-    },
-    "result": "updated to 🤗"
-  },
-  {
-    "timestamp": "2026-06-30T03:31:56.923Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?"
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-30T03:31:58.035Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-06-30T03:32:12.200Z",
+    "timestamp": "2026-06-30T04:17:38.676Z",
     "userQuestion": "System Event",
     "toolName": "transcribe_request",
     "args": {
-      "size": 22096,
+      "size": 53798,
       "mimetype": "audio/webm"
     },
     "result": "Transcription request received."
   },
   {
-    "timestamp": "2026-06-30T03:32:14.878Z",
+    "timestamp": "2026-06-30T04:17:42.258Z",
     "userQuestion": "System Event",
     "toolName": "transcribe_success",
     "args": {},
-    "result": "Transcription result: \"Pick up the green tube.\""
+    "result": "Transcription result: \"What? No, it worked just now.\""
   },
   {
-    "timestamp": "2026-06-30T03:32:14.921Z",
-    "userQuestion": "Pick up the green tube.",
+    "timestamp": "2026-06-30T04:17:42.294Z",
+    "userQuestion": "What? No, it worked just now.",
     "toolName": "ask-gpt_prompt",
     "args": {},
     "result": "GPT request received."
   },
   {
-    "timestamp": "2026-06-30T03:32:17.672Z",
-    "userQuestion": "Pick up the green tube.",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "green cube"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
-    "timestamp": "2026-06-30T03:32:17.679Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Initiating workspace scan for \"green cube\"...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-06-30T03:32:17.690Z",
+    "timestamp": "2026-06-30T04:17:44.303Z",
     "userQuestion": "System Status",
     "toolName": "get_status_emoji",
     "args": {
@@ -387,67 +321,149 @@
     "result": "updated to 🤖"
   },
   {
-    "timestamp": "2026-06-30T03:32:17.695Z",
-    "userQuestion": "Pick up the green tube.",
+    "timestamp": "2026-06-30T04:17:44.307Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-06-30T04:17:44.318Z",
+    "userQuestion": "What? No, it worked just now.",
     "toolName": "ask-gpt_response",
     "args": {
       "persona": "john",
       "emoji": "🤖"
     },
-    "result": "I am checking the workspace for the green cube. Once the path is clear, I will pick it up for you."
+    "result": "Sorry for the confusion. If you want a drink, I can get the soy milk. If you meant something else, tell me which item you want and I will help."
   },
   {
-    "timestamp": "2026-06-30T03:32:17.723Z",
+    "timestamp": "2026-06-30T04:17:44.359Z",
     "userQuestion": "System Event",
     "toolName": "tts_request",
     "args": {
-      "text": "I am checking the workspace for the green cube. Once the path is clear, I will pick it up for you."
+      "text": "Sorry for the confusion. If you want a drink, I can get the soy milk. If you meant something else, tell me which item you want and I will help."
     },
     "result": "Generating TTS..."
   },
   {
-    "timestamp": "2026-06-30T03:32:20.846Z",
+    "timestamp": "2026-06-30T04:17:45.934Z",
     "userQuestion": "System Event",
     "toolName": "tts_success",
     "args": {
-      "text": "I am checking the workspace for the green cube. Once the path is clear, I will pick it up for you.",
+      "text": "Sorry for the confusion. If you want a drink, I can get the soy milk. If you meant something else, tell me which item you want and I will help.",
       "attempt": 1
     },
     "result": "OpenAI TTS generated successfully."
   },
   {
-    "timestamp": "2026-06-30T03:32:28.892Z",
-    "userQuestion": "Pick up the green tube.",
+    "timestamp": "2026-06-30T04:18:05.012Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 26921,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-06-30T04:18:07.985Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"I need something to drink.\""
+  },
+  {
+    "timestamp": "2026-06-30T04:18:08.069Z",
+    "userQuestion": "I need something to drink.",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-06-30T04:18:09.770Z",
+    "userQuestion": "I need something to drink.",
     "toolName": "locate_object",
     "args": {
-      "target_name": "green cube"
+      "target_name": "soy milk"
     },
-    "result": "Target located"
+    "result": "Orchestrating autonomous scan & pick in background..."
   },
   {
-    "timestamp": "2026-06-30T03:32:28.900Z",
+    "timestamp": "2026-06-30T04:18:09.776Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
-      "status": "Target \"green cube\" clear! Instructing robot to pick it up...",
+      "status": "Initiating workspace scan for \"soy milk\"...",
       "isRobotMoving": true,
       "hasTts": false
     },
     "result": "No TTS message."
   },
   {
-    "timestamp": "2026-06-30T03:33:46.944Z",
+    "timestamp": "2026-06-30T04:18:09.792Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-06-30T04:18:09.803Z",
+    "userQuestion": "I need something to drink.",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "john",
+      "emoji": "🤖"
+    },
+    "result": "I am checking the workspace for the soy milk. Once the path is clear, I will pick it up for you."
+  },
+  {
+    "timestamp": "2026-06-30T04:18:09.829Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I am checking the workspace for the soy milk. Once the path is clear, I will pick it up for you."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-06-30T04:18:10.903Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I am checking the workspace for the soy milk. Once the path is clear, I will pick it up for you.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-06-30T04:18:32.956Z",
+    "userQuestion": "I need something to drink.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "soy milk"
+    },
+    "result": "Scan failed"
+  },
+  {
+    "timestamp": "2026-06-30T04:18:32.960Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
-      "status": "Successfully picked up the green cube!",
-      "isRobotMoving": true,
+      "status": "Scan stopped: Could not identify which cube was requested (Ollama API Error: Model returned empty string.). Please specify by colour or position.",
+      "isRobotMoving": false,
       "hasTts": false
     },
     "result": "No TTS message."
   },
   {
-    "timestamp": "2026-06-30T03:33:49.953Z",
+    "timestamp": "2026-06-30T04:18:37.968Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
@@ -455,25 +471,6 @@
       "isRobotMoving": false,
       "hasTts": true
     },
-    "result": "I have finished picking and placing the requested object, green cube."
-  },
-  {
-    "timestamp": "2026-06-30T03:33:50.003Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I have finished picking and placing the requested object, green cube."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-06-30T03:33:51.602Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I have finished picking and placing the requested object, green cube.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
+    "result": "Scan stopped. Could not identify which cube was requested (Ollama API Error: Model returned empty string.). Please specify by colour or position."
   }
 ]
