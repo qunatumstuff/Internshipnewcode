@@ -474,7 +474,6 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
             }
         ],
         "stream": False,
-        "think": False,
         "options": {"temperature": 0.1, "num_predict": 2048}
     }
 
@@ -831,7 +830,55 @@ async def qwen_plan_next_action(
     Called in a loop — after each robot action the scene is re-read
     and Qwen is asked again.
     """
-    scene_analysis = compute_scene_analysis(target, detections)
+    # 1. Resolve sticker -> colour mapping and find the base target name
+    STICKER_MAPPINGS = {
+        "umbrella": "yellow",
+        "wrench": "blue",
+        "soy milk": "green",
+        "soymilk": "green",
+        "hat": "red"
+    }
+
+    target_base = target.lower()
+    for sticker in STICKER_MAPPINGS.keys():
+        if sticker in target_base or sticker in user_context.lower():
+            target_base = "cube"
+            break
+    if "cube" in target_base:
+        target_base = "cube"
+
+    target_dets = [
+        d for d in detections
+        if is_target_match(target_base, d.get("object_name", "").lower())
+    ]
+
+    # 2. Map implied colours to disambiguate targets
+    COLOUR_WORDS = ["blue", "red", "green", "yellow", "black", "white", "orange", "purple"]
+    request_text = f"{target} {user_context}".lower()
+    mentioned_colours = [c for c in COLOUR_WORDS if c in request_text]
+    
+    for sticker, mapped_color in STICKER_MAPPINGS.items():
+        if sticker in request_text and mapped_color not in mentioned_colours:
+            mentioned_colours.append(mapped_color)
+
+    resolved_target = target_base
+    colour_matches = []
+    if mentioned_colours:
+        colour_matches = [
+            d for d in target_dets
+            if any(c in d.get("object_name", "").lower() for c in mentioned_colours)
+        ]
+        if len(colour_matches) == 1:
+            resolved_target = colour_matches[0].get("object_name", resolved_target)
+
+    # 3. Compute scene analysis using the RESOLVED target name (so physical overlaps work for stickers)
+    scene_analysis = compute_scene_analysis(resolved_target, detections)
+
+    # 4. We found exactly one colour match, but Qwen skip logic has been disabled per user request.
+    # Qwen will now always process the scene.
+    if len(colour_matches) == 1:
+        logger.info(f"Python colour-match identified '{resolved_target}'. Passing to Qwen for full visual verification.")
+        
     catalogue_list = ", ".join(OBJECT_CATALOGUE.keys())
     
     history_summary = (
@@ -849,65 +896,7 @@ async def qwen_plan_next_action(
             f"  The user said: \"{user_context}\"\n"
             f"  Use this as a hint when the scene is ambiguous or when you need to identify a specific sticker/icon.\n\n"
         )
-
-    # Build target candidate list with IDs so Qwen can pick the correct identical object (e.g., specific sticker)
-    STICKER_MAPPINGS = {
-        "umbrella": "yellow",
-        "wrench": "blue",
-        "soy milk": "green",
-        "soymilk": "green",
-        "hat": "red"
-    }
-
-    target_base = target.lower()
-    for sticker in STICKER_MAPPINGS.keys():
-        if sticker in target_base or sticker in user_context.lower():
-            target_base = "cube"
-            break
-    if "cube" in target_base:
-        target_base = "cube"
-
-# For Qwen candidate selection, DO NOT filter by placement box yet.
-# Let Qwen see all possible target candidates first.
-    target_dets = [
-    d for d in detections
-    if is_target_match(target_base, d.get("object_name", "").lower())
-    ]
-
-    # ── Python colour/name disambiguation (skip Qwen when possible) ──────────
-    # If the user named a colour (or specific object name) that matches exactly
-    # ONE detection, pick it directly. YOLO already labels cubes by colour, so
-    # "blue cube" needs no vision model — this is 100% reliable and instant.
-    # Only genuinely visual requests (stickers/icons) fall through to Qwen.
-    COLOUR_WORDS = ["blue", "red", "green", "yellow", "black", "white", "orange", "purple"]
     
-    request_text = f"{target} {user_context}".lower()
-    mentioned_colours = [c for c in COLOUR_WORDS if c in request_text]
-    
-    for sticker, mapped_color in STICKER_MAPPINGS.items():
-        if sticker in request_text and mapped_color not in mentioned_colours:
-            mentioned_colours.append(mapped_color)
-
-    if mentioned_colours:
-        colour_matches = [
-            d for d in target_dets
-            if any(c in d.get("object_name", "").lower() for c in mentioned_colours)
-        ]
-        if len(colour_matches) == 1:
-            chosen = colour_matches[0]
-            chosen_id = target_dets.index(chosen)
-            logger.info(f"Python colour-match: '{mentioned_colours}' → {chosen['object_name']} (ID {chosen_id}). Skipping Qwen.")
-            return {
-                "next_action": "pick",
-                "obstacle_name": None,
-                "target_id": chosen_id,
-                "chosen_target_name": chosen.get("object_name"),
-                "chosen_target_x": chosen.get("x"),
-                "chosen_target_y": chosen.get("y"),
-                "reasoning": f"Python matched colour request to {chosen['object_name']} — no vision model needed.",
-                "raw_output": "Python colour-match (Qwen skipped)",
-            }
-        
     target_list_str = ""
 
     if len(target_dets) > 1:

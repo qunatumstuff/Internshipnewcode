@@ -69,6 +69,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   // ── Hands-free / wake-word ──
   HandsOffState _currentState = HandsOffState.handsOffOff;
+  bool _isWakewordModeEnabled = false; // Explicitly tracks the user's manual toggle intent
   html.WebSocket? _wakeWordSocket;
   html.MediaStream? _manualWebStream;
   String _wakeWsStatus = 'disconnected'; // connected | connecting | disconnected | error
@@ -422,7 +423,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _addUiLog('[OWW] failed to setWakeWordMuted: $e');
     }
     if (!muted) {
-      if (_currentState != HandsOffState.handsOffOff) {
+      if (_isWakewordModeEnabled) {
         _changeState(HandsOffState.wakewordListening);
       }
     }
@@ -443,7 +444,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   Future<void> _speak(String text) async {
     if (text.isEmpty) return;
     
-    if (_currentState != HandsOffState.handsOffOff) {
+    if (_isWakewordModeEnabled) {
       _changeState(HandsOffState.johnSpeaking);
     }
     
@@ -499,7 +500,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           }
           await _setAvatarState(AvatarState.idle);
 
-          if (_currentState != HandsOffState.handsOffOff) {
+          if (_isWakewordModeEnabled) {
             js.context.callMethod('startWakeWordListening');
           }
         });
@@ -612,7 +613,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           });
         }
         await _setAvatarState(AvatarState.idle);
-        if (_currentState != HandsOffState.handsOffOff) {
+        if (_isWakewordModeEnabled) {
           js.context.callMethod('startWakeWordListening');
         }
       });
@@ -636,7 +637,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           });
         }
         await _setAvatarState(AvatarState.idle);
-        if (_currentState != HandsOffState.handsOffOff) {
+        if (_isWakewordModeEnabled) {
           js.context.callMethod('startWakeWordListening');
         }
       });
@@ -665,7 +666,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     _setWakeWordMute(false); // Re-enable wake word / restart engine
 
-    if (_currentState != HandsOffState.handsOffOff) {
+    if (_isWakewordModeEnabled) {
       js.context.callMethod('startWakeWordListening');
     }
   }
@@ -702,7 +703,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _stopSilenceDetection();
 
     // Reset wake word socket if connected
-    if (_currentState != HandsOffState.handsOffOff) {
+    if (_isWakewordModeEnabled) {
       if (_wakeWordSocket != null && _wakeWordSocket!.readyState == html.WebSocket.OPEN) {
         _wakeWordSocket!.send(json.encode({'action': 'stop_wakeword'}));
       }
@@ -1188,7 +1189,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     
     _setWakeWordMute(robotMoving);
     
-    if (_currentState != HandsOffState.handsOffOff) {
+    if (_isWakewordModeEnabled) {
       js.context.callMethod('startWakeWordListening');
     }
   }
@@ -1237,10 +1238,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       return;
     }
     if (_currentState == HandsOffState.handsOffOff) {
+      _isWakewordModeEnabled = true;
       _changeState(HandsOffState.restarting);
       _addUiLog('[OWW] Hands Off ON: starting engine listening');
       js.context.callMethod('startWakeWordListening');
     } else {
+      _isWakewordModeEnabled = false;
       _changeState(HandsOffState.handsOffOff);
       _addUiLog('[OWW] Hands Off OFF: stopping engine listening');
       js.context.callMethod('stopWakeWordListening');
@@ -1271,7 +1274,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _showStatusSnackBar('Wakeword heard, but recording did not start.', isError: true);
     } else {
       _addUiLog('[MIC] recording started');
-      if (_currentState != HandsOffState.handsOffOff) {
+      if (_isWakewordModeEnabled) {
         _changeState(HandsOffState.userRecording);
       }
       await _listen(); // start recording
@@ -1342,7 +1345,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             });
             _updateThresholds(); // Call update thresholds on ready to synchronize settings
             _showStatusSnackBar('Client-side openWakeWord Ready');
-            _toggleHandsFree(); // Automatically enable hands-free listening
+            if (!_isWakewordModeEnabled) {
+              _toggleHandsFree(); // Automatically enable hands-free listening on first load
+            }
           }
         }),
         js.allowInterop((eventName) {
@@ -1467,7 +1472,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               if (stillStopped) {
                 _addUiLog('[OWW] Cooldown finished. Unmuting wake word engine.');
                 _setWakeWordMute(false);
-                if (_currentState != HandsOffState.handsOffOff) {
+                if (_isWakewordModeEnabled) {
                   js.context.callMethod('startWakeWordListening');
                 }
               }
@@ -2141,7 +2146,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               // Headphone (hands-free toggle) - green when active (LEFT of mic)
               _circleBtn(
                 Icons.headphones,
-                _currentState != HandsOffState.handsOffOff ? Colors.green : Colors.grey[600]!,
+                _isWakewordModeEnabled ? Colors.green : Colors.grey[600]!,
                 _toggleHandsFree,
                 radius: 18,
               ),
