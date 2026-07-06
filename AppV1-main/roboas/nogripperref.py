@@ -865,7 +865,13 @@ OBJECT_HEIGHT  = DEFAULT_OBJECT_HEIGHT  # fallback only; MCP object height is ap
 PICK_Z         = OBJECT_HEIGHT + GRIPPER_LENGTH
 DROP_Z         = OBJECT_HEIGHT + GRIPPER_LENGTH
 SAFE_HEIGHT    = 0.30
-LINEAR_SPEED   = 0.1   # m/s
+LINEAR_SPEED          = 0.65   # m/s  (was 0.1)
+LINEAR_ACCELERATION   = 0.60   # m/s^2
+LINEAR_JERK           = 500.0
+ROTATION_SPEED        = 0.90   # rad/s
+ROTATION_ACCELERATION = 1.57
+ROTATION_JERK         = 500.0
+ROBOT_SPEED_OVERRIDE  = 0.80   # 0-1, floor for robot override
 TRANSIT_HEIGHT = SAFE_HEIGHT
 
 # =================================================================
@@ -2174,6 +2180,14 @@ def ensure_robot_ready(r):
     r.init_program()
     time.sleep(1)
 
+    # Enforce minimum robot speed override
+    try:
+        if r.get_override() < ROBOT_SPEED_OVERRIDE:
+            r.set_override(ROBOT_SPEED_OVERRIDE)
+            time.sleep(0.2)
+    except Exception:
+        pass
+
 
 def check_starting_position(r):
     pose = r.get_tcp_pose()
@@ -2661,10 +2675,18 @@ def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_sp
     trajectory = [current] + full_path
     
     apply_speed = custom_speed if custom_speed is not None else LINEAR_SPEED
+    apply_acceleration = LINEAR_ACCELERATION
+    apply_rotation_speed = ROTATION_SPEED
+    apply_rotation_acceleration = ROTATION_ACCELERATION
     
     try:
         r.move_linear(
             speed=apply_speed,
+            acceleration=apply_acceleration,
+            jerk=LINEAR_JERK,
+            rotation_speed=apply_rotation_speed,
+            rotation_acceleration=apply_rotation_acceleration,
+            rotation_jerk=ROTATION_JERK,
             blending=is_blending,
             blend_radius=BLEND_RADIUS if is_blending else 0.0,
             controller_parameters={"control_mode": "position"},
