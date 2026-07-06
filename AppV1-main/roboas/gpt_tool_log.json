@@ -1,21 +1,5 @@
 [
   {
-    "timestamp": "2026-07-06T05:36:04.523Z",
-    "userQuestion": "Pick up medicine.",
-    "toolName": "ask-gpt_prompt",
-    "args": {},
-    "result": "GPT request received."
-  },
-  {
-    "timestamp": "2026-07-06T05:36:05.719Z",
-    "userQuestion": "Pick up medicine.",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "medicine"
-    },
-    "result": "Orchestrating autonomous scan & pick in background..."
-  },
-  {
     "timestamp": "2026-07-06T05:36:05.727Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
@@ -473,5 +457,25 @@
       "attempt": 1
     },
     "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-07-06T05:46:37.523Z",
+    "userQuestion": "Pick up medicine for me.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "medicine"
+    },
+    "result": "Target located"
+  },
+  {
+    "timestamp": "2026-07-06T05:46:37.533Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Target \"medicine\" clear! Instructing robot to pick it up...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
   }
 ]
