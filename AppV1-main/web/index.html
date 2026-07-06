@@ -133,7 +133,7 @@
 
     window.setWakeWordMuted = function(muted) {
       window.ttsMuted = !!muted;
-      window.wakewordDetectionMuted = window.ttsMuted || window.isRobotMoving;
+      window.wakewordDetectionMuted = window.ttsMuted;
       console.log(`[JS] WakeWord callbacks blocked: ${window.wakewordDetectionMuted} (tts: ${window.ttsMuted}, robot: ${window.isRobotMoving})`);
     };
 
@@ -153,7 +153,7 @@
         }
         if (data.isRobotMoving !== undefined) {
           window.isRobotMoving = data.isRobotMoving;
-          window.wakewordDetectionMuted = window.ttsMuted || window.isRobotMoving;
+          window.wakewordDetectionMuted = window.ttsMuted;
           console.log(`[JS] Progress SSE: robot=${window.isRobotMoving}, callbacks blocked=${window.wakewordDetectionMuted}`);
           if (onEventCallback) {
             onEventCallback('robot_moving_status:' + data.isRobotMoving);

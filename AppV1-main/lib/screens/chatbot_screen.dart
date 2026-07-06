@@ -113,14 +113,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   String get _pName => _currentPersona == 'linda' ? 'Linda' : 'John';
   html.SpeechSynthesisUtterance? _currentUtterance;
   bool get _isInteractionBlocked {
-    bool isMoving = false;
-    try {
-      isMoving = js.context['isRobotMoving'] == true;
-    } catch (_) {}
     return _isTtsInProgress ||
         _avatarState == AvatarState.thinking ||
-        (_messages.isNotEmpty && _messages.last.text == '__THINKING__') ||
-        isMoving;
+        (_messages.isNotEmpty && _messages.last.text == '__THINKING__');
   }
 
   String get _visibleStateText {
@@ -416,12 +411,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   /// Send a mute/unmute command to the wake word server so it doesn't
   /// trigger on the robot's own voice.
   void _setWakeWordMute(bool muted) {
-    _addUiLog('[OWW] setWakeWordMuted: $muted');
-    try {
-      js.context.callMethod('setWakeWordMuted', [muted]);
-    } catch (e) {
-      _addUiLog('[OWW] failed to setWakeWordMuted: $e');
-    }
+    _addUiLog('[OWW] setWakeWordMuted: $muted (ignored to keep engine always active)');
+    // Completely ignore muting request to keep the wake word engine continuously listening.
     if (!muted) {
       if (_isWakewordModeEnabled) {
         _changeState(HandsOffState.wakewordListening);
@@ -836,16 +827,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     // ── Browser fallback mode (below) ──
 
     if (!_isListening) {
-      _setWakeWordMute(true);
       if (_currentState == HandsOffState.wakewordListening) {
         _changeState(HandsOffState.userRecording);
-      }
-
-      try {
-        js.context.callMethod('stopWakeWordListening');
-        _addUiLog('[MIC] Stopped wakeword listening for manual recording');
-      } catch (e) {
-        _addUiLog('[MIC] Warning: could not call stopWakeWordListening: $e');
       }
 
       _addUiLog('[MIC] Requesting browser microphone permission');
@@ -1182,12 +1165,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _addUiLog('[OWW] auto-restart on abort');
     _stopManualWebStream();
     
-    bool robotMoving = false;
-    try {
-      robotMoving = js.context['isRobotMoving'] == true;
-    } catch (_) {}
-    
-    _setWakeWordMute(robotMoving);
+    _setWakeWordMute(_isTtsInProgress);
     
     if (_isWakewordModeEnabled) {
       js.context.callMethod('startWakeWordListening');
@@ -1441,7 +1419,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _addUiLog('[OWW] Robot moving status: $isMoving');
       
       if (isMoving) {
-        _setWakeWordMute(true);
         // Abort any active manual recording immediately
         if (_isListening) {
           _addUiLog('[MIC] Robot moving — aborting active recording.');
@@ -1556,13 +1533,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       return;
     }
 
-    // 1. Mute openWakeWord detection callbacks
-    _setWakeWordMute(true);
-
-    // Add a 800ms delay to allow the browser to release the microphone device completely
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    // 3. Trigger manual mic recording flow
+    // Trigger manual mic recording flow immediately
     await _handleWakeWordEvent();
   }
 

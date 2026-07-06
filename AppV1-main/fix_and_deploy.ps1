@@ -23,7 +23,7 @@ if ($env:Path -notmatch 'C:\\src\\flutter\\bin') {
 }
 
 Write-Host '4. Navigating to the correct project folder...'
-Set-Location 'C:\Users\Dominic\Downloads\AppV1-main\AppV1-main'
+Set-Location $PSScriptRoot
 
 Write-Host '5. Downloading Flutter dependencies...'
 flutter config --no-analytics

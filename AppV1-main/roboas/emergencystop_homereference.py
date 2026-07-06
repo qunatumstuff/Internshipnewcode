@@ -890,7 +890,7 @@ _CONV_GRP_Y_MAX = _CONV_EFF_Y_MAX + GRIPPER_RADIUS
 # =================================================================
 # CAMERA SCAN ZONE  (informational)
 # =================================================================
-CAM_X_MIN = 0.27
+CAM_X_MIN = 0.25
 CAM_X_MAX = 0.60
 CAM_Y_MIN = -0.37
 CAM_Y_MAX =  0.03
