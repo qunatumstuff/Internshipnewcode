@@ -474,7 +474,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
             }
         ],
         "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 4096}
+        "options": {"temperature": 0.1, "num_predict": 2048}
     }
 
     print("IMAGE SIZE:", len(raw_b64))
