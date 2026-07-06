@@ -1276,7 +1276,11 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                   } catch (e) {
                     sendProgress(`Robot pick error: ${e.message}`, false);
                     setTimeout(async () => {
-                      sendProgress(null, false, `Sorry, I could not complete the action because: ${e.message}`);
+                      if (!e.message.includes('3104')) {
+                        sendProgress(null, false, `Sorry, I could not complete the action because: ${e.message}`);
+                      } else {
+                        sendProgress(null, false); // Don't speak expected e-stop errors out loud
+                      }
                       await sendWakewordCommand('unmute');
                     }, 5000);
                   }

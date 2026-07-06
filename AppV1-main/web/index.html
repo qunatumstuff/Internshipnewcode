@@ -134,7 +134,7 @@
     window.setWakeWordMuted = function(muted) {
       window.ttsMuted = !!muted;
       window.wakewordDetectionMuted = window.ttsMuted || window.isRobotMoving;
-      console.log(`[JS] WakeWord muted: ${window.wakewordDetectionMuted} (tts: ${window.ttsMuted}, robot: ${window.isRobotMoving})`);
+      console.log(`[JS] WakeWord callbacks blocked: ${window.wakewordDetectionMuted} (tts: ${window.ttsMuted}, robot: ${window.isRobotMoving})`);
     };
 
     const progressSource = new EventSource('/progress');
@@ -154,7 +154,7 @@
         if (data.isRobotMoving !== undefined) {
           window.isRobotMoving = data.isRobotMoving;
           window.wakewordDetectionMuted = window.ttsMuted || window.isRobotMoving;
-          console.log(`[JS] Progress SSE: robot=${window.isRobotMoving}, wakeword muted=${window.wakewordDetectionMuted}`);
+          console.log(`[JS] Progress SSE: robot=${window.isRobotMoving}, callbacks blocked=${window.wakewordDetectionMuted}`);
           if (onEventCallback) {
             onEventCallback('robot_moving_status:' + data.isRobotMoving);
           }

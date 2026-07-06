@@ -1265,13 +1265,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     
     if (_isTtsInProgress) {
       _addUiLog('[WAKE] blocked because: TTS is in progress');
-      _showStatusSnackBar('Wakeword heard, but recording did not start.', isError: true);
     } else if (_isListening) {
       _addUiLog('[WAKE] blocked because: already listening');
-      _showStatusSnackBar('Wakeword heard, but recording did not start.', isError: true);
     } else if (_isInteractionBlocked) {
       _addUiLog('[WAKE] blocked because: interaction is blocked');
-      _showStatusSnackBar('Wakeword heard, but recording did not start.', isError: true);
     } else {
       _addUiLog('[MIC] recording started');
       if (_isWakewordModeEnabled) {
@@ -1556,7 +1553,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
     if (_isTtsInProgress || _isListening || _isInteractionBlocked) {
       _addUiLog('[WAKE] blocked: tts=$_isTtsInProgress, listen=$_isListening, blocked=$_isInteractionBlocked');
-      _showStatusSnackBar('Wakeword heard, but recording did not start.', isError: true);
       return;
     }
 
