@@ -566,209 +566,307 @@ def get_pick_close_percent(object_width_m):
     )
     return object_width_to_percent(close_width_m)
 
-
 def select_object_profile():
-    """
-    Manual object selection is disabled in MCP/camera mode.
+    """Operator menu for choosing the object profile used for width/height planning."""
+    print("\n=== Object selection ===")
+    for key, obj in OBJECT_CATALOGUE.items():
+        print(
+            f"  {key}. {obj.get('name', key)} — {obj.get('description', '')} "
+            f"(L={obj.get('length_m', 0)*1000:.1f} mm, "
+            f"W={obj.get('width_m', 0)*1000:.1f} mm, "
+            f"B={obj.get('breadth_m', obj.get('width_m', 0))*1000:.1f} mm, "
+            f"H={obj.get('height_m', 0)*1000:.1f} mm)"
+        )
 
-    Use select_object_profile_by_name(object_name) through run_mcp_pick_and_place().
-    """
-    raise RuntimeError("Manual object selection is disabled. Use MCP object_name input.")
+    while True:
+        choice = input("Select object to pick: ").strip().lower()
 
+        # Accept object number
+        if choice in OBJECT_CATALOGUE:
+            selected = dict(OBJECT_CATALOGUE[choice])
+            print(f"  Selected: {selected.get('name', choice)}")
+            return selected
 
-def select_object_profile_by_name(object_name):
-    """
-    Select object profile from OBJECT_CATALOGUE using MCP object name.
+        # Accept typed label/name as fallback
+        for obj in OBJECT_CATALOGUE.values():
+            if choice in {
+                str(obj.get("name", "")).lower(),
+                str(obj.get("label", "")).lower(),
+            }:
+                selected = dict(obj)
+                print(f"  Selected: {selected.get('name', choice)}")
+                return selected
 
-    This replaces manual user selection for MCP mode while preserving the
-    original OBJECT_CATALOGUE dimensions, grip calibration, and placement logic.
-    """
-    if object_name is None:
-        raise ValueError("MCP object_name is required.")
-
-    name = str(object_name).strip().lower()
-
-    # Aliases: short names → canonical catalogue labels
-    aliases = {
-        "yellow": "yellow cube",
-        "blue": "blue cube",
-        "green": "green cube",
-        "red": "red cube",
-        "marker": "black marker",
-        "black": "black marker",
-        "med": "medicine",
-        "medicine box": "medicine",
-        "hex nut": "nut",
-        "hexagonal nut": "nut",
-    }
-    name = aliases.get(name, name)
-
-    match name:
-        case "yellow cube":
-            target_labels = {"yellow cube"}
-        case "blue cube":
-            target_labels = {"blue cube"}
-        case "green cube":
-            target_labels = {"green cube"}
-        case "red cube":
-            target_labels = {"red cube"}
-        case "cube":
-            target_labels = {"yellow cube", "blue cube", "green cube", "red cube"}
-        case "nut":
-            target_labels = {"nut"}
-        case "black marker":
-            target_labels = {"black marker"}
-        case "medicine":
-            target_labels = {"medicine"}
-        case "sponge":
-            target_labels = {"sponge"}
-        case "screwdriver":
-            target_labels = {"screwdriver"}
-        case _:
-            target_labels = {name}
-
-    for obj in OBJECT_CATALOGUE.values():
-        label = str(obj.get("label", "")).strip().lower()
-        display = str(obj.get("name", "")).strip().lower()
-
-        if label in target_labels or display in target_labels:
-            return dict(obj)
-
-    raise ValueError(f"Unsupported MCP object_name: {object_name!r}")
-
+        print("  [INPUT ERROR] Please select one of the listed object numbers.")
 
 def print_available_com_ports():
-    pass  # non-diagnostic print removed for MCP operation
+    print("[Gripper] Available COM ports:")
     ports = list_ports.comports()
     if not ports:
-        pass  # non-diagnostic print removed for MCP operation
+        print("  No COM ports found.")
     else:
         for p in ports:
-            pass  # non-diagnostic print removed for MCP operation
-            pass  # non-diagnostic print removed for MCP operation
-            
+            print(f"  {p.device} - {p.description}")
+
 def gripper_connect():
     print_available_com_ports()
-    pass  # NO_GRIPPER_VERSION: connection skipped
+    print(f"[Gripper] Connecting on {GRIPPER_PORT}...")
+    #if not gripper.connect():
+        #raise RuntimeError(f"Could not connect to gripper over RS485 on {GRIPPER_PORT}.")
 
 def gripper_write(register, value):
-    pass  # NO_GRIPPER_VERSION: no-op
+    result = gripper.write_register(
+        address=register,
+        value=int(value),
+        device_id=GRIPPER_ADDR
+    )
+    if result.isError():
+        raise RuntimeError(f"Gripper write failed: register={hex(register)}, value={value}")
 
 def gripper_read(register):
-    return 1  # NO_GRIPPER_VERSION: always return done status
+    result = gripper.read_holding_registers(
+        address=register,
+        count=1,
+        device_id=GRIPPER_ADDR
+    )
+    if result.isError():
+        raise RuntimeError(f"Gripper read failed: register={hex(register)}")
+    return result.registers[0]
 
 def wait_gripper_done(timeout=10, target_percent=None, tolerance=3):
-    return True  # NO_GRIPPER_VERSION: always reports done
+    """
+    Wait for the gripper to finish. Some units do not always set the status
+    register to 1, so if a target percentage is given, this also accepts the
+    command as complete when current position is close enough to the target.
+    """
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            status = gripper_read(REG_STATUS)
+            if status == 1:
+                return True
+
+            if target_percent is not None:
+                current_pos = gripper_read(REG_CUR_POS)
+                if abs(current_pos - target_percent) <= tolerance:
+                    return True
+        except Exception as e:
+            print(f"[Gripper WARN] Status/position read failed: {e}")
+
+        time.sleep(0.2)
+    raise TimeoutError("Gripper command timeout.")
 
 def gripper_startup():
-    pass  # NO_GRIPPER_VERSION: no hardware to initialise
+    """Disable auto-homing, run one controlled homing cycle, then set safe force."""
+    gripper_connect()
+
+    print("[Gripper] Disabling automatic homing...")
+    gripper_write(REG_AUTO_HOME, 1)
+    time.sleep(0.3)
+
+    print("[Gripper] Running one homing/find-stroke cycle...")
+    gripper_write(REG_HOME, 1)
+    wait_gripper_done(timeout=15)
+
+    print(f"[Gripper] Setting force cap to {MAX_FORCE_PERCENT}%...")
+    gripper_write(REG_FORCE, MAX_FORCE_PERCENT)
+    time.sleep(0.3)
 
 def gripper_set_force(force=MAX_FORCE_PERCENT):
-    pass  # NO_GRIPPER_VERSION: no-op
+    force = clamp_percent(min(force, MAX_FORCE_PERCENT))
+    gripper_write(REG_FORCE, force)
 
 def gripper_set_speed(speed=DEFAULT_GRIPPER_SPEED):
-    pass  # NO_GRIPPER_VERSION: no-op
+    speed = clamp_percent(speed)
+    gripper_write(REG_SPEED, speed)
 
 def gripper_move_percent(position_percent, force=MAX_FORCE_PERCENT, speed=DEFAULT_GRIPPER_SPEED):
     global CURRENT_GRIPPER_PERCENT
-    CURRENT_GRIPPER_PERCENT = position_percent  # track state only, no hardware
+    position_percent = clamp_percent(position_percent)
+    force = clamp_percent(min(force, MAX_FORCE_PERCENT))
+    speed = clamp_percent(speed)
+
+    print(
+        f"[Gripper] Move to {position_percent}% open "
+        f"({percent_to_commanded_opening_m(position_percent)*1000:.1f} mm calibrated target), "
+        f"force={force}%, speed={speed}%"
+    )
+
+    gripper_set_force(force)
+    gripper_set_speed(speed)
+    gripper_write(REG_POSITION, position_percent)
+    wait_gripper_done(timeout=10, target_percent=position_percent)
+
+    CURRENT_GRIPPER_PERCENT = position_percent
+    print("[Gripper] Move complete")
 
 def gripper_open():
-    pass  # NO_GRIPPER_VERSION: no-op
+    gripper_move_percent(100, force=MAX_FORCE_PERCENT, speed=60)
 
 def gripper_close():
-    pass  # NO_GRIPPER_VERSION: no-op
+    gripper_move_percent(0, force=MAX_FORCE_PERCENT, speed=40)
 
 def gripper_open_for_object(object_width_m):
-    pass  # NO_GRIPPER_VERSION: no-op
+    pre_percent = get_pre_pick_open_percent(object_width_m)
+    gripper_move_percent(pre_percent, force=MAX_FORCE_PERCENT, speed=60)
+
 
 def read_gripper_torque_safe(default=0):
-    return default  # NO_GRIPPER_VERSION: always returns default
+    """Read current gripper torque/current feedback safely."""
+    try:
+        return gripper_read(REG_CUR_TORQUE)
+    except Exception as e:
+        print(f"[Grip force WARN] Could not read torque/current feedback: {e}")
+        return default
+
 
 def average_gripper_torque(samples=HYBRID_GRIP_TORQUE_SAMPLES, delay_s=0.05):
-    return 0  # NO_GRIPPER_VERSION: always returns zero torque
+    """Average torque/current readings to reduce noise."""
+    values = []
+    for _ in range(max(1, samples)):
+        values.append(read_gripper_torque_safe(default=0))
+        time.sleep(delay_s)
+    return sum(values) / len(values)
+
 
 def gripper_grip_object_hybrid(object_width_m):
-    pass  # NO_GRIPPER_VERSION: no-op
+    """
+    Hybrid position + force grip.
+
+    1. Calculate the normal object-width target.
+    2. Close gradually toward that target.
+    3. Stop early if torque/current rises above threshold.
+    4. If target reached but contact is weak, close a little extra.
+    """
+    close_width_m = calibrated_close_width_for_object(
+        object_width_m,
+        globals().get("SELECTED_OBJECT", None),
+    )
+    target_percent = object_width_to_percent(close_width_m)
+
+    if abs(close_width_m - object_width_m) > 0.0005:
+        print(
+            f"[Grip calibration] Commanding close width {close_width_m*1000:.1f} mm "
+            f"for measured object grip width {object_width_m*1000:.1f} mm"
+        )
+
+    baseline_torque = average_gripper_torque()
+    contact_threshold = baseline_torque + HYBRID_GRIP_CONTACT_TORQUE_DELTA
+
+    print(
+        f"[Hybrid grip] target={target_percent}% open, "
+        f"baseline_torque={baseline_torque:.1f}, "
+        f"contact_threshold={contact_threshold:.1f}"
+    )
+    print("[Hybrid grip tuning] Adjust HYBRID_GRIP_CONTACT_TORQUE_DELTA for reaction force.")
+
+    current_percent = clamp_percent(CURRENT_GRIPPER_PERCENT)
+
+    if current_percent <= target_percent:
+        gripper_move_percent(target_percent, force=MAX_FORCE_PERCENT, speed=35)
+        return
+
+    percent = current_percent
+
+    # Close toward calculated target.
+    while percent > target_percent:
+        next_percent = max(target_percent, percent - HYBRID_GRIP_STEP_PERCENT)
+        gripper_move_percent(next_percent, force=MAX_FORCE_PERCENT, speed=30)
+        percent = next_percent
+
+        torque = average_gripper_torque()
+        print(f"[Hybrid grip] percent={percent}% torque={torque:.1f}")
+
+        if torque >= contact_threshold:
+            print(
+                f"[Hybrid grip] Contact detected at {percent}% "
+                f"(torque {torque:.1f} >= {contact_threshold:.1f}). Holding."
+            )
+            return
+
+        time.sleep(HYBRID_GRIP_STEP_DELAY_S)
+
+    # If target reached but contact is weak, close slightly more.
+    print("[Hybrid grip] Target reached; checking if extra close is needed...")
+    extra_closed = 0
+
+    while extra_closed < HYBRID_GRIP_MAX_EXTRA_CLOSE_PERCENT:
+        torque = average_gripper_torque()
+
+        if torque >= contact_threshold:
+            print(
+                f"[Hybrid grip] Contact confirmed after extra close at {percent}% "
+                f"(torque {torque:.1f} >= {contact_threshold:.1f})."
+            )
+            return
+
+        next_percent = max(HYBRID_GRIP_MIN_PERCENT, percent - HYBRID_GRIP_STEP_PERCENT)
+
+        if next_percent == percent:
+            break
+
+        gripper_move_percent(next_percent, force=MAX_FORCE_PERCENT, speed=25)
+        extra_closed += abs(percent - next_percent)
+        percent = next_percent
+
+        print(f"[Hybrid grip] Extra close to {percent}% (extra={extra_closed}%)")
+        time.sleep(HYBRID_GRIP_STEP_DELAY_S)
+
+    print("[Hybrid grip] Finished extra-close limit. Holding current grip.")
+
 
 def gripper_grip_object(object_width_m):
-    pass  # NO_GRIPPER_VERSION: no-op — robot will move to position but not close
+    """
+    Grip object using hybrid position + force logic when enabled.
+    Falls back to normal position grip if disabled.
+    """
+    if HYBRID_FORCE_GRIP_ENABLED:
+        gripper_grip_object_hybrid(object_width_m)
+        return
+
+    close_width_m = calibrated_close_width_for_object(
+        object_width_m,
+        globals().get("SELECTED_OBJECT", None),
+    )
+    close_percent = object_width_to_percent(close_width_m)
+
+    if abs(close_width_m - object_width_m) > 0.0005:
+        print(
+            f"[Grip calibration] Commanding close width {close_width_m*1000:.1f} mm "
+            f"for measured object grip width {object_width_m*1000:.1f} mm"
+        )
+
+    gripper_move_percent(close_percent, force=MAX_FORCE_PERCENT, speed=40)
+
 
 def gripper_release_object(object_width_m):
-    pass  # NO_GRIPPER_VERSION: no-op
+    """
+    Compact release inside the placement box.
+
+    Opens to the same 30%-extra size used for pre-pick, instead of opening
+    to 100% inside the box. After the robot lifts away, gripper_open() can
+    fully open safely.
+    """
+    release_percent = object_width_to_percent(
+        object_width_m * (1.0 + PRE_PICK_EXTRA_RATIO)
+    )
+
+    gripper_move_percent(
+        release_percent,
+        force=MAX_FORCE_PERCENT,
+        speed=60
+    )
 
 def gripper_shutdown():
-    pass  # NO_GRIPPER_VERSION: no-op
+    try:
+        gripper.close()
+        print("[Gripper] Connection closed.")
+    except Exception:
+        pass
 
 # =================================================================
 # EMERGENCY STOP
 # =================================================================
-def emergency_stop(sig, frame):
-    pass  # print removed for MCP quiet operation
-    try:
-        r.stop()
-        time.sleep(0.5)
-        gripper_open()
-    except Exception as e:
-        sys.exit(1)
-    sys.exit(0)
-
-
-signal.signal(signal.SIGINT, emergency_stop)
-
-# =================================================================
-# CAMERA STAND — PERMANENT NO-GO ZONE
-# =================================================================
-STAND_X_MIN  = 0.67
-STAND_X_MAX  = 0.83
-STAND_Y_MIN  = -0.55
-STAND_Y_MAX  = -0.45
-FIXED_MARGIN = 0.03   # 30 mm structural safety buffer
-
-_STAND_EFF_X_MIN = STAND_X_MIN - FIXED_MARGIN         # 0.640
-_STAND_EFF_X_MAX = STAND_X_MAX + FIXED_MARGIN          # 0.860
-_STAND_EFF_Y_MIN = STAND_Y_MIN - FIXED_MARGIN          # -0.580
-_STAND_EFF_Y_MAX = STAND_Y_MAX + FIXED_MARGIN          # -0.420
-
-_STAND_GRP_X_MIN = _STAND_EFF_X_MIN - GRIPPER_RADIUS
-_STAND_GRP_X_MAX = _STAND_EFF_X_MAX + GRIPPER_RADIUS
-_STAND_GRP_Y_MIN = _STAND_EFF_Y_MIN - GRIPPER_RADIUS
-_STAND_GRP_Y_MAX = _STAND_EFF_Y_MAX + GRIPPER_RADIUS
-
-# =================================================================
-# CONVEYOR BELT — PERMANENT NO-GO ZONE
-# =================================================================
-CONV_X_MIN    = -0.800
-CONV_X_MAX    =  0.800
-CONV_Y_MIN    =  0.200
-CONV_Y_MAX    =  0.800
-
-_CONV_EFF_X_MIN = CONV_X_MIN - FIXED_MARGIN
-_CONV_EFF_X_MAX = CONV_X_MAX + FIXED_MARGIN
-_CONV_EFF_Y_MIN = CONV_Y_MIN - FIXED_MARGIN
-_CONV_EFF_Y_MAX = CONV_Y_MAX + FIXED_MARGIN
-
-_CONV_GRP_X_MIN = _CONV_EFF_X_MIN - GRIPPER_RADIUS
-_CONV_GRP_X_MAX = _CONV_EFF_X_MAX + GRIPPER_RADIUS
-_CONV_GRP_Y_MIN = _CONV_EFF_Y_MIN - GRIPPER_RADIUS
-_CONV_GRP_Y_MAX = _CONV_EFF_Y_MAX + GRIPPER_RADIUS
-
-# =================================================================
-# CAMERA SCAN ZONE  (informational)
-# =================================================================
-CAM_X_MIN = 0.25
-CAM_X_MAX = 0.60
-CAM_Y_MIN = -0.37
-CAM_Y_MAX =  0.03
-
-# =================================================================
-# WORKSPACE LIMITS
-# =================================================================
-X_MIN, X_MAX = 0.250,  0.585
-Y_MIN, Y_MAX = -0.370,  0.000
-Z_MIN, Z_MAX =  0.010,  0.850
-
-
 def _workspace_box_message():
     return (
         "\n  Workspace boundary corners (metres):\n"
@@ -993,6 +1091,7 @@ HOME_Z  = 0.442998
 HOME_RX = 178.4062
 HOME_RY = 0.10052
 HOME_RZ = 105.5
+GRIPPER_RZ_OFFSET = -112.27  # Offset to make physical gripper reach desired angle
 
 
 
@@ -1657,7 +1756,7 @@ def planned_rz_for_object(selected_object, placement_angle_deg=None, reference_a
     elif diff < -90.0:
         angle = _normalise_angle_deg(angle + 180.0)
         
-    return angle
+    return _normalise_angle_deg(angle + globals().get("GRIPPER_RZ_OFFSET", 0.0))
 
 
 def rotated_rectangle_half_extents(length_m, width_m, angle_deg):
