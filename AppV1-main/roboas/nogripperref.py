@@ -2484,11 +2484,7 @@ def mcp_return_home():
         r.power_on()                  # ensure power is on (might be off from emergency stop)
         r.switch_to_automatic_mode()  # must be in auto before any motion
         time.sleep(1)
-        try:
-            gripper_open()            # attempt to drop any held item
-        except Exception as e:
-            print(f"[Gripper WARN] Failed to open during home routine, ignoring: {e}")
-            
+        gripper_open()                # now safe to open gripper
         move_to_home_emergency(r)     # then go home
     except Exception as e:
         print(f"Error returning home: {e}")
@@ -2518,10 +2514,7 @@ def keyboard_listener(r):
             r.reset_errors()              # clear errors before doing anything else
             r.switch_to_automatic_mode()  # must be in auto before any motion
             time.sleep(1)
-            try:
-                gripper_open()            # attempt to drop any held item
-            except Exception as e:
-                print(f"[Gripper WARN] Failed to open during keyboard home routine, ignoring: {e}")
+            gripper_open()                # now safe to open gripper
             move_to_home_emergency(r)     # then go home
         except Exception:
             pass
