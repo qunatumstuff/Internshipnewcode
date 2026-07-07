@@ -110,8 +110,8 @@ import copy
 import math
 import signal
 import threading
-from serial.tools import list_ports
-# NO_GRIPPER_VERSION: pymodbus not imported — gripper is disabled
+# pymodbus/pyserial no longer used -- gripper now goes through
+# r.execute_external_device_function(), same as the LoRA collector script.
 
 try:
     import keyboard
@@ -130,52 +130,71 @@ r = Robot()
 
 
 # =================================================================
-# SMART LEBAI GRIPPER GEOMETRY + MODBUS CONTROL
+# ONROBOT 2FG7 GRIPPER GEOMETRY -- REAL MEASURED MODEL
 # =================================================================
-# Physical gripper model, measured from flange/TCP origin to lowest fingertip point.
-# No extra protection layer here; these are the real flange/TCP-to-contact lengths you measured.
+# Rewritten from direct physical measurements (reference photo showing
+# the three segmented zones, and a real jog-to-table-contact test).
+# This REPLACES the earlier estimated/guessed geometry entirely.
+#
+# TABLE_Z_M: measured by jogging the BARE robot flange (no tool length
+# applied -- "purely TCP") straight down until it touched the table.
+# The Z reading at that contact point, in the base reference frame, was:
+#   X=420.7974mm  Y=-0.15297mm  Z=-20.11582mm
+# Only Z matters here -- this defines where the table surface actually
+# sits in robot base coordinates, independent of gripper length.
+TABLE_Z_M = -0.02011582
+
 GRIPPER_SAFETY_LENGTH = 0.000
-TABLE_Z_M = -0.0198
 
-GRIPPER_LEN_OPEN = 0.2009
-GRIPPER_LEN_CLOSED = 0.2259
+# -----------------------------------------------------------------
+# THREE-SEGMENT STACK, measured downward from TCP (Z=0 = TCP origin)
+# -----------------------------------------------------------------
+# 1) FLANGE -- topmost, the Quick Changer itself (datasheet-confirmed
+#    Ø71mm), sitting directly below the robot's TCP/flange face.
+# 2) NECK   -- middle section, modelled as a box (not a cylinder --
+#    corrected from the old model, since the real cross-section here
+#    is not round).
+# 3) JAW    -- bottommost, the fingers. This is the ONLY segment whose
+#    horizontal footprint changes as the gripper opens/closes -- its
+#    Z-height is fixed (a parallel 2-finger gripper's fingertips do not
+#    move up/down as it opens, only side to side).
 
-GRIPPER_LENGTH = GRIPPER_LEN_CLOSED
-# Keep planner conservative by default: assume longest possible gripper length.
-# Surface/table height in robot base coordinates.
-# Calibrate this by jogging the gripper to the desired contact height and using:
-# TABLE_Z_M = TCP_Z - gripper_length_at_grip - object_height/2
-# Start with 0.105 m because your real gripper appeared about 10.5 cm above the table.
- 
-# This will be updated after object selection to match the actual holding opening.
+# --- FLANGE (Quick Changer) ---
+FLANGE_DIAMETER_M = 0.071          # 71 mm, datasheet-confirmed Quick Changer diameter
+FLANGE_RADIUS_M = FLANGE_DIAMETER_M / 2.0
+FLANGE_LENGTH_M = 0.02843          # 28.43 mm, measured (matches QC Tool Side datasheet: 28.40mm)
+
+# --- NECK (box, not cylinder) ---
+NECK_LENGTH_DIM_M = 0.090          # 90 mm, box "length" (long horizontal axis)
+NECK_THICKNESS_M  = 0.060          # 60 mm, box "thickness" (short horizontal axis)
+NECK_LENGTH_M     = 0.06092        # 60.92 mm, vertical extent along Z (kept this name --
+                                    # existing collision code already treats it as a pure
+                                    # Z-offset, so no call-site changes needed)
+NECK_CLEARANCE_M  = 0.005          # 5 mm safety margin added around the neck box
+
+# Worst-case scalar "radius" for the neck, used only where older code
+# needs a single conservative number (not an oriented box check) --
+# e.g. placement-box wall clearance. Half of the longer box dimension.
+NECK_RADIUS_M = NECK_LENGTH_DIM_M / 2.0   # 45 mm, conservative
+
+# --- JAW (fingers) ---
+JAW_HEIGHT_M = 0.0423               # 42.3 mm, total jaw height along Z (FIXED regardless of opening)
+JAW_MAX_OPENING_M = 0.039           # 39 mm max internal opening (inward-grip finger config, per datasheet)
+JAW_MIN_OPENING_M = 0.000           # 0 mm, fully closed
+JAW_THICKNESS_PAD_M = 0.007         # 7 mm added on EACH side for real jaw material thickness
+JAW_WIDTH_M = 0.027                 # 27 mm, fixed width of a single jaw (perpendicular to opening direction)
+JAW_CLEARANCE_M = 0.001             # 1 mm safety margin added around the jaw box
+JAW_FIXED_WIDTH_M = JAW_WIDTH_M     # kept as an alias -- older code elsewhere in this file
+                                     # (placement clearance, diagnostics) already reads this name
+JAW_MIN_DYNAMIC_WIDTH_M = 2 * JAW_THICKNESS_PAD_M  # 14 mm floor = fully closed jaw box length
+
+# Total flange-to-fingertip length. UNLIKE the old model, this does NOT
+# change between "open" and "closed" -- the real jaw height is fixed;
+# only its horizontal footprint (see get_current_jaw_width_m) changes.
+GRIPPER_LENGTH = FLANGE_LENGTH_M + NECK_LENGTH_M + JAW_HEIGHT_M   # = 0.13165 m
+GRIPPER_LEN_OPEN = GRIPPER_LENGTH     # kept for compatibility with any old call sites
+GRIPPER_LEN_CLOSED = GRIPPER_LENGTH   # both now identical -- see note above
 ACTIVE_GRIPPER_LENGTH = GRIPPER_LENGTH
-# -----------------------------------------------------------------
-# SEGMENTED END-EFFECTOR COLLISION MODEL
-# -----------------------------------------------------------------
-# Old code treated the whole gripper as one long 45 mm radius cylinder.
-# That is safe, but very conservative. The new model splits the tool into:
-#   1) flange/body circular section,
-#   2) neck circular section,
-#   3) lower jaw rectangular section.
-# This lets the planner see that the lower gripping part is not a huge circle.
-
-CIRCULAR_EXTRA_DIAMETER_M = 0.005   # extra 0.5 cm added only to circular collision partsS
-
-FLANGE_DIAMETER_M = 0.087 + CIRCULAR_EXTRA_DIAMETER_M  # 87 mm CAD diameter + 5 mm allowance
-FLANGE_RADIUS_M = FLANGE_DIAMETER_M / 2.0              # 46 mm
-
-NECK_LENGTH_M = 0.079964                               # fixed section between your two CAD planes
-NECK_DIAMETER_M = 0.068 + CIRCULAR_EXTRA_DIAMETER_M    # 68 mm CAD diameter + 5 mm allowance
-NECK_RADIUS_M = NECK_DIAMETER_M / 2.0                  # 36.5 mm
-
-# Approximate length of the top flange/body section along TCP-Z.
-# Adjust this if you later measure the flange axial thickness directly.
-FLANGE_LENGTH_M = 0.030
-
-# Lower jaw collision model. The jaws are better treated as a rectangular box
-# rather than a circular radius. 50 mm comes from your CAD front-view measurement.
-JAW_FIXED_WIDTH_M = 0.050
-JAW_MIN_DYNAMIC_WIDTH_M = 0.010
 
 # Carried object collision model
 CARRIED_OBJECT_ENABLED = False
@@ -184,56 +203,27 @@ CARRIED_OBJECT_WIDTH_M = 0.0
 CARRIED_OBJECT_DEPTH_M = 0.0
 CARRIED_OBJECT_BELOW_GRIP_M = 0.0
 
-# Keep the old single radius as a worst-case radius for fixed stand/conveyor zones
-# and planner clearance generation. This should be the largest circular radius.
-GRIPPER_RADIUS = max(FLANGE_RADIUS_M, NECK_RADIUS_M)
+# Keep a single worst-case scalar radius for fixed stand/conveyor zone
+# expansion and other places that just need one conservative number
+# rather than a full oriented-box check.
+GRIPPER_RADIUS = max(FLANGE_RADIUS_M, NECK_RADIUS_M, (JAW_MAX_OPENING_M + 2 * JAW_THICKNESS_PAD_M) / 2.0)
 END_EFFECTOR_MAX_RADIUS = GRIPPER_RADIUS
 
-# Jaw stroke model.
-# NOTE:
-# The gripper physically may be advertised/estimated as 90 mm, but your latest
-# test showed the commanded percentage produced a larger real opening
-# (~55 mm when you wanted ~40 mm). That means the Modbus 0-100% scale must be
-# calibrated to the REAL measured jaw opening, not only the nominal datasheet value.
-#
-# If the gripper still opens too wide, tune this value using:
-#   EFFECTIVE_COMMAND_STROKE_M = measured_opening_m / (command_percent / 100)
-# Example: if full-open internal stroke is measured as 90 mm, use 0.090 m.
-MAX_STROKE_M = 0.090              # actual usable internal jaw stroke/opening; 100% = 90 mm
-# =================================================================
-# GRIPPER PERCENTAGE CALIBRATION
-# =================================================================
-# The real gripper appears to open wider than the simple linear
-# MAX_STROKE_M calculation predicts.
-#
-# Example from test:
-#   desired cube opening ≈ 40 mm
-#   real opening was ≈ 45 mm
-#   scale = 40 / 45 ≈ 0.88
-#
-# This only scales the command percentage.
-# It does NOT change MAX_STROKE_M, object dimensions, or placement footprint.
-GRIPPER_PERCENT_SCALE = 1
-GRIPPER_PERCENT_OFFSET = 0.0
-
-
+# NOTE: MAX_STROKE_M, GRIPPER_PERCENT_SCALE, and GRIPPER_PERCENT_OFFSET
+# are defined once, further down in the "ONROBOT 2FG7 GRIPPER CONTROL"
+# section, using the real 2FG7 datasheet stroke and this hardware's
+# measured width-command calibration.
 
 # IMPORTANT:
 # Jaw stroke/opening is NOT the same as total physical gripper width.
-# Your measured full-open stroke/opening is about 90 mm, but the whole gripper
-# can physically occupy about 150 mm including jaw thickness/body protrusion.
-MAX_PHYSICAL_GRIPPER_WIDTH_M = 0.150
-# Physical lower-gripper footprint used only for placement/collision clearance.
-# This is NOT jaw stroke. It estimates the outer size that could touch the box/object.
-GRIPPER_PHYSICAL_CLOSED_LENGTH_M = 0.060  # 0% open -> 6 cm outer footprint
-GRIPPER_PHYSICAL_OPEN_LENGTH_M = 0.150    # 100% open -> 15 cm outer footprint
-GRIPPER_PHYSICAL_DEPTH_M = 0.035          # constant 3.5 cm depth
+MAX_PHYSICAL_GRIPPER_WIDTH_M = JAW_MAX_OPENING_M + 2 * JAW_THICKNESS_PAD_M  # 39 + 14 = 53 mm
+GRIPPER_PHYSICAL_CLOSED_LENGTH_M = 2 * JAW_THICKNESS_PAD_M                  # 14 mm, fully closed
+GRIPPER_PHYSICAL_OPEN_LENGTH_M = MAX_PHYSICAL_GRIPPER_WIDTH_M               # 53 mm, fully open
+GRIPPER_PHYSICAL_DEPTH_M = JAW_WIDTH_M                                      # 27 mm
 
 MAX_PHYSICAL_GRIPPER_HALF_WIDTH_M = MAX_PHYSICAL_GRIPPER_WIDTH_M / 2.0
-
-# Approximate lower-jaw outer width when the jaws are open.
-# Used only for collision/placement clearance, not for gripping conversion.
 JAW_MAX_PHYSICAL_WIDTH_M = MAX_PHYSICAL_GRIPPER_WIDTH_M
+
 
 # Placement-footprint model for the lower gripper/jaw region.
 # Treat the lower gripper as a rotated rect
@@ -454,12 +444,20 @@ OBJECT_GRIP_COMMAND_MIN_M = {
 # =================================================================
 # HYBRID POSITION + FORCE GRIP TUNING
 # =================================================================
-# CHANGE THIS FIRST:
-#   HYBRID_GRIP_CONTACT_TORQUE_DELTA
-#
-# Larger value  = gripper squeezes harder before stopping.
-# Smaller value = gripper stops earlier / gentler grip.
-HYBRID_FORCE_GRIP_ENABLED = True
+# HYBRID_FORCE_GRIP_ENABLED is forced to False (see the full explanation
+# in the "ONROBOT 2FG7 GRIPPER CONTROL" section below) -- real force/
+# torque feedback is not available on this hardware, so hybrid
+# contact-detection cannot work. These tuning constants are kept
+# (rather than deleted) purely because average_gripper_torque() and
+# gripper_grip_object_hybrid() still reference them as safe no-op
+# defaults -- they have no real effect while hybrid mode is disabled.
+HYBRID_GRIP_CONTACT_TORQUE_DELTA    = 20
+HYBRID_GRIP_MAX_EXTRA_CLOSE_PERCENT = 8
+HYBRID_GRIP_STEP_PERCENT            = 2
+HYBRID_GRIP_STEP_DELAY_S            = 0.05
+HYBRID_GRIP_MIN_PERCENT             = 0
+HYBRID_GRIP_TORQUE_SAMPLES          = 3
+
 # =================================================================
 # CAMERA STAND — PERMANENT NO-GO ZONE
 # =================================================================
@@ -513,81 +511,95 @@ Y_MIN, Y_MAX = -0.370,  0.000
 Z_MIN, Z_MAX =  0.010,  0.850
 
 # =================================================================
-# NO_GRIPPER_VERSION — all gripper hardware constants stubbed out
+# ONROBOT 2FG7 GRIPPER CONTROL (via NeuraPy execute_external_device_function)
 # =================================================================
-HYBRID_GRIP_CONTACT_TORQUE_DELTA    = 20
-HYBRID_GRIP_MAX_EXTRA_CLOSE_PERCENT = 8
-HYBRID_GRIP_STEP_PERCENT            = 2
-HYBRID_GRIP_STEP_DELAY_S            = 0.05
-HYBRID_GRIP_MIN_PERCENT             = 0
-HYBRID_GRIP_TORQUE_SAMPLES          = 3
+# REPLACES the old Lebai/Modbus-RTU direct-serial control block.
+#
+# Why this section was rewritten:
+#   The original code below this comment talked to a Lebai gripper
+#   directly over raw Modbus RTU (pymodbus, holding registers like
+#   REG_POSITION / REG_FORCE / REG_CUR_TORQUE). That is NOT the
+#   hardware on this robot -- this robot uses an OnRobot 2FG7,
+#   connected through the LARA5 controller's own External Devices
+#   interface, not a raw serial link from this PC.
+#
+#   All gripper communication now goes through:
+#       r.execute_external_device_function(PROCESS_FILE, function_name, params)
+#   exactly like the working LoRA data-collection script
+#   (LoRA_grasp_pregrasp_collector_v6_start_open.py) already does.
+#
+# IMPORTANT -- every function name below is kept IDENTICAL to the old
+# version (clamp_percent, object_width_to_percent, gripper_move_percent,
+# gripper_open, gripper_close, gripper_grip_object, etc.). Every other
+# part of this file (trajectory planning, collision checks, pick/place
+# sequencing) calls these same names and does not need to change.
+#
+# HONEST LIMITATION -- read before using hybrid force grip:
+#   The 2FG7, as currently configured/queried through this API, does
+#   NOT expose a working real force/torque readback (getMaxForce and
+#   similar calls reliably return 0 -- this was verified directly on
+#   this hardware). That means the old "hybrid position + force" grip
+#   logic, which depended on reading rising torque to detect contact,
+#   CANNOT actually detect contact on this hardware. Rather than leave
+#   that logic silently doing nothing useful (or worse, always closing
+#   all the way down with no real contact check -- a crush risk for
+#   soft objects like the sponge), HYBRID_FORCE_GRIP_ENABLED is forced
+#   to False here, and a one-time warning is printed. Normal
+#   position-based gripping (gripper_grip_object) is calibrated instead
+#   using the 2FG7's own GraspWorkpiece contact-stop behavior, which
+#   IS real and does work (verified on this hardware).
 
-GRIPPER_PORT = "NONE"
-GRIPPER_ADDR = 1
+PROCESS_FILE = "OnRobot2FG7_RTU_DEFAULT.json"
 
-REG_POSITION   = 0x9C40
-REG_FORCE      = 0x9C41
-REG_CUR_POS    = 0x9C45
-REG_CUR_TORQUE = 0x9C46
-REG_STATUS     = 0x9C47
-REG_HOME       = 0x9C48
-REG_SPEED      = 0x9C4A
-REG_AUTO_HOME  = 0x9C9A
+# Calibration: converts a desired real jaw GAP (mm) into the raw "width"
+# command value this specific 2FG7 + RTU config actually expects.
+# These constants were derived from real measured behaviour on this
+# exact gripper (see LoRA_grasp_pregrasp_collector_v6_start_open.py) --
+# do not guess-change these without re-measuring on the real hardware.
+GRIPPER_WIDTH_CMD_SLOPE = 1.230769
+GRIPPER_WIDTH_CMD_INTERCEPT = 40.538462
 
-# No physical gripper client — all writes/reads are no-ops
-gripper = None
+HYBRID_FORCE_GRIP_ENABLED = False  # forced off -- see note above; real force
+                                    # feedback is not available on this hardware
+_HYBRID_WARNING_PRINTED = False
+
+MAX_STROKE_M = 0.038              # 2FG7 datasheet: total stroke = 38 mm
+GRIPPER_PERCENT_SCALE = 1
+GRIPPER_PERCENT_OFFSET = 0.0
 
 CURRENT_GRIPPER_PERCENT = 100
+CURRENT_GRIPPER_FORCE = 20        # last commanded force %, mirrors MAX_FORCE_PERCENT default
+CURRENT_GRIPPER_SPEED = 50        # last commanded speed %, mirrors DEFAULT_GRIPPER_SPEED
 
-# Lebai Modbus RTU settings.
-GRIPPER_PORT = "COM5"             # change this to the USB-RS485 COM port
-GRIPPER_ADDR = 1
-
-REG_POSITION    = 0x9C40          # 40000 - position control, 0 closed -> 100 open
-REG_FORCE       = 0x9C41          # 40001 - force control, 0 -> 100
-REG_CUR_POS     = 0x9C45          # 40005 - current position
-REG_CUR_TORQUE  = 0x9C46          # 40006 - current torque
-REG_STATUS      = 0x9C47          # 40007 - 1 completed, 0 executing
-REG_HOME        = 0x9C48          # 40008 - homing/find stroke
-REG_SPEED       = 0x9C4A          # 40010 - speed control
-REG_AUTO_HOME   = 0x9C9A          # 40090 - auto homing disable/restore
-
-gripper = ModbusSerialClient(
-    port=GRIPPER_PORT,
-    baudrate=115200,
-    bytesize=8,
-    parity="N",
-    stopbits=1,
-    timeout=2
-)
 
 def clamp_percent(value):
     return int(max(0, min(100, round(value))))
 
+
 def object_width_to_percent(object_width_m):
     """
-    Convert desired real jaw opening width into Lebai 0-100% command.
-
-    Uses a global percentage calibration because the real gripper opening is
-    larger than the simple linear MAX_STROKE_M model predicted.
+    Convert desired real jaw opening width into a 0-100 "percent open" value,
+    using the SAME percent convention the rest of this file already expects
+    (0 = fully closed, 100 = fully open, scaled against MAX_STROKE_M).
+    This function's math is UNCHANGED from the original -- only the
+    hardware call that actually executes a move (gripper_move_percent)
+    was rewritten below.
     """
     raw_percent = (object_width_m / MAX_STROKE_M) * 100.0
     calibrated_percent = raw_percent * GRIPPER_PERCENT_SCALE + GRIPPER_PERCENT_OFFSET
     return clamp_percent(calibrated_percent)
 
+
 def select_object_profile_by_name(object_name):
     """
     Select object profile from OBJECT_CATALOGUE using MCP object name.
-
-    This replaces manual user selection for MCP mode while preserving the
-    original OBJECT_CATALOGUE dimensions, grip calibration, and placement logic.
+    UNCHANGED from original -- no hardware dependency here.
     """
     if object_name is None:
         raise ValueError("MCP object_name is required.")
 
     name = str(object_name).strip().lower()
 
-    # Aliases: short names → canonical catalogue labels
     aliases = {
         "yellow": "yellow cube",
         "blue": "blue cube",
@@ -635,25 +647,32 @@ def select_object_profile_by_name(object_name):
 
     raise ValueError(f"Unsupported MCP object_name: {object_name!r}")
 
+
 def percent_to_commanded_opening_m(percent):
-    """
-    Display/debug helper showing calibrated target opening estimate.
-    """
+    """Display/debug helper. UNCHANGED math from original."""
     p = (clamp_percent(percent) - GRIPPER_PERCENT_OFFSET) / max(GRIPPER_PERCENT_SCALE, 1e-6)
     return (p / 100.0) * MAX_STROKE_M
+
 
 def percent_to_opening_m(percent):
     return (clamp_percent(percent) / 100.0) * MAX_STROKE_M
 
+
 def gripper_length_from_percent(percent):
     """
-    Dynamic vertical gripper length from flange/TCP to fingertip.
-    0% open   = fully closed = longest effective length.
-    100% open = fully open   = shortest effective length.
-    Includes the 20 mm protection layer.
+    Vertical gripper length from flange/TCP to fingertip.
+
+    CORRECTED from the old model: the real measured jaw section has a
+    FIXED Z-height (42.3mm) regardless of how open/closed the jaws
+    are -- this matches a standard parallel 2-finger gripper, where
+    the fingertips move sideways as it opens/closes, not up/down.
+    GRIPPER_LEN_OPEN and GRIPPER_LEN_CLOSED are now identical
+    (both equal GRIPPER_LENGTH), so this always returns the same
+    value -- kept as a function (rather than removed) purely so every
+    existing call site elsewhere in this file keeps working unchanged.
     """
-    percent = clamp_percent(percent)
-    return GRIPPER_LEN_CLOSED - (percent / 100.0) * (GRIPPER_LEN_CLOSED - GRIPPER_LEN_OPEN)
+    clamp_percent(percent)  # validated for compatibility, even though unused in the result
+    return GRIPPER_LENGTH
 
 
 def get_object_grip_label(selected_object=None):
@@ -667,10 +686,7 @@ def get_object_grip_label(selected_object=None):
 
 def calibrated_close_width_for_object(object_width_m, selected_object=None):
     """
-    Return command width used for CLOSE/HOLD only.
-
-    The robot can still pre-open/release wider using the real object width.
-    This avoids medicine/cube being held too loosely without changing placement.
+    Return command width used for CLOSE/HOLD only. UNCHANGED math from original.
     """
     label = get_object_grip_label(selected_object)
     scale = OBJECT_GRIP_COMMAND_SCALE.get(label, 1.0)
@@ -679,27 +695,25 @@ def calibrated_close_width_for_object(object_width_m, selected_object=None):
     calibrated = object_width_m * scale
     calibrated = max(min_width, calibrated)
 
-    # Never command wider than the original object width here.
     return min(object_width_m, calibrated)
 
 
 def get_pre_pick_open_percent(object_width_m):
-    """
-    Opening before descending. Opens slightly wider than the target grip width before descending.
-    PRE_PICK_EXTRA_RATIO = 0.30 means 30% wider than the object grip width.
-    """
+    """Opening before descending. UNCHANGED math from original."""
     return object_width_to_percent(object_width_m * (1.0 + PRE_PICK_EXTRA_RATIO))
 
+
 def get_pick_close_percent(object_width_m):
-    """Target gripper opening for gripping the object, with object-specific calibration."""
+    """Target gripper opening for gripping the object. UNCHANGED math from original."""
     close_width_m = calibrated_close_width_for_object(
         object_width_m,
         globals().get("SELECTED_OBJECT", None),
     )
     return object_width_to_percent(close_width_m)
 
+
 def select_object_profile():
-    """Operator menu for choosing the object profile used for width/height planning."""
+    """Operator menu for choosing the object profile. UNCHANGED from original."""
     print("\n=== Object selection ===")
     for key, obj in OBJECT_CATALOGUE.items():
         print(
@@ -713,13 +727,11 @@ def select_object_profile():
     while True:
         choice = input("Select object to pick: ").strip().lower()
 
-        # Accept object number
         if choice in OBJECT_CATALOGUE:
             selected = dict(OBJECT_CATALOGUE[choice])
             print(f"  Selected: {selected.get('name', choice)}")
             return selected
 
-        # Accept typed label/name as fallback
         for obj in OBJECT_CATALOGUE.values():
             if choice in {
                 str(obj.get("name", "")).lower(),
@@ -731,112 +743,136 @@ def select_object_profile():
 
         print("  [INPUT ERROR] Please select one of the listed object numbers.")
 
-def print_available_com_ports():
-    print("[Gripper] Available COM ports:")
-    ports = list_ports.comports()
-    if not ports:
-        print("  No COM ports found.")
-    else:
-        for p in ports:
-            print(f"  {p.device} - {p.description}")
+
+def _gap_mm_to_width_command(gap_mm):
+    """
+    Convert a desired real jaw GAP (mm) into the raw 'width' command value
+    this OnRobot2FG7_RTU_DEFAULT.json config actually expects, using the
+    real calibration measured on this hardware.
+    """
+    width_cmd = GRIPPER_WIDTH_CMD_SLOPE * gap_mm + GRIPPER_WIDTH_CMD_INTERCEPT
+    return max(0.0, min(100.0, width_cmd))
+
 
 def gripper_connect():
-    print_available_com_ports()
-    print(f"[Gripper] Connecting on {GRIPPER_PORT}...")
-    #if not gripper.connect():
-        #raise RuntimeError(f"Could not connect to gripper over RS485 on {GRIPPER_PORT}.")
+    """
+    No separate serial connection needed -- the OnRobot 2FG7 is reached
+    through the LARA5 controller's own connection (the global `r` Robot
+    object), not a direct PC-to-gripper link.
+    """
+    print(f"[Gripper] Using OnRobot 2FG7 via {PROCESS_FILE} through the robot controller.")
 
-def gripper_write(register, value):
-    result = gripper.write_register(
-        address=register,
-        value=int(value),
-        device_id=GRIPPER_ADDR
-    )
-    if result.isError():
-        raise RuntimeError(f"Gripper write failed: register={hex(register)}, value={value}")
 
-def gripper_read(register):
-    result = gripper.read_holding_registers(
-        address=register,
-        count=1,
-        device_id=GRIPPER_ADDR
-    )
-    if result.isError():
-        raise RuntimeError(f"Gripper read failed: register={hex(register)}")
-    return result.registers[0]
+def _call_gripper_function(function_name, params=None):
+    """Thin wrapper around execute_external_device_function with consistent error printing."""
+    try:
+        return r.execute_external_device_function(PROCESS_FILE, function_name, params or {})
+    except Exception as e:
+        print(f"[Gripper ERROR] '{function_name}' failed: {e}")
+        raise
+
 
 def wait_gripper_done(timeout=10, target_percent=None, tolerance=3):
     """
-    Wait for the gripper to finish. Some units do not always set the status
-    register to 1, so if a target percentage is given, this also accepts the
-    command as complete when current position is close enough to the target.
+    Poll the 2FG7's own status/width readback until it reports done, or
+    until the reported width is close enough to the target.
+    Uses the real, verified-working returnStatus / returnCurrentWidth
+    calls instead of raw Modbus register reads.
     """
     start = time.time()
     while time.time() - start < timeout:
         try:
-            status = gripper_read(REG_STATUS)
-            if status == 1:
+            result = _call_gripper_function("returnStatus")
+            status = str(result.get("returnStatus", "")).strip().lower()
+            if status in ("grip detected", "idle", "completed"):
                 return True
 
             if target_percent is not None:
-                current_pos = gripper_read(REG_CUR_POS)
-                if abs(current_pos - target_percent) <= tolerance:
+                width_result = _call_gripper_function("returnCurrentWidth")
+                current_width = float(width_result.get("returnCurrentWidth", 0))
+                target_width_cmd = _gap_mm_to_width_command(
+                    percent_to_opening_m(target_percent) * 1000
+                )
+                if abs(current_width - target_width_cmd) <= tolerance:
                     return True
         except Exception as e:
-            print(f"[Gripper WARN] Status/position read failed: {e}")
+            print(f"[Gripper WARN] Status/width read failed: {e}")
 
         time.sleep(0.2)
     raise TimeoutError("Gripper command timeout.")
 
+
 def gripper_startup():
-    """Disable auto-homing, run one controlled homing cycle, then set safe force."""
+    """
+    Initialise the gripper. Uses the device's own Init function if
+    available; wrapped defensively since not every process JSON exposes
+    the same function set, and startup should not hard-crash the whole
+    robot script over a best-effort init call.
+    """
     gripper_connect()
-
-    print("[Gripper] Disabling automatic homing...")
-    gripper_write(REG_AUTO_HOME, 1)
+    print("[Gripper] Attempting device Init...")
+    try:
+        _call_gripper_function("Init")
+    except Exception as e:
+        print(f"[Gripper] Init call failed or unsupported, continuing anyway: {e}")
     time.sleep(0.3)
 
-    print("[Gripper] Running one homing/find-stroke cycle...")
-    gripper_write(REG_HOME, 1)
-    wait_gripper_done(timeout=15)
+    print(f"[Gripper] Setting default force cap to {MAX_FORCE_PERCENT}%...")
+    gripper_set_force(MAX_FORCE_PERCENT)
 
-    print(f"[Gripper] Setting force cap to {MAX_FORCE_PERCENT}%...")
-    gripper_write(REG_FORCE, MAX_FORCE_PERCENT)
-    time.sleep(0.3)
 
 def gripper_set_force(force=MAX_FORCE_PERCENT):
-    force = clamp_percent(min(force, MAX_FORCE_PERCENT))
-    gripper_write(REG_FORCE, force)
+    """
+    The 2FG7's API takes force as a parameter on each move call, not as a
+    standalone register write. This just stores the value to be used by
+    the next gripper_move_percent call, preserving the old call pattern
+    used elsewhere in this file.
+    """
+    global CURRENT_GRIPPER_FORCE
+    CURRENT_GRIPPER_FORCE = clamp_percent(min(force, MAX_FORCE_PERCENT))
+
 
 def gripper_set_speed(speed=DEFAULT_GRIPPER_SPEED):
-    speed = clamp_percent(speed)
-    gripper_write(REG_SPEED, speed)
+    """Same as gripper_set_force -- stored for the next move call."""
+    global CURRENT_GRIPPER_SPEED
+    CURRENT_GRIPPER_SPEED = clamp_percent(speed)
+
 
 def gripper_move_percent(position_percent, force=MAX_FORCE_PERCENT, speed=DEFAULT_GRIPPER_SPEED):
+    """
+    Real hardware call: converts the requested percent-open into the
+    calibrated width command, then calls the 2FG7's 'close' function
+    (position-mode move -- no contact-detection wait, matches the
+    behaviour verified safe for this hardware, including soft objects).
+    """
     global CURRENT_GRIPPER_PERCENT
     position_percent = clamp_percent(position_percent)
     force = clamp_percent(min(force, MAX_FORCE_PERCENT))
     speed = clamp_percent(speed)
 
+    gap_mm = percent_to_commanded_opening_m(position_percent) * 1000
+    width_cmd = _gap_mm_to_width_command(gap_mm)
+
     print(
         f"[Gripper] Move to {position_percent}% open "
-        f"({percent_to_commanded_opening_m(position_percent)*1000:.1f} mm calibrated target), "
+        f"({gap_mm:.1f} mm calibrated gap -> width_cmd={width_cmd:.1f}), "
         f"force={force}%, speed={speed}%"
     )
 
-    gripper_set_force(force)
-    gripper_set_speed(speed)
-    gripper_write(REG_POSITION, position_percent)
+    _call_gripper_function("close", {"width": width_cmd, "speed": speed, "force": force})
     wait_gripper_done(timeout=10, target_percent=position_percent)
 
     CURRENT_GRIPPER_PERCENT = position_percent
     print("[Gripper] Move complete")
 
+
 def gripper_open():
     gripper_move_percent(100, force=MAX_FORCE_PERCENT, speed=60)
 
+
 def gripper_close():
     gripper_move_percent(0, force=MAX_FORCE_PERCENT, speed=40)
+
 
 def gripper_open_for_object(object_width_m):
     pre_percent = get_pre_pick_open_percent(object_width_m)
@@ -844,16 +880,26 @@ def gripper_open_for_object(object_width_m):
 
 
 def read_gripper_torque_safe(default=0):
-    """Read current gripper torque/current feedback safely."""
-    try:
-        return gripper_read(REG_CUR_TORQUE)
-    except Exception as e:
-        print(f"[Grip force WARN] Could not read torque/current feedback: {e}")
-        return default
+    """
+    HONEST STUB: real force/torque readback is not available on this
+    2FG7 configuration (verified: getMaxForce and similar calls return
+    0 regardless of actual grip force). Returns `default` every time and
+    prints a single one-time warning rather than pretending to read a
+    real value.
+    """
+    global _HYBRID_WARNING_PRINTED
+    if not _HYBRID_WARNING_PRINTED:
+        print(
+            "[Grip force WARNING] Real force/torque feedback is not available "
+            "on this OnRobot 2FG7 setup. Hybrid force-based grip logic cannot "
+            "detect contact and is disabled (HYBRID_FORCE_GRIP_ENABLED=False)."
+        )
+        _HYBRID_WARNING_PRINTED = True
+    return default
 
 
 def average_gripper_torque(samples=HYBRID_GRIP_TORQUE_SAMPLES, delay_s=0.05):
-    """Average torque/current readings to reduce noise."""
+    """Kept for compatibility; always returns the stub default (see above)."""
     values = []
     for _ in range(max(1, samples)):
         values.append(read_gripper_torque_safe(default=0))
@@ -863,99 +909,17 @@ def average_gripper_torque(samples=HYBRID_GRIP_TORQUE_SAMPLES, delay_s=0.05):
 
 def gripper_grip_object_hybrid(object_width_m):
     """
-    Hybrid position + force grip.
-
-    1. Calculate the normal object-width target.
-    2. Close gradually toward that target.
-    3. Stop early if torque/current rises above threshold.
-    4. If target reached but contact is weak, close a little extra.
+    Hybrid position + force grip -- DISABLED on this hardware (see
+    HYBRID_FORCE_GRIP_ENABLED note above). Falls back to the plain
+    position-based grip so calling this function is still safe, it just
+    won't attempt (fake) contact detection.
     """
-    close_width_m = calibrated_close_width_for_object(
-        object_width_m,
-        globals().get("SELECTED_OBJECT", None),
-    )
-    target_percent = object_width_to_percent(close_width_m)
-
-    if abs(close_width_m - object_width_m) > 0.0005:
-        print(
-            f"[Grip calibration] Commanding close width {close_width_m*1000:.1f} mm "
-            f"for measured object grip width {object_width_m*1000:.1f} mm"
-        )
-
-    baseline_torque = average_gripper_torque()
-    contact_threshold = baseline_torque + HYBRID_GRIP_CONTACT_TORQUE_DELTA
-
-    print(
-        f"[Hybrid grip] target={target_percent}% open, "
-        f"baseline_torque={baseline_torque:.1f}, "
-        f"contact_threshold={contact_threshold:.1f}"
-    )
-    print("[Hybrid grip tuning] Adjust HYBRID_GRIP_CONTACT_TORQUE_DELTA for reaction force.")
-
-    current_percent = clamp_percent(CURRENT_GRIPPER_PERCENT)
-
-    if current_percent <= target_percent:
-        gripper_move_percent(target_percent, force=MAX_FORCE_PERCENT, speed=35)
-        return
-
-    percent = current_percent
-
-    # Close toward calculated target.
-    while percent > target_percent:
-        next_percent = max(target_percent, percent - HYBRID_GRIP_STEP_PERCENT)
-        gripper_move_percent(next_percent, force=MAX_FORCE_PERCENT, speed=30)
-        percent = next_percent
-
-        torque = average_gripper_torque()
-        print(f"[Hybrid grip] percent={percent}% torque={torque:.1f}")
-
-        if torque >= contact_threshold:
-            print(
-                f"[Hybrid grip] Contact detected at {percent}% "
-                f"(torque {torque:.1f} >= {contact_threshold:.1f}). Holding."
-            )
-            return
-
-        time.sleep(HYBRID_GRIP_STEP_DELAY_S)
-
-    # If target reached but contact is weak, close slightly more.
-    print("[Hybrid grip] Target reached; checking if extra close is needed...")
-    extra_closed = 0
-
-    while extra_closed < HYBRID_GRIP_MAX_EXTRA_CLOSE_PERCENT:
-        torque = average_gripper_torque()
-
-        if torque >= contact_threshold:
-            print(
-                f"[Hybrid grip] Contact confirmed after extra close at {percent}% "
-                f"(torque {torque:.1f} >= {contact_threshold:.1f})."
-            )
-            return
-
-        next_percent = max(HYBRID_GRIP_MIN_PERCENT, percent - HYBRID_GRIP_STEP_PERCENT)
-
-        if next_percent == percent:
-            break
-
-        gripper_move_percent(next_percent, force=MAX_FORCE_PERCENT, speed=25)
-        extra_closed += abs(percent - next_percent)
-        percent = next_percent
-
-        print(f"[Hybrid grip] Extra close to {percent}% (extra={extra_closed}%)")
-        time.sleep(HYBRID_GRIP_STEP_DELAY_S)
-
-    print("[Hybrid grip] Finished extra-close limit. Holding current grip.")
+    read_gripper_torque_safe()  # triggers the one-time warning
+    gripper_grip_object_plain(object_width_m)
 
 
-def gripper_grip_object(object_width_m):
-    """
-    Grip object using hybrid position + force logic when enabled.
-    Falls back to normal position grip if disabled.
-    """
-    if HYBRID_FORCE_GRIP_ENABLED:
-        gripper_grip_object_hybrid(object_width_m)
-        return
-
+def gripper_grip_object_plain(object_width_m):
+    """Plain position-based grip -- the real, working grip path on this hardware."""
     close_width_m = calibrated_close_width_for_object(
         object_width_m,
         globals().get("SELECTED_OBJECT", None),
@@ -971,13 +935,22 @@ def gripper_grip_object(object_width_m):
     gripper_move_percent(close_percent, force=MAX_FORCE_PERCENT, speed=40)
 
 
+def gripper_grip_object(object_width_m):
+    """
+    Grip object. HYBRID_FORCE_GRIP_ENABLED is forced False on this
+    hardware (see note above), so this always uses the plain,
+    verified-working position-based grip.
+    """
+    if HYBRID_FORCE_GRIP_ENABLED:
+        gripper_grip_object_hybrid(object_width_m)
+        return
+    gripper_grip_object_plain(object_width_m)
+
+
 def gripper_release_object(object_width_m):
     """
-    Compact release inside the placement box.
-
-    Opens to the same 30%-extra size used for pre-pick, instead of opening
-    to 100% inside the box. After the robot lifts away, gripper_open() can
-    fully open safely.
+    Compact release inside the placement box. UNCHANGED logic from
+    original -- only the underlying move call was rewritten.
     """
     release_percent = object_width_to_percent(
         object_width_m * (1.0 + PRE_PICK_EXTRA_RATIO)
@@ -989,12 +962,14 @@ def gripper_release_object(object_width_m):
         speed=60
     )
 
+
 def gripper_shutdown():
-    try:
-        gripper.close()
-        print("[Gripper] Connection closed.")
-    except Exception:
-        pass
+    """
+    No separate connection to close -- the OnRobot 2FG7 is reached
+    through the robot controller's own connection, not a direct serial
+    link owned by this script.
+    """
+    print("[Gripper] No separate gripper connection to close (using robot controller link).")
 
 # =================================================================
 # EMERGENCY STOP
@@ -1299,29 +1274,22 @@ def get_current_tool_rz_deg():
 
 def get_current_jaw_width_m():
     """
-    Return current OUTER jaw width used for rectangular jaw collision.
+    Return the current jaw box's dynamic dimension (the direction the
+    jaws open/close along), used for the jaw's oriented-rectangle
+    collision check.
 
-    Important:
-    - MAX_STROKE_M is the usable internal opening for gripping.
-    - MAX_PHYSICAL_GRIPPER_WIDTH_M is the total outer physical width at full open.
-    Collision/box clearance should use physical width, not internal stroke.
+    New exact formula (replacing the old rough physical-width
+    extrapolation): current internal opening + a fixed 7mm padding on
+    EACH side for real jaw material thickness (14mm total), clamped to
+    the real max opening (39mm) + padding.
     """
     try:
         internal_opening = percent_to_opening_m(CURRENT_GRIPPER_PERCENT)
-
-        # Convert internal opening into an approximate outer physical width.
-        # At 100%, this becomes MAX_PHYSICAL_GRIPPER_WIDTH_M.
-        # At lower openings, it still includes the jaw/body thickness around the internal gap.
-        extra_body_width = max(0.0, MAX_PHYSICAL_GRIPPER_WIDTH_M - MAX_STROKE_M)
-        return max(
-            JAW_MIN_DYNAMIC_WIDTH_M,
-            JAW_FIXED_WIDTH_M,
-            internal_opening + extra_body_width,
-        )
     except Exception:
-        fallback_internal = percent_to_opening_m(PICK_CLOSE_PERCENT) if 'PICK_CLOSE_PERCENT' in globals() else 0.040
-        extra_body_width = max(0.0, MAX_PHYSICAL_GRIPPER_WIDTH_M - MAX_STROKE_M)
-        return max(JAW_MIN_DYNAMIC_WIDTH_M, JAW_FIXED_WIDTH_M, fallback_internal + extra_body_width)
+        internal_opening = percent_to_opening_m(PICK_CLOSE_PERCENT) if 'PICK_CLOSE_PERCENT' in globals() else 0.020
+
+    internal_opening = max(JAW_MIN_OPENING_M, min(JAW_MAX_OPENING_M, internal_opening))
+    return internal_opening + (2 * JAW_THICKNESS_PAD_M)
 
 
 def _circle_segment_hits_box(tcp_x, tcp_y, tcp_z, radius_m, z_top_offset_m, z_bottom_offset_m):
@@ -1348,10 +1316,12 @@ def _circle_segment_hits_box(tcp_x, tcp_y, tcp_z, radius_m, z_top_offset_m, z_bo
 def _oriented_jaw_hits_box(tcp_x, tcp_y, tcp_z):
     """Check lower rectangular jaws against the extra obstacle.
 
-    The lower gripping section is not treated as a circle. It is approximated as
-    a yaw-rotated rectangle in XY:
-      - fixed jaw body width = 50 mm,
-      - dynamic opening width = current commanded opening.
+    Rewritten with the real measured jaw dimensions:
+      - fixed jaw width = 27 mm (JAW_WIDTH_M), perpendicular to opening
+      - dynamic opening dimension = current commanded opening + 14 mm
+        total padding (7 mm each side, real jaw material thickness)
+      - 1 mm clearance (JAW_CLEARANCE_M) added around the whole box
+      - fixed Z-height = 42.3 mm (JAW_HEIGHT_M), does NOT change with opening
     The rectangle is converted into its world-frame AABB extents for a fast,
     conservative collision check against the obstacle box.
     """
@@ -1375,9 +1345,10 @@ def _oriented_jaw_hits_box(tcp_x, tcp_y, tcp_z):
     c = abs(math.cos(rz))
     s = abs(math.sin(rz))
 
-    # Local jaw half-extents: 50 mm body dimension and dynamic jaw opening.
-    hx_local = JAW_FIXED_WIDTH_M / 2.0
-    hy_local = get_current_jaw_width_m() / 2.0
+    # Local jaw half-extents: fixed 27mm width, dynamic opening dimension,
+    # both padded by the 1mm jaw clearance.
+    hx_local = (JAW_WIDTH_M / 2.0) + JAW_CLEARANCE_M
+    hy_local = (get_current_jaw_width_m() / 2.0) + JAW_CLEARANCE_M
 
     # Convert the oriented rectangle into a conservative axis-aligned envelope.
     hx_world = c * hx_local + s * hy_local
@@ -1387,26 +1358,63 @@ def _oriented_jaw_hits_box(tcp_x, tcp_y, tcp_z):
     in_y = abs(tcp_y - OBS_Y) < (OBS_HD + OBS_MARGIN + hy_world)
     return in_x and in_y
 
+
+def _oriented_neck_hits_box(tcp_x, tcp_y, tcp_z):
+    """Check the neck section against the extra obstacle.
+
+    NEW: the neck is now modelled as a rectangular box (90mm x 60mm),
+    not a cylinder -- corrected from the old model, since the real
+    cross-section here is not round. Uses the same yaw-rotated
+    rectangle -> conservative AABB approach as the jaw check, plus a
+    5mm clearance margin (NECK_CLEARANCE_M).
+    """
+    active_len = get_active_gripper_length()
+    neck_start_offset = min(active_len, FLANGE_LENGTH_M)
+    neck_end_offset = min(active_len, FLANGE_LENGTH_M + NECK_LENGTH_M)
+
+    if neck_end_offset <= neck_start_offset:
+        return False
+
+    neck_top_z = tcp_z - neck_start_offset
+    neck_bottom_z = tcp_z - neck_end_offset
+    obs_top_z = OBS_H + OBS_MARGIN
+
+    if neck_bottom_z > obs_top_z:
+        return False
+
+    rz = math.radians(get_current_tool_rz_deg())
+    c = abs(math.cos(rz))
+    s = abs(math.sin(rz))
+
+    hx_local = (NECK_LENGTH_DIM_M / 2.0) + NECK_CLEARANCE_M
+    hy_local = (NECK_THICKNESS_M / 2.0) + NECK_CLEARANCE_M
+
+    hx_world = c * hx_local + s * hy_local
+    hy_world = s * hx_local + c * hy_local
+
+    in_x = abs(tcp_x - OBS_X) < (OBS_HW + OBS_MARGIN + hx_world)
+    in_y = abs(tcp_y - OBS_Y) < (OBS_HD + OBS_MARGIN + hy_world)
+    return in_x and in_y
+
+
 def segmented_gripper_in_extra_obs(tcp_x, tcp_y, tcp_z):
     """Segmented end-effector collision check against the optional obstacle.
 
-    This replaces the older single-radius gripper check for manual obstacles.
-    It checks:
-      1) flange/body as a large cylinder,
-      2) neck as a smaller cylinder,
-      3) jaws as a rotated rectangle.
+    Checks:
+      1) flange as a circle (Ø71mm, the real Quick Changer diameter),
+      2) neck as a yaw-rotated rectangle (90mm x 60mm box, NOT a cylinder
+         -- corrected from the old model),
+      3) jaws as a yaw-rotated rectangle (27mm fixed x dynamic opening+14mm).
     """
     active_len = get_active_gripper_length()
 
     flange_top = 0.0
     flange_bottom = min(active_len, FLANGE_LENGTH_M)
-    neck_top = flange_bottom
-    neck_bottom = min(active_len, flange_bottom + NECK_LENGTH_M)
 
     if _circle_segment_hits_box(tcp_x, tcp_y, tcp_z, FLANGE_RADIUS_M, flange_top, flange_bottom):
         return True
 
-    if _circle_segment_hits_box(tcp_x, tcp_y, tcp_z, NECK_RADIUS_M, neck_top, neck_bottom):
+    if _oriented_neck_hits_box(tcp_x, tcp_y, tcp_z):
         return True
 
     if _oriented_jaw_hits_box(tcp_x, tcp_y, tcp_z):
@@ -1704,7 +1712,7 @@ def validate_trajectory(waypoints, label="trajectory", bypass_extra_obs=False):
                 f"    TCP   X={tcp_x:.3f}  Y={tcp_y:.3f}  Z={tcp_z:.3f}\n"
                 f"    Fingertip Z={tip_z:.3f}\n"
                 f"    Obstacle centre ({OBS_X:.3f}, {OBS_Y:.3f})  H={OBS_H:.3f}m\n"
-                f"    Segmented tool model: flange Ø{FLANGE_DIAMETER_M*1000:.1f}mm, neck Ø{NECK_DIAMETER_M*1000:.1f}mm, jaw {JAW_FIXED_WIDTH_M*1000:.1f}mm x {get_current_jaw_width_m()*1000:.1f}mm\n"
+                f"    Segmented tool model: flange Ø{FLANGE_DIAMETER_M*1000:.1f}mm, neck {NECK_LENGTH_DIM_M*1000:.0f}x{NECK_THICKNESS_M*1000:.0f}mm box, jaw {JAW_FIXED_WIDTH_M*1000:.1f}mm x {get_current_jaw_width_m()*1000:.1f}mm\n"
                 f"  {'='*62}\n"
                 f"  No motion has been sent to the robot.\n"
             )

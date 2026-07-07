@@ -461,12 +461,17 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         if len(parts) > 1:
             raw_b64 = parts[1]
 
-    # Removed /no_think because it caused qwen3-vl:2b to return empty responses.
+    # Disable Qwen3 thinking mode: use system message + top-level flag + higher token budget.
+    # The model was burning all tokens on internal <think> reasoning and never producing JSON output.
     prompt_with_directive = prompt
     
     payload = {
         "model": QWEN_MODEL,
         "messages": [
+            {
+                "role": "system",
+                "content": "/no_think\nYou are a robotic vision assistant. Respond ONLY with a JSON object. Do NOT use <think> tags. Do NOT reason internally. Output the JSON immediately."
+            },
             {
                 "role": "user",
                 "content": prompt,
@@ -474,7 +479,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
             }
         ],
         "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 4096},
+        "options": {"temperature": 0.1, "num_predict": 8192},
         "think": False
     }
 
