@@ -539,6 +539,28 @@ gripper = None
 
 CURRENT_GRIPPER_PERCENT = 100
 
+# Lebai Modbus RTU settings.
+GRIPPER_PORT = "COM5"             # change this to the USB-RS485 COM port
+GRIPPER_ADDR = 1
+
+REG_POSITION    = 0x9C40          # 40000 - position control, 0 closed -> 100 open
+REG_FORCE       = 0x9C41          # 40001 - force control, 0 -> 100
+REG_CUR_POS     = 0x9C45          # 40005 - current position
+REG_CUR_TORQUE  = 0x9C46          # 40006 - current torque
+REG_STATUS      = 0x9C47          # 40007 - 1 completed, 0 executing
+REG_HOME        = 0x9C48          # 40008 - homing/find stroke
+REG_SPEED       = 0x9C4A          # 40010 - speed control
+REG_AUTO_HOME   = 0x9C9A          # 40090 - auto homing disable/restore
+
+gripper = ModbusSerialClient(
+    port=GRIPPER_PORT,
+    baudrate=115200,
+    bytesize=8,
+    parity="N",
+    stopbits=1,
+    timeout=2
+)
+
 def clamp_percent(value):
     return int(max(0, min(100, round(value))))
 
@@ -1857,16 +1879,21 @@ def planned_rz_for_object(selected_object, placement_angle_deg=None, reference_a
         )
         angle = _normalise_angle_deg(HOME_RZ + preferred)
 
-    # Use reference_angle_deg as the normalization base, default to HOME_RZ
+    # 1. Apply the hardware mounting offset to get the true physical target angle
+    offset = globals().get("GRIPPER_RZ_OFFSET", 0.0)
+    physical_angle = _normalise_angle_deg(angle + offset)
+
+    # 2. Compare against the reference angle to pick the shortest rotation
     base = HOME_RZ if reference_angle_deg is None else reference_angle_deg
     
-    diff = _normalise_angle_deg(angle - base)
+    # 3. Find if the 180-degree flipped version is closer to the current physical position
+    diff = _normalise_angle_deg(physical_angle - base)
     if diff > 90.0:
-        angle = _normalise_angle_deg(angle - 180.0)
+        physical_angle = _normalise_angle_deg(physical_angle - 180.0)
     elif diff < -90.0:
-        angle = _normalise_angle_deg(angle + 180.0)
+        physical_angle = _normalise_angle_deg(physical_angle + 180.0)
         
-    return _normalise_angle_deg(angle + globals().get("GRIPPER_RZ_OFFSET", 0.0))
+    return physical_angle
 
 
 def rotated_rectangle_half_extents(length_m, width_m, angle_deg):
