@@ -436,7 +436,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     if (text.isEmpty) return;
     
     if (_isWakewordModeEnabled) {
-      _changeState(HandsOffState.johnSpeaking);
+      // Do not change state to johnSpeaking so the wakeword UI stays constant
+      // _changeState(HandsOffState.johnSpeaking);
     }
     
     _setWakeWordMute(true); // Mute wake word while speaking
@@ -1175,7 +1176,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   void _manualRestartWakeWord() {
     if (!_audioServerConnected) return;
     _isManualRestarting = true;
-    _changeState(HandsOffState.restarting);
+    _changeState(HandsOffState.wakewordListening);
     _addUiLog('[OWW] manual restart initiated');
     js.context.callMethod('restartWakeWordEngine');
   }
@@ -1217,7 +1218,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
     if (_currentState == HandsOffState.handsOffOff) {
       _isWakewordModeEnabled = true;
-      _changeState(HandsOffState.restarting);
+      _changeState(HandsOffState.wakewordListening);
       _addUiLog('[OWW] Hands Off ON: starting engine listening');
       js.context.callMethod('startWakeWordListening');
     } else {
@@ -1494,18 +1495,17 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         break;
       case 'restarting':
         _addUiLog('[OWW] restarting');
-        _changeState(HandsOffState.restarting);
+        // Do not change state to restarting so UI stays constantly on
+        // _changeState(HandsOffState.restarting);
         break;
       case 'restarted':
         _addUiLog('[OWW] restarted');
         break;
       case 'active_listening_confirmed':
-        if (_currentState == HandsOffState.restarting) {
-          _changeState(HandsOffState.wakewordListening);
-          if (_isManualRestarting) {
-            _addUiLog('[OWW] manual restart complete');
-            _isManualRestarting = false;
-          }
+        // If we were manually restarting, just log it, but don't change state since we never left it
+        if (_isManualRestarting) {
+          _addUiLog('[OWW] manual restart complete');
+          _isManualRestarting = false;
         }
         break;
       case 'audio_active':

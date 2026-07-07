@@ -937,7 +937,7 @@ async def qwen_plan_next_action(
     )
     prompt = (
         f"You are the visual safety gate for a robotic arm.\n\n"
-        f"GOAL: Pick up the '{target}'\n\n"
+        f"GOAL: Pick up the '{resolved_target}'\n\n"
         f"{user_context_section}"
         f"{target_list_str}"
         f"KNOWN OBJECT CATALOGUE: {catalogue_list}\n\n"
@@ -947,8 +947,8 @@ async def qwen_plan_next_action(
         f"INSTRUCTIONS:\n"
         f"  1. Look at the image AND read the Python sensor analysis.\n"
         f"  2. IMPORTANT: Do NOT try to visually look for the stickers on the cubes. The camera cannot see them clearly. You MUST blindly trust the following mapping.\n"
-        f"  3. EXPLICIT MAPPING: 'soy milk' = GREEN cube. 'hat' = RED cube. 'wrench' = BLUE cube. 'umbrella' = YELLOW cube. If the user asks for one of these, you MUST output 'pick' and select the corresponding colored cube. Do NOT abort. Do NOT visually verify the sticker.\n"
-        f"  4. If the user asks for an object NOT in this list, output 'abort'.\n"
+        f"  3. STICKER MAPPING: The stickers (soy milk, hat, wrench, umbrella) are on the GREEN, RED, BLUE, and YELLOW cubes respectively. Python has already mapped the user's request to the correct '{resolved_target}' for you. Just pick the '{resolved_target}'. Do NOT overthink the mapping.\n"
+        f"  4. If the user asks for an object NOT in the catalogue, output 'abort'.\n"
         f"  5. HIDDEN OBJECT DEDUCTION: If your target cube is visually missing, BUT the Python Sensor Analysis says an obstacle is 'Likely resting on' your target cube, you MUST deduce the target is hidden underneath it. Output 'relocate' and set 'obstacle_name' to the blocking object.\n"
         f"  6. RELOCATE OVERRIDE: If the Python Sensor Analysis explicitly says 'MUST relocate [object] first', you MUST immediately output 'relocate' and set 'obstacle_name' to that object. Do NOT second-guess it. Do NOT try to pick the target.\n"
         f"  7. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one, output 'relocate' for that object. If clear, output 'pick'.\n"

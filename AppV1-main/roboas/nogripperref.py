@@ -159,6 +159,9 @@ GRIPPER_SAFETY_LENGTH = 0.000
 #    Z-height is fixed (a parallel 2-finger gripper's fingertips do not
 #    move up/down as it opens, only side to side).
 
+PICK_OFFSET_X_M = -0.004    # +10mm in X
+PICK_OFFSET_Y_M = -0.01   # -10mm in Y
+
 # --- FLANGE (Quick Changer) ---
 FLANGE_DIAMETER_M = 0.071          # 71 mm, datasheet-confirmed Quick Changer diameter
 FLANGE_RADIUS_M = FLANGE_DIAMETER_M / 2.0
@@ -191,7 +194,7 @@ JAW_MIN_DYNAMIC_WIDTH_M = 2 * JAW_THICKNESS_PAD_M  # 14 mm floor = fully closed 
 # Total flange-to-fingertip length. UNLIKE the old model, this does NOT
 # change between "open" and "closed" -- the real jaw height is fixed;
 # only its horizontal footprint (see get_current_jaw_width_m) changes.
-GRIPPER_LENGTH = FLANGE_LENGTH_M + NECK_LENGTH_M + JAW_HEIGHT_M   # = 0.13165 m
+GRIPPER_LENGTH = FLANGE_LENGTH_M + NECK_LENGTH_M + JAW_HEIGHT_M + 0.03   # = 0.13165 m
 GRIPPER_LEN_OPEN = GRIPPER_LENGTH     # kept for compatibility with any old call sites
 GRIPPER_LEN_CLOSED = GRIPPER_LENGTH   # both now identical -- see note above
 ACTIVE_GRIPPER_LENGTH = GRIPPER_LENGTH
@@ -247,6 +250,7 @@ DEFAULT_GRIPPER_SPEED = 50
 # of the catalogue default. This avoids adding a manual angle-selection menu.
 DEFAULT_OBJECT_ORIENTATION_DEG = 90.0
 DEFAULT_PREFERRED_GRASP_ANGLE_DEG = 0.0
+CAMERA_ANGLE_OFFSET_DEG = 45.0 
 
 # Object selection catalogue. Add more objects here later.
 # Dimensions are in metres.
@@ -269,6 +273,7 @@ OBJECT_CATALOGUE = {
         "height_m": 0.025,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
+        "grasp_symmetry_deg": 90.0,   # cube gripped face-to-face: 4 equivalent angles
         "description": "Yellow cube",
     },
 
@@ -281,6 +286,7 @@ OBJECT_CATALOGUE = {
         "height_m": 0.03,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
+        "grasp_symmetry_deg": 90.0,
         "description": "Blue cube",
     },
 
@@ -293,6 +299,7 @@ OBJECT_CATALOGUE = {
         "height_m": 0.03,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
+        "grasp_symmetry_deg": 90.0,
         "description": "Green cube",
     },
 
@@ -305,6 +312,7 @@ OBJECT_CATALOGUE = {
         "height_m": 0.030,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
+        "grasp_symmetry_deg": 90.0,
         "description": "Red cube",
     },
 
@@ -317,6 +325,7 @@ OBJECT_CATALOGUE = {
         "height_m": 0.017,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
+        "grasp_symmetry_deg": 60.0,   # hex nut gripped flat-to-flat: 6 equivalent angles
         "description": "Nut",
     },
 
@@ -433,13 +442,27 @@ MCP_DIAGNOSTIC_PRINTS_ENABLED = True
 #   - the 6 cm -> 15 cm physical placement footprint
 #   - pre-pick/release clearance opening
 OBJECT_GRIP_COMMAND_SCALE = {
-    "cube": 0.92,       # 40 mm cube -> command about 36.8 mm equivalent
-    "medicine": 0.85,   # 51.2 mm medicine -> command about 43.5 mm equivalent
+    "yellow cube": 0.92,
+    "blue cube": 0.92,
+    "green cube": 0.92,
+    "red cube": 0.92,
+    "medicine": 0.85,
+    "screwdriver": 0.92,
+    "nut": 0.92,
+    "sponge": 0.92,
+    "black marker": 0.92,
+
 }
 
 OBJECT_GRIP_COMMAND_MIN_M = {
-    "cube": 0.034,
-    "medicine": 0.040,
+    "yellow cube": 0.024,
+    "blue cube": 0.029,
+    "green cube": 0.029,
+    "red cube": 0.029,
+    "medicine": 0.027,
+    "screwdriver" : 0.0171, 
+    "nut": 0.029,
+    "black marker" : 0.01953, 
 }
 # =================================================================
 # HYBRID POSITION + FORCE GRIP TUNING
@@ -553,11 +576,35 @@ PROCESS_FILE = "OnRobot2FG7_RTU_DEFAULT.json"
 
 # Calibration: converts a desired real jaw GAP (mm) into the raw "width"
 # command value this specific 2FG7 + RTU config actually expects.
-# These constants were derived from real measured behaviour on this
-# exact gripper (see LoRA_grasp_pregrasp_collector_v6_start_open.py) --
-# do not guess-change these without re-measuring on the real hardware.
+#
+# CORRECTED -- the previous values here (0.7871 / -31.4143) were an
+# error: they were never actually derived from real data, and produced
+# a NEGATIVE (clamped-to-0 = fully CLOSED) command at 100% open, which
+# is backwards. These corrected values are a real 2-point linear fit
+# from your actual logged gripper_feedback.json results:
+#   screwdriver: target_gap_mm=15.0 -> commanded width=59  (real log)
+#   sponge:      target_gap_mm=28.0 -> commanded width=75  (real log)
+# This gives ~87.3 at full 38mm stroke, closely matching the known
+# real "open" command (~85) used elsewhere in your working scripts.
+# NOTE: this is still only a 2-point fit -- if you get a chance to log
+# a 3rd real data point (ideally near full-open or full-closed), it's
+# worth re-checking this stays linear across the whole range rather
+# than assuming it does.
 GRIPPER_WIDTH_CMD_SLOPE = 1.230769
 GRIPPER_WIDTH_CMD_INTERCEPT = 40.538462
+
+# Safety cap: real logged timeouts traced to commanding 100% open
+# (width_cmd=87.3), which extrapolates beyond our validated calibration
+# data (real logged points only go up to 28mm gap -> width 75). Capping
+# ordinary opens at 80% keeps commands close to/within the validated
+# range (80% -> ~78, near the confirmed-working 75).
+GRIPPER_MAX_SAFE_OPEN_PERCENT = 80
+
+# Default "resting/traveling" open percent -- used while moving between
+# positions (not actively gripping a specific object), instead of
+# leaving the gripper at whatever percent it was last commanded to, or
+# jumping straight to a risky 100%.
+GRIPPER_TRAVEL_OPEN_PERCENT = 80
 
 HYBRID_FORCE_GRIP_ENABLED = False  # forced off -- see note above; real force
                                     # feedback is not available on this hardware
@@ -699,8 +746,18 @@ def calibrated_close_width_for_object(object_width_m, selected_object=None):
 
 
 def get_pre_pick_open_percent(object_width_m):
-    """Opening before descending. UNCHANGED math from original."""
-    return object_width_to_percent(object_width_m * (1.0 + PRE_PICK_EXTRA_RATIO))
+    """
+    Opening before descending. Math unchanged from original, EXCEPT now
+    capped at GRIPPER_MAX_SAFE_OPEN_PERCENT.
+
+    Why: real logged timeouts traced back to commanding 100% open
+    (width_cmd=87.3), which EXTRAPOLATES beyond our actual validated
+    calibration data (real logged points only go up to 28mm gap -> 75).
+    Capping at 80% keeps commands within/near the validated range
+    (80% -> ~78, very close to the confirmed-working 75 at 28mm).
+    """
+    raw_percent = object_width_to_percent(object_width_m * (1.0 + PRE_PICK_EXTRA_RATIO))
+    return min(raw_percent, GRIPPER_MAX_SAFE_OPEN_PERCENT)
 
 
 def get_pick_close_percent(object_width_m):
@@ -774,32 +831,49 @@ def _call_gripper_function(function_name, params=None):
 
 def wait_gripper_done(timeout=10, target_percent=None, tolerance=3):
     """
-    Poll the 2FG7's own status/width readback until it reports done, or
-    until the reported width is close enough to the target.
-    Uses the real, verified-working returnStatus / returnCurrentWidth
-    calls instead of raw Modbus register reads.
+    Poll the 2FG7's own status readback until it reports done.
+
+    FIXED (two real bugs found from actual hardware logs):
+
+    1. The old width-comparison fallback compared current_width
+       (returnCurrentWidth) against target_width_cmd directly. Real
+       logged data shows returnCurrentWidth reports on the device's own
+       raw internal encoder scale (~821, ~847 for commands of 82, 85 --
+       roughly 10x larger), while target_width_cmd is on our small
+       calibrated command scale (~59-87). These can NEVER be within
+       `tolerance` of each other -- this branch was dead code that
+       could never trigger true. Removed rather than guess an unverified
+       scale factor (we got burned once already assuming an
+       unverified calibration -- not repeating that here).
+
+    2. This used to raise TimeoutError on timeout, which propagated all
+       the way up and aborted the ENTIRE pick_and_place_object call --
+       even though `close` moves have real logged evidence of
+       physically succeeding even when status-based completion
+       detection can't confirm it (status often just reads "Idle" both
+       before and during a plain positional close, unlike
+       GraspWorkpiece's real "Grip detected" event). A DETECTION
+       failure should not be treated as a MOVE failure. Now returns
+       False instead of raising -- the caller logs a warning and
+       continues, trusting the command was sent successfully (no
+       earlier exception from the actual `close`/`GraspWorkpiece`
+       call itself).
     """
     start = time.time()
     while time.time() - start < timeout:
         try:
             result = _call_gripper_function("returnStatus")
-            status = str(result.get("returnStatus", "")).strip().lower()
+            status = str(result.get("getStatus", "")).strip().lower()
             if status in ("grip detected", "idle", "completed"):
                 return True
-
-            if target_percent is not None:
-                width_result = _call_gripper_function("returnCurrentWidth")
-                current_width = float(width_result.get("returnCurrentWidth", 0))
-                target_width_cmd = _gap_mm_to_width_command(
-                    percent_to_opening_m(target_percent) * 1000
-                )
-                if abs(current_width - target_width_cmd) <= tolerance:
-                    return True
         except Exception as e:
-            print(f"[Gripper WARN] Status/width read failed: {e}")
+            print(f"[Gripper WARN] Status read failed: {e}")
 
         time.sleep(0.2)
-    raise TimeoutError("Gripper command timeout.")
+
+    print("[Gripper WARN] Could not confirm completion via status within "
+          f"{timeout}s -- continuing anyway (command itself did not error).")
+    return False
 
 
 def gripper_startup():
@@ -819,6 +893,8 @@ def gripper_startup():
 
     print(f"[Gripper] Setting default force cap to {MAX_FORCE_PERCENT}%...")
     gripper_set_force(MAX_FORCE_PERCENT)
+
+    gripper_self_test()
 
 
 def gripper_set_force(force=MAX_FORCE_PERCENT):
@@ -867,7 +943,35 @@ def gripper_move_percent(position_percent, force=MAX_FORCE_PERCENT, speed=DEFAUL
 
 
 def gripper_open():
-    gripper_move_percent(100, force=MAX_FORCE_PERCENT, speed=60)
+    """
+    Opens to GRIPPER_TRAVEL_OPEN_PERCENT (80%), NOT 100%. Real logged
+    timeouts traced to commanding 100% open (width_cmd=87.3), which
+    extrapolates beyond validated calibration data. 80% stays close to
+    the confirmed-working real data point (75 at 28mm gap).
+    """
+    gripper_move_percent(GRIPPER_TRAVEL_OPEN_PERCENT, force=MAX_FORCE_PERCENT, speed=60)
+
+
+def gripper_self_test():
+    """
+    One-time open -> close -> open cycle, meant to be run once at
+    program startup (after gripper_startup()). Purpose:
+      1. Confirms the gripper actually responds before real operations
+         start, rather than discovering a communication problem
+         mid-pick.
+      2. "Wakes up"/primes the device with real motion commands right
+         after Init, in case a fresh Init alone isn't enough for the
+         first real move to respond promptly.
+    Not wrapped in a blanket try/except -- if this fails, you want to
+    know immediately at startup, not partway through a real pick.
+    """
+    print("[Gripper] Running startup self-test (open -> close -> open)...")
+    gripper_open()
+    time.sleep(0.3)
+    gripper_close()
+    time.sleep(0.3)
+    gripper_open()
+    print("[Gripper] Self-test complete.")
 
 
 def gripper_close():
@@ -877,45 +981,6 @@ def gripper_close():
 def gripper_open_for_object(object_width_m):
     pre_percent = get_pre_pick_open_percent(object_width_m)
     gripper_move_percent(pre_percent, force=MAX_FORCE_PERCENT, speed=60)
-
-
-def read_gripper_torque_safe(default=0):
-    """
-    HONEST STUB: real force/torque readback is not available on this
-    2FG7 configuration (verified: getMaxForce and similar calls return
-    0 regardless of actual grip force). Returns `default` every time and
-    prints a single one-time warning rather than pretending to read a
-    real value.
-    """
-    global _HYBRID_WARNING_PRINTED
-    if not _HYBRID_WARNING_PRINTED:
-        print(
-            "[Grip force WARNING] Real force/torque feedback is not available "
-            "on this OnRobot 2FG7 setup. Hybrid force-based grip logic cannot "
-            "detect contact and is disabled (HYBRID_FORCE_GRIP_ENABLED=False)."
-        )
-        _HYBRID_WARNING_PRINTED = True
-    return default
-
-
-def average_gripper_torque(samples=HYBRID_GRIP_TORQUE_SAMPLES, delay_s=0.05):
-    """Kept for compatibility; always returns the stub default (see above)."""
-    values = []
-    for _ in range(max(1, samples)):
-        values.append(read_gripper_torque_safe(default=0))
-        time.sleep(delay_s)
-    return sum(values) / len(values)
-
-
-def gripper_grip_object_hybrid(object_width_m):
-    """
-    Hybrid position + force grip -- DISABLED on this hardware (see
-    HYBRID_FORCE_GRIP_ENABLED note above). Falls back to the plain
-    position-based grip so calling this function is still safe, it just
-    won't attempt (fake) contact detection.
-    """
-    read_gripper_torque_safe()  # triggers the one-time warning
-    gripper_grip_object_plain(object_width_m)
 
 
 def gripper_grip_object_plain(object_width_m):
@@ -932,19 +997,48 @@ def gripper_grip_object_plain(object_width_m):
             f"for measured object grip width {object_width_m*1000:.1f} mm"
         )
 
-    gripper_move_percent(close_percent, force=MAX_FORCE_PERCENT, speed=40)
+    #gripper_move_percent(close_percent, force=MAX_FORCE_PERCENT, speed=40)
+    gap_mm = percent_to_commanded_opening_m(close_percent) * 1000
+    width_cmd = _gap_mm_to_width_command(gap_mm)
+    try:
+        result = _call_gripper_function(
+            "GraspWorkpiece",
+            {"width": width_cmd, "speed": 40, "force": MAX_FORCE_PERCENT},
+            )
+        status = str(result.get("getStatus", "")).strip().lower()
+        print(f"[Grip] GraspWorkpiece result status: {status!r}")
+        return status == "grip detected"
+    except Exception as e:
+        print(f"[Grip WARNING] GraspWorkpiece did not confirm contact: {e}")
+        try:
+            r.reset_errors()
+            print("[Grip Recovery] Step 1/6: reset_errors() OK")
+
+            r.power_on()
+            print("[Grip Recovery] Step 2/6: power_on() OK")
+
+            r.switch_to_automatic_mode()
+            print("[Grip Recovery] Step 3/6: switch_to_automatic_mode() OK")
+
+            r.init_program()
+            print("[Grip Recovery] Step 4/6: init_program() OK")
+
+            r.disconnect_external_device(PROCESS_FILE, ignore_no_connection=True)
+            print("[Grip Recovery] Step 5/6: disconnect_external_device() OK")
+
+            time.sleep(0.5)
+            reconnected = r.connect_external_device(PROCESS_FILE)
+            print(f"[Grip Recovery] Step 6/6: connect_external_device() -> {reconnected}")
+        except Exception as reset_e:
+            print(f"[Grip WARNING] Full recovery failed partway through: {reset_e}")
+        return False
 
 
 def gripper_grip_object(object_width_m):
-    """
-    Grip object. HYBRID_FORCE_GRIP_ENABLED is forced False on this
-    hardware (see note above), so this always uses the plain,
-    verified-working position-based grip.
-    """
-    if HYBRID_FORCE_GRIP_ENABLED:
-        gripper_grip_object_hybrid(object_width_m)
-        return
-    gripper_grip_object_plain(object_width_m)
+    """Grip object -- always uses the plain grip path with real
+    GraspWorkpiece contact detection (hybrid force-based grip removed;
+    real force/torque feedback was never available on this hardware)."""
+    return gripper_grip_object_plain(object_width_m)
 
 
 def gripper_release_object(object_width_m):
@@ -1873,11 +1967,54 @@ def release_percent_for_object(selected_object):
     release_width_m = object_grip_width_m * (1.0 + PRE_PICK_EXTRA_RATIO)
     return object_width_to_percent(release_width_m)
 
+def _nearest_symmetric_angle(physical_angle_deg, reference_angle_deg, symmetry_period_deg):
+    """
+    Generalizes the old fixed +/-180 flip logic to ANY N-fold rotational
+    symmetry.
+
+    Some objects have more than 2 physically-equivalent grasp angles:
+      - a plain rectangular block/marker/screwdriver: 2 equivalent angles,
+        180 deg apart (the original behaviour -- pass symmetry_period_deg=180)
+      - a cube gripped face-to-face: 4 equivalent angles, 90 deg apart
+      - a hex nut gripped flat-to-flat: 6 equivalent angles, 60 deg apart
+
+    Given a target physical_angle_deg and a reference_angle_deg (where the
+    arm currently is / was last at), this returns whichever of the
+    physically-equivalent angles (spaced symmetry_period_deg apart) is
+    CLOSEST to reference_angle_deg -- minimizing wrist rotation, exactly
+    like the old +/-180 check did, just generalized to any period.
+
+    symmetry_period_deg <= 0 means "no symmetry, use the literal angle".
+    """
+    if symmetry_period_deg <= 0:
+        return _normalise_angle_deg(physical_angle_deg)
+
+    diff = _normalise_angle_deg(physical_angle_deg - reference_angle_deg)
+    half_period = symmetry_period_deg / 2.0
+
+    # Reduce diff into (-half_period, half_period] by stepping in
+    # symmetry_period_deg increments -- this picks the closest
+    # equivalent rotation instead of insisting on the literal angle.
+    while diff > half_period:
+        diff -= symmetry_period_deg
+    while diff <= -half_period:
+        diff += symmetry_period_deg
+
+    return _normalise_angle_deg(reference_angle_deg + diff)
+
+
 def planned_rz_for_object(selected_object, placement_angle_deg=None, reference_angle_deg=None):
     """
     Return TCP RZ angle for this object.
     If placement_angle_deg is given, use that for placement packing.
-    reference_angle_deg is used to choose the nearest symmetric rotation (+/- 180).
+    reference_angle_deg is used to choose the nearest symmetric rotation.
+
+    The number of equivalent grasp angles is now configurable per object
+    via "grasp_symmetry_deg" in OBJECT_CATALOGUE (default 180, matching
+    the original behaviour for every object that doesn't specify it):
+      180 -> rectangular block, 2 equivalent angles (old default/behaviour)
+       90 -> cube gripped face-to-face, 4 equivalent angles
+       60 -> hex nut gripped flat-to-flat, 6 equivalent angles
     """
     if placement_angle_deg is not None:
         angle = _normalise_angle_deg(placement_angle_deg)
@@ -1893,14 +2030,12 @@ def planned_rz_for_object(selected_object, placement_angle_deg=None, reference_a
 
     # 2. Compare against the reference angle to pick the shortest rotation
     base = HOME_RZ if reference_angle_deg is None else reference_angle_deg
-    
-    # 3. Find if the 180-degree flipped version is closer to the current physical position
-    diff = _normalise_angle_deg(physical_angle - base)
-    if diff > 90.0:
-        physical_angle = _normalise_angle_deg(physical_angle - 180.0)
-    elif diff < -90.0:
-        physical_angle = _normalise_angle_deg(physical_angle + 180.0)
-        
+
+    # 3. Find whichever symmetric-equivalent angle is closest to the
+    #    current physical position, using this object's own symmetry period.
+    symmetry_period_deg = float(selected_object.get("grasp_symmetry_deg", 180.0))
+    physical_angle = _nearest_symmetric_angle(physical_angle, base, symmetry_period_deg)
+
     return physical_angle
 
 
@@ -2423,6 +2558,16 @@ def ensure_robot_ready(r):
 
     r.init_program()
     time.sleep(1)
+    # Settle delay + discard-first-reading: only runs ONCE per program
+    # (guarded by _MCP_ROBOT_READY), matching the reported symptom that
+    # the dive only happens on the very first home activation, manual
+    # or auto. Hypothesis: the very first pose reading right after
+    # power_on/init_program may not yet reflect the arm's true settled
+    # position.
+    time.sleep(1.0)
+    _ = r.get_tcp_pose()   # discard — may be stale immediately after init
+    time.sleep(0.3)
+    print(f"[Startup] Settled pose confirmed: {r.get_tcp_pose()}")
 
     # Enforce minimum robot speed override
     try:
@@ -2436,7 +2581,7 @@ def ensure_robot_ready(r):
 def check_starting_position(r):
     pose = r.get_tcp_pose()
     tip  = pose[2] - GRIPPER_LENGTH
-    if pose[2] < Z_MIN:
+    if tip < Z_MIN:
         power_off_robot()
         sys.exit(1)
 
@@ -2480,12 +2625,51 @@ def mcp_return_home():
         MCP_INTENTIONAL_STOP = True
         r.stop()
         time.sleep(0.5)
-        r.reset_errors()              # clear errors before doing anything else
-        r.power_on()                  # ensure power is on (might be off from emergency stop)
+        r.reset_errors()              # clear ROBOT-level errors
+
+        # IMPORTANT: power must be restored BEFORE any attempt to talk to
+        # the gripper. On this hardware, the OnRobot 2FG7's power/RS485
+        # comms are routed through the robot's own safety-rated power
+        # system -- trying to reach the gripper before power_on() has
+        # actually restored it causes a real Modbus write failure
+        # ("Please reset emergency stop, power on robot and retry!").
+        # This was confirmed directly from real logs on this hardware.
+        r.power_on()
         r.switch_to_automatic_mode()  # must be in auto before any motion
-        time.sleep(1)
-        gripper_open()                # now safe to open gripper
-        move_to_home_emergency(r)     # then go home
+        time.sleep(1.5)               # give the tool power/comms line time to actually come back
+
+        # Disconnect/reconnect the external device -- this replicates the
+        # manual pendant fix (External Devices -> disconnect -> reconnect)
+        # that reliably cleared a stuck gripper earlier in testing on this
+        # exact hardware. Confirmed real signatures via r.get_doc():
+        #   disconnect_external_device(file_path, ignore_no_connection=False) -> bool
+        #   connect_external_device(file_path, ignore_no_connection=False) -> bool
+        # disconnect uses ignore_no_connection=True defensively, since the
+        # device may already be disconnected/in a bad state at this point
+        # and we don't want that alone to abort the whole recovery.
+        try:
+            r.disconnect_external_device(PROCESS_FILE, ignore_no_connection=True)
+            time.sleep(0.5)
+            reconnected = r.connect_external_device(PROCESS_FILE)
+            print(f"[Gripper] Reconnected to external device: {reconnected}")
+        except Exception as e:
+            print(f"[Gripper WARN] disconnect/reconnect cycle failed: {e}")
+
+        # CRITICAL SAFETY FIX: gripper_open() is now its own try/except,
+        # SEPARATE from the outer one. Previously, if gripper_open() threw
+        # (e.g. "Gripper command timeout"), the whole function jumped to
+        # the outer except block and move_to_home_emergency(r) NEVER RAN
+        # -- meaning a gripper problem silently prevented the arm itself
+        # from returning home. That's backwards for a safety routine: the
+        # arm should always attempt to get home, with or without a
+        # working gripper.
+        try:
+            gripper_open()
+        except Exception as e:
+            print(f"[Gripper WARN] gripper_open() failed during return-home, "
+                  f"continuing to move the arm home anyway: {e}")
+
+        move_to_home_emergency(r)     # always attempt this, regardless of gripper state
     except Exception as e:
         print(f"Error returning home: {e}")
     finally:
@@ -3285,32 +3469,11 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
     # MCP/camera mode must not pause for terminal input.
     # Motion begins immediately after pre-flight validation.
 
-    current = r.get_tcp_pose()
-    home = get_home_pose(current)
-    correction = None
-    correction_bypassed = False
-
     if not is_at_home(r):
-        
-        try:
-            correction = build_full_trajectory([current, home])
-        except RuntimeError as e:
-            
-            if HAS_EXTRA_OBS:
-                if globals().get("MCP_NO_UI_MODE", False):
-                    power_off_robot()
-                    raise RuntimeError("Correction route failed in MCP mode; manual extra-obstacle bypass is disabled.")
-                power_off_robot()
-                raise RuntimeError("Correction route failed; manual extra-obstacle bypass is disabled in MCP mode.")
-            else:
-                raise
-
-    if correction is not None:
-        validate_trajectory(correction, label="Correction (current -> home)", bypass_extra_obs=correction_bypassed)
-        execute_trajectory(r, correction, label="Correction — current -> home", bypass_extra_obs=correction_bypassed)
-
+        move_to_home_emergency(r)
+    home = get_home_pose(r.get_tcp_pose())   # always fresh, using the REAL current position
+    
     execute_joint_transit(r, home, lift_pick_forward, label="Phase 1 transit — Home -> lift_pick_forward")
-
     
     execute_trajectory(r, phase1_rotate, label="Phase 1 wrist rotate — forward -> grip angle", custom_speed=0.5, is_blending=False)
     time.sleep(0.3)
@@ -3681,6 +3844,19 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
             )
 
     selected_object = select_object_profile_by_name(target["object_name"])
+
+    catalogue_height_m = float(selected_object.get("height_m", 0.03))
+    raw_detected_z = float(target.get("z", 0.0))
+    Z_PLAUSIBILITY_MARGIN_M = 0.05
+
+    if not (-Z_PLAUSIBILITY_MARGIN_M <= raw_detected_z <= catalogue_height_m + Z_PLAUSIBILITY_MARGIN_M):
+        raise ValueError(
+            f"Detected Z ({raw_detected_z*1000:.1f}mm) for object "
+            f"{target['object_name']!r} is outside the plausible range "
+            f"for its known height ({catalogue_height_m*1000:.1f}mm) -- "
+            f"refusing to trust this detection."
+        )
+
     detected_height = _mcp_object_height_from_z(selected_object, target.get("z", 0.0))
 
     selected_object = dict(selected_object)
@@ -3693,7 +3869,7 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
     # relative to HOME_RZ so planned_rz_for_object produces the correct absolute TCP RZ.
     camera_angle = target.get("angle_deg")
     if camera_angle is not None:
-        selected_object["preferred_grasp_angle_deg"] = float(camera_angle) - HOME_RZ
+        selected_object["preferred_grasp_angle_deg"] = float(camera_angle) - CAMERA_ANGLE_OFFSET_DEG - HOME_RZ
         selected_object["mcp_camera_angle_deg"] = float(camera_angle)
     else:
         selected_object["mcp_camera_angle_deg"] = None  # catalogue default will be used
@@ -3710,8 +3886,8 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
 
     sequence = [{
         "index": 1,
-        "pick_x": float(target["x"]),
-        "pick_y": float(target["y"]),
+        "pick_x": float(target["x"]) + PICK_OFFSET_X_M,
+        "pick_y": float(target["y"]) + PICK_OFFSET_Y_M,
         "pick_z": float(target.get("z", 0.0)),
         "object_name": target["object_name"],
         "object": selected_object,
