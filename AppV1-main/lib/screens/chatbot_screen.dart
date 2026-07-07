@@ -434,6 +434,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   Future<void> _speak(String text) async {
     if (text.isEmpty) return;
+    debugPrint('🔊 [_speak] Called with: "${text.substring(0, text.length > 50 ? 50 : text.length)}..."');
     
     if (_isWakewordModeEnabled) {
       // Do not change state to johnSpeaking so the wakeword UI stays constant
@@ -457,11 +458,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         html.window.speechSynthesis?.cancel();
       } catch (_) {}
 
+      debugPrint('🔊 [_speak] Calling /tts endpoint...');
       final response = await http.post(
         Uri.parse('$baseUrl/tts'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'text': text, 'persona': _currentPersona}),
       ).timeout(const Duration(seconds: 15));
+      debugPrint('🔊 [_speak] /tts response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final contentType =
@@ -500,7 +503,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         audio.onError.listen((_) {
           if (_audioElement != audio) return; // Ignore events from old audio sessions
           html.Url.revokeObjectUrl(blobUrl);
-          debugPrint('⚠️ Audio playback encountered an error event.');
+          debugPrint('⚠️ Audio playback encountered an error event. Falling back to Native TTS...');
+          _speakNative(text);
         });
 
         audio.play().then((_) {
@@ -1475,6 +1479,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     if (eventName.startsWith('tts:')) {
 
       final msg = eventName.substring('tts:'.length);
+      debugPrint('📢 [TTS EVENT] Received SSE TTS event, will speak: "${msg.substring(0, msg.length > 60 ? 60 : msg.length)}..."');
       _addUiLog('[FLUTTER] Received TTS event: $msg');
       if (mounted) {
         setState(() {

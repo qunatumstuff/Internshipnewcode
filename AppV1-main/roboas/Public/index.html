@@ -134,7 +134,7 @@
     window.setWakeWordMuted = function(muted) {
       window.ttsMuted = !!muted;
       window.wakewordDetectionMuted = window.ttsMuted;
-      console.log(`[JS] WakeWord muted: ${window.wakewordDetectionMuted} (tts: ${window.ttsMuted}, robot: ${window.isRobotMoving})`);
+      console.log(`[JS] WakeWord callbacks blocked: ${window.wakewordDetectionMuted} (tts: ${window.ttsMuted}, robot: ${window.isRobotMoving})`);
     };
 
     const progressSource = new EventSource('/progress');
@@ -154,9 +154,15 @@
         if (data.isRobotMoving !== undefined) {
           window.isRobotMoving = data.isRobotMoving;
           window.wakewordDetectionMuted = window.ttsMuted;
-          console.log(`[JS] Progress SSE: robot=${window.isRobotMoving}, wakeword muted=${window.wakewordDetectionMuted}`);
+          console.log(`[JS] Progress SSE: robot=${window.isRobotMoving}, callbacks blocked=${window.wakewordDetectionMuted}`);
           if (onEventCallback) {
             onEventCallback('robot_moving_status:' + data.isRobotMoving);
+          }
+        }
+        if (data.snapshot_image) {
+          console.log(`[JS] Received snapshot for "${data.snapshot_target}" (${data.snapshot_image.length} b64 chars)`);
+          if (onEventCallback) {
+            onEventCallback('snapshot:' + data.snapshot_target + ':' + data.snapshot_image);
           }
         }
       } catch (e) {
@@ -166,6 +172,7 @@
 
     let engine = null;
     let isListening = false;
+    let framesCount = 0;
     let lastActiveTime = Date.now();
     let watchdogTimer = null;
     let lastAudioActiveLogged = 0;
@@ -217,7 +224,6 @@
         });
         detectCallbackAttached = true;
 
-        let framesCount = 0;
         let lastScoreRmsLogged = 0;
         let chunkCount = 0;
         let lastChunkCountTime = Date.now();
@@ -434,9 +440,10 @@
       watchdogTimer = setInterval(async () => {
         if (!isListening) return;
         const idleTime = Date.now() - lastActiveTime;
-        const zeroRmsTime = Date.now() - (window.lastNonZeroRmsTime || Date.now());
-        if (idleTime > 4000 || zeroRmsTime > 5000) {
-          console.warn(`[JS] Watchdog trigger: idleTime=${idleTime}ms, zeroRmsTime=${zeroRmsTime}ms. Restarting engine...`);
+        // zeroRmsTime check removed: a quiet room can produce perfect zeros via OS noise gate,
+        // which falsely triggers the watchdog and causes the UI to flicker.
+        if (idleTime > 10000) {
+          console.warn(`[JS] Watchdog trigger: Audio pipeline froze (idleTime=${idleTime}ms). Restarting engine...`);
           if (onEventCallback) onEventCallback('no_audio_detected');
           await window.restartWakeWordEngine();
         }
@@ -464,6 +471,7 @@
           await engine._audioContext.resume();
         }
         isListening = true;
+        framesCount = 0;
         lastActiveTime = Date.now();
         startWatchdog();
         if (onEventCallback) onEventCallback('started');
@@ -520,6 +528,7 @@
             await engine._audioContext.resume();
           }
           isListening = true;
+          framesCount = 0;
           startWatchdog();
           if (onEventCallback) onEventCallback('started');
           return true;
