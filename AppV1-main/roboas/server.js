@@ -286,6 +286,13 @@ app.use(express.static(path.join(__dirname, 'Public')));
 app.use(cors());
 app.use(express.json());
 
+app.post('/client-log', (req, res) => {
+  if (req.body && req.body.message) {
+    console.log(`📱 [FLUTTER]: ${req.body.message}`);
+  }
+  res.json({ success: true });
+});
+
 // === OpenAI Configuration ===
 const configuration = new Configuration({
   apiKey: "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"

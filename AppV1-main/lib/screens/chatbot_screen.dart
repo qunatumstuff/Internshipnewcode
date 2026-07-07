@@ -167,6 +167,17 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
   }
 
+  void _remoteLog(String message) {
+    debugPrint(message);
+    try {
+      http.post(
+        Uri.parse('$baseUrl/client-log'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'message': message}),
+      );
+    } catch (_) {}
+  }
+
   void _showStatusSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -411,13 +422,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   /// Send a mute/unmute command to the wake word server so it doesn't
   /// trigger on the robot's own voice.
   void _setWakeWordMute(bool muted) {
-    _addUiLog('[OWW] setWakeWordMuted: $muted (ignored to keep engine always active)');
-    // Completely ignore muting request to keep the wake word engine continuously listening.
-    if (!muted) {
-      if (_isWakewordModeEnabled) {
-        _changeState(HandsOffState.wakewordListening);
-      }
+    _addUiLog('[OWW] setWakeWordMuted: $muted');
+    try {
+      js.context.callMethod('setWakeWordMuted', [muted]);
+    } catch (e) {
+      debugPrint('Error setting wake word mute state: $e');
     }
+    // We intentionally do NOT change the visible UI state here to prevent flickering.
   }
 
   void _stopManualWebStream() {
@@ -434,7 +445,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   Future<void> _speak(String text) async {
     if (text.isEmpty) return;
-    debugPrint('🔊 [_speak] Called with: "${text.substring(0, text.length > 50 ? 50 : text.length)}..."');
+    _remoteLog('🔊 [_speak] Called with: "${text.substring(0, text.length > 50 ? 50 : text.length)}..."');
     
     if (_isWakewordModeEnabled) {
       // Do not change state to johnSpeaking so the wakeword UI stays constant
@@ -458,13 +469,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         html.window.speechSynthesis?.cancel();
       } catch (_) {}
 
-      debugPrint('🔊 [_speak] Calling /tts endpoint...');
+      _remoteLog('🔊 [_speak] Calling /tts endpoint...');
       final response = await http.post(
         Uri.parse('$baseUrl/tts'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'text': text, 'persona': _currentPersona}),
       ).timeout(const Duration(seconds: 15));
-      debugPrint('🔊 [_speak] /tts response status: ${response.statusCode}');
+      _remoteLog('🔊 [_speak] /tts response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final contentType =
@@ -1424,6 +1435,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _addUiLog('[OWW] Robot moving status: $isMoving');
       
       if (isMoving) {
+        // Mute the wakeword engine to ignore robot motor noise
+        _setWakeWordMute(true);
         // Abort any active manual recording immediately
         if (_isListening) {
           _addUiLog('[MIC] Robot moving — aborting active recording.');
