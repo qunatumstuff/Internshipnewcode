@@ -1009,13 +1009,26 @@ async def qwen_plan_next_action(
         # because the LLM rambled is the wrong failure mode.
         
         if target_dets and len(target_dets) > 1:
-            # Multiple identical candidates (e.g. 4 cubes). We genuinely don't
-            # know which one was requested — do NOT silently default to [0].
-            plan = {
-                "next_action": "abort",
-                "obstacle_name": None,
-                "reasoning": f"Could not identify which {target_base} was requested ({clean_reason}). Please specify by colour or position."
-            }
+            # Multiple identical candidates (e.g. 4 cubes). Check if Python
+            # colour-match already resolved which one we want.
+            if len(colour_matches) == 1:
+                # Colour-match uniquely identified the target — use it directly.
+                matched_det = colour_matches[0]
+                matched_idx = target_dets.index(matched_det) if matched_det in target_dets else 0
+                plan = {
+                    "next_action": "pick",
+                    "obstacle_name": None,
+                    "target_id": matched_idx,
+                    "reasoning": f"Qwen failed ({clean_reason}) — Python colour-match identified '{matched_det.get('object_name')}', proceeding with direct pick."
+                }
+                logger.info(f"[FALLBACK] Qwen failed but colour-match resolved target to '{matched_det.get('object_name')}' (ID {matched_idx}).")
+            else:
+                # Genuinely don't know which one was requested — abort.
+                plan = {
+                    "next_action": "abort",
+                    "obstacle_name": None,
+                    "reasoning": f"Could not identify which {target_base} was requested ({clean_reason}). Please specify by colour or position."
+                }
         else:
             # Single candidate — [0] is correct, safe to proceed.
             plan = {

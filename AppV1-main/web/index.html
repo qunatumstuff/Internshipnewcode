@@ -440,9 +440,10 @@
       watchdogTimer = setInterval(async () => {
         if (!isListening) return;
         const idleTime = Date.now() - lastActiveTime;
-        const zeroRmsTime = Date.now() - (window.lastNonZeroRmsTime || Date.now());
-        if (idleTime > 60000 || zeroRmsTime > 60000) {
-          console.warn(`[JS] Watchdog trigger: idleTime=${idleTime}ms, zeroRmsTime=${zeroRmsTime}ms. Restarting engine...`);
+        // zeroRmsTime check removed: a quiet room can produce perfect zeros via OS noise gate,
+        // which falsely triggers the watchdog and causes the UI to flicker.
+        if (idleTime > 10000) {
+          console.warn(`[JS] Watchdog trigger: Audio pipeline froze (idleTime=${idleTime}ms). Restarting engine...`);
           if (onEventCallback) onEventCallback('no_audio_detected');
           await window.restartWakeWordEngine();
         }
