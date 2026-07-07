@@ -581,6 +581,11 @@ app.get('/progress', (req, res) => {
   });
 });
 
+function isExpectedStopError(errMsg) {
+  const msg = (errMsg || '').toLowerCase();
+  return msg.includes('3104') || msg.includes('powered off') || msg.includes('motion cannot be executed') || msg.includes('emergency stop');
+}
+
 function sendProgress(status, isRobotMoving = false, ttsMessage = null) {
   console.log(`📡 [SSE Progress Broadcast]: "${status}" (isRobotMoving: ${isRobotMoving}, ttsMessage: ${ttsMessage !== null})`);
   logToolCall("System Event", "progress_sse", { status, isRobotMoving, hasTts: ttsMessage !== null }, ttsMessage || "No TTS message.");
@@ -1284,7 +1289,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                   } catch (e) {
                     sendProgress(`Robot pick error: ${e.message}`, false);
                     setTimeout(async () => {
-                      if (!e.message.includes('3104')) {
+                      if (!isExpectedStopError(e.message)) {
                         sendProgress(null, false, `Sorry, I could not complete the action because: ${e.message}`);
                       } else {
                         sendProgress(null, false); // Don't speak expected e-stop errors out loud
@@ -1429,7 +1434,11 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               .catch(e => {
                 sendProgress(`Error: ${e.message}`, false);
                 setTimeout(async () => {
-                  sendProgress(null, false, `Sorry, the action failed because of an error: ${e.message}`);
+                  if (!isExpectedStopError(e.message)) {
+                    sendProgress(null, false, `Sorry, the action failed because of an error: ${e.message}`);
+                  } else {
+                    sendProgress(null, false); // Don't speak expected e-stop errors out loud
+                  }
                   await sendWakewordCommand('unmute');
                 }, 5000);
               });
@@ -1464,7 +1473,11 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               .catch(e => {
                 sendProgress(`Error: ${e.message}`, false);
                 setTimeout(async () => {
-                  sendProgress(null, false, `Sorry, the action failed because of an error: ${e.message}`);
+                  if (!isExpectedStopError(e.message)) {
+                    sendProgress(null, false, `Sorry, the action failed because of an error: ${e.message}`);
+                  } else {
+                    sendProgress(null, false); // Don't speak expected e-stop errors out loud
+                  }
                   await sendWakewordCommand('unmute');
                 }, 5000);
               });

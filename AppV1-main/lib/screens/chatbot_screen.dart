@@ -112,9 +112,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   String _currentPersona = 'john';
   String get _pName => _currentPersona == 'linda' ? 'Linda' : 'John';
   html.SpeechSynthesisUtterance? _currentUtterance;
+  bool _isRobotMoving = false;
   bool get _isInteractionBlocked {
     return _isTtsInProgress ||
         _avatarState == AvatarState.thinking ||
+        _isRobotMoving ||
         (_messages.isNotEmpty && _messages.last.text == '__THINKING__');
   }
 
@@ -1435,8 +1437,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _addUiLog('[OWW] Robot moving status: $isMoving');
       
       if (isMoving) {
-        // Mute the wakeword engine to ignore robot motor noise
-        _setWakeWordMute(true);
+        if (mounted) setState(() { _isRobotMoving = true; });
         // Abort any active manual recording immediately
         if (_isListening) {
           _addUiLog('[MIC] Robot moving — aborting active recording.');
@@ -1448,31 +1449,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           try {
             _webMediaRecorder?.stop();
           } catch (_) {}
-          _abortAndRestartWakeWord();
         }
       } else {
-        // Only unmute and restart listening if TTS is not in progress!
-        if (!_isTtsInProgress) {
-          _addUiLog('[OWW] Robot stopped moving. Starting 2-second cooldown...');
-          // Add a 2.0 second cooldown delay to let motor stopping noise/vibrations settle before listening
-          Future.delayed(const Duration(milliseconds: 2000), () {
-            if (mounted && !_isTtsInProgress) {
-              bool stillStopped = true;
-              try {
-                stillStopped = js.context['isRobotMoving'] != true;
-              } catch (_) {}
-              if (stillStopped) {
-                _addUiLog('[OWW] Cooldown finished. Unmuting wake word engine.');
-                _setWakeWordMute(false);
-                if (_isWakewordModeEnabled) {
-                  js.context.callMethod('startWakeWordListening');
-                }
-              }
-            }
-          });
-        } else {
-          _addUiLog('[OWW] Robot stopped, but TTS is in progress. Keeping wake word muted.');
-        }
+        if (mounted) setState(() { _isRobotMoving = false; });
       }
       if (mounted) {
         setState(() {}); // rebuild UI to grey out mic button
