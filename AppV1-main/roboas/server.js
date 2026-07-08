@@ -1312,7 +1312,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                       }
                       await sendWakewordCommand('unmute');
                     }, 5000);
-                  }
+                  });
                 } else {
                   sendProgress("Error: Robot MCP is not connected for pickup.", false);
                   setTimeout(async () => {
