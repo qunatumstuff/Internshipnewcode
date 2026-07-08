@@ -1979,11 +1979,7 @@ app.post('/emergency-stop', async (req, res) => {
     sendProgress("Emergency stop completed successfully.", true);
   }
   setTimeout(async () => {
-    if (robotSuccess) {
-      sendProgress(null, false, "Emergency stop completed. The robot is now halted.");
-    } else {
-      sendProgress(null, false);
-    }
+    sendProgress(null, false);
     await sendWakewordCommand('unmute');
   }, 3500);
 
