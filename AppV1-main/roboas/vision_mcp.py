@@ -1262,6 +1262,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             
             logger.info("Moving robot to home position before taking snapshot...")
             await call_robot_tool("return_home", {})
+            await call_robot_tool("clear_return_home", {})
             await asyncio.sleep(1.5)  # Give camera time to settle after arm moves out of view
 
             detections = get_current_detections()

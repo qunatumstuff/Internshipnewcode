@@ -1241,14 +1241,28 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             try {
               console.log("🏠 [locate_object] Sending arm home before camera snapshot...");
               sendProgress("Moving arm to home position for a clear camera view...", true);
-              await robotMcpClient.callTool({ name: "return_home", arguments: {} });
+              const result = await robotMcpClient.callTool({ name: "return_home", arguments: {} });
+              if (result.content && result.content[0].text.toLowerCase().startsWith("error")) {
+                throw new Error(result.content[0].text);
+              }
               // Clear the latch immediately for autonomous flows so it can continue to pick
               await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
               console.log("🏠 [locate_object] Arm is home. Proceeding to vision scan.");
               // Brief pause to let the arm fully settle before snapshot
               await new Promise(r => setTimeout(r, 1000));
             } catch (homeErr) {
-              console.error("⚠️ [locate_object] return_home failed (continuing anyway):", homeErr.message);
+              console.error("⚠️ [locate_object] return_home failed:", homeErr.message);
+              sendProgress(`Scan stopped: Emergency stop is active.`, false);
+              
+              // Only set answerText, don't send TTS via sendProgress to prevent double-speak
+              answerText = "I cannot move the robot arm because the emergency stop is active. Please clear it first.";
+              skipSecondCompletion = true;
+              
+              setTimeout(async () => {
+                sendProgress(null, false);
+                await sendWakewordCommand('unmute');
+              }, 1000);
+              continue; // Abort this tool call
             }
           }
 
@@ -1307,12 +1321,16 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                     }
                     
                     const completionPromise = waitForRobotEvent(900000);
-                    robotMcpClient.callTool({
+                    const toolPromise = robotMcpClient.callTool({
                       name: "pick_and_place_object",
                       arguments: robotArgs
-                    }, undefined, { timeout: 900000 }).catch(e => console.error("Background robot pick failed:", e));
+                    }, undefined, { timeout: 900000 }).then(res => {
+                      if (res.content && res.content[0].text.toLowerCase().startsWith("error")) {
+                        throw new Error(res.content[0].text);
+                      }
+                    });
                     
-                    await completionPromise;
+                    await Promise.all([completionPromise, toolPromise]);
                     sendProgress(`Successfully picked up the ${args.target_name}!`, true);
                     setTimeout(async () => {
                       sendProgress(null, false, `I have finished picking and placing the requested object, ${args.target_name}.`);
@@ -1453,10 +1471,13 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           
           if (robotMcpClient) {
             const completionPromise = waitForRobotEvent(900000);
-            robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args }, undefined, { timeout: 900000 })
-              .catch(e => console.error("Background robot pick failed:", e));
+            const toolPromise = robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args }, undefined, { timeout: 900000 }).then(res => {
+              if (res.content && res.content[0].text.toLowerCase().startsWith("error")) {
+                throw new Error(res.content[0].text);
+              }
+            });
             
-            completionPromise.then(() => {
+            Promise.all([completionPromise, toolPromise]).then(() => {
                 sendProgress(`Pick-and-place completed for "${args.object_name}".`, true);
                 setTimeout(async () => {
                   sendProgress(null, false, `I have finished picking and placing the requested object, ${args.object_name}.`);
@@ -1492,10 +1513,13 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           sendProgress(`Relocating obstacle "${args.obstacle_name}"...`, true);
           if (robotMcpClient) {
             const completionPromise = waitForRobotEvent(900000);
-            robotMcpClient.callTool({ name: "relocate_object", arguments: args }, undefined, { timeout: 900000 })
-              .catch(e => console.error("Background robot relocation failed:", e));
+            const toolPromise = robotMcpClient.callTool({ name: "relocate_object", arguments: args }, undefined, { timeout: 900000 }).then(res => {
+              if (res.content && res.content[0].text.toLowerCase().startsWith("error")) {
+                throw new Error(res.content[0].text);
+              }
+            });
             
-            completionPromise.then(() => {
+            Promise.all([completionPromise, toolPromise]).then(() => {
                 sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`, true);
                 setTimeout(async () => {
                   sendProgress(null, false, `I have relocated the object ${args.obstacle_name}.`);
@@ -1949,8 +1973,17 @@ app.post('/emergency-stop', async (req, res) => {
   // Log the emergency stop event
   logToolCall("System Emergency Button", "emergency_stop", {}, robotSuccess ? "Robot halted" : `Failed: ${robotError}`);
 
+  if (!robotSuccess) {
+    sendProgress(`Failed to stop robot: ${robotError}`, false, `Failed to stop robot. ${robotError}`);
+  } else {
+    sendProgress("Emergency stop completed successfully.", true);
+  }
   setTimeout(async () => {
-    sendProgress(null, false);
+    if (robotSuccess) {
+      sendProgress(null, false, "Emergency stop completed. The robot is now halted.");
+    } else {
+      sendProgress(null, false);
+    }
     await sendWakewordCommand('unmute');
   }, 3500);
 
@@ -1997,12 +2030,13 @@ app.all('/return-home', async (req, res) => {
   logToolCall("System Home Button", "return_home", {}, robotSuccess ? "Robot returning home" : `Failed: ${robotError}`);
 
   if (robotSuccess) {
-    sendProgress("Arm has been returned to home. Waiting for your next input.", true, "Arm has been returned to home. Waiting for your next input.");
+    sendProgress("Arm has been returned to home. Waiting for your next input.", true);
     setTimeout(async () => {
-      sendProgress(null, false);
+      sendProgress(null, false, "Arm has been returned to home. Waiting for your next input.");
       await sendWakewordCommand('unmute');
     }, 4500);
   } else {
+    sendProgress(`Return home failed: ${robotError}`, false, `Return home failed. ${robotError}`);
     setTimeout(async () => {
       sendProgress(null, false);
       await sendWakewordCommand('unmute');
