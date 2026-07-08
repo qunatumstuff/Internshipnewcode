@@ -192,12 +192,26 @@ async def handle_list_tools() -> list[Tool]:
             description="Explicitly acknowledge and clear a latched emergency stop. Required before the robot can move again after emergency_stop was triggered.",
             inputSchema={"type": "object", "properties": {}}
         ),
+        Tool(
+            name="clear_return_home",
+            description="Clear the home latch, allowing the robot to accept new commands after returning home.",
+            inputSchema={"type": "object", "properties": {}}
+        ),
     ]
 
 # 3. Execute tool calls
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict | None) -> list[TextContent]:
     args = arguments or {}
+
+    # 1. Check Latches before allowing movement commands
+    if name in ["pick_and_place_object", "move_to_coordinates", "relocate_object"]:
+        if getattr(robot_control, 'EMERGENCY_STOP_ACTIVE', False):
+            logger.warning(f"Blocked {name}: Emergency Stop is active.")
+            return [TextContent(type="text", text="Error: Robot is in Emergency Stop state. Clear it before commanding.")]
+        if getattr(robot_control, 'RETURN_HOME_ACTIVE', False):
+            logger.warning(f"Blocked {name}: Robot is returning home.")
+            return [TextContent(type="text", text="Error: Robot is currently returning home. Please wait or clear the home state.")]
 
     if name == "pick_and_place_object":
         object_name = args.get("object_name")
@@ -324,18 +338,26 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     if name == "return_home":
         print("\n🏠 [VS CODE CONSOLE] RETURN HOME SIGNAL RECEIVED! Interrupting motion and returning home.\n")
         logger.info("🏠 RETURN HOME TRIGGERED!")
+        robot_control.RETURN_HOME_ACTIVE = True
         try:
             if hasattr(robot_control, 'mcp_return_home'):
                 await asyncio.to_thread(robot_control.mcp_return_home)
+            robot_control.RETURN_HOME_ACTIVE = False
             return [TextContent(type="text", text="Return Home Successful: Robot interrupted and moved to home position.")]
         except Exception as e:
             logger.error(f"Error during return home: {e}")
+            robot_control.RETURN_HOME_ACTIVE = False
             return [TextContent(type="text", text=f"Error executing return home: {str(e)}")]
     
     if name == "clear_emergency_stop":
         logger.warning("✅ Emergency stop manually cleared by user.")
         robot_control.EMERGENCY_STOP_ACTIVE = False
         return [TextContent(type="text", text="Emergency stop cleared. Robot may now be commanded again.")]
+
+    if name == "clear_return_home":
+        logger.warning("✅ Return home latch manually cleared by user/system.")
+        robot_control.RETURN_HOME_ACTIVE = False
+        return [TextContent(type="text", text="Return home latch cleared. Robot may now be commanded again.")]
 
     raise ValueError(f"Unknown tool: {name}")
 

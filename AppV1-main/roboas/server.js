@@ -1151,6 +1151,22 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               required: ["obstacle_name", "obstacle_x", "obstacle_y", "obstacle_z"]
             }
           }
+        },
+        {
+          type: "function",
+          function: {
+            name: "clear_emergency_stop",
+            description: "Clear a latched emergency stop on the robot. Required before the robot can move again after an emergency stop.",
+            parameters: { type: "object", properties: {} }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "clear_return_home",
+            description: "Clear the return home latch. Required before the robot can accept new pick/place commands after a return home.",
+            parameters: { type: "object", properties: {} }
+          }
         }
       ],
       tool_choice: "auto",
@@ -1506,6 +1522,46 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           
           answerText = `I am moving the ${args.obstacle_name} out of the way for you.`;
           skipSecondCompletion = true;
+        }
+        else if (toolCall.name === "clear_emergency_stop") {
+          logToolCall(question, "clear_emergency_stop", args, "Clearing emergency stop latch...");
+          sendProgress("Clearing emergency stop...");
+          if (robotMcpClient) {
+            try {
+              const res = await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: args });
+              toolResultText = res.content[0].text;
+              logToolCall(question, "clear_emergency_stop", args, toolResultText);
+              sendProgress("Emergency stop cleared successfully.");
+              await new Promise(resolve => setTimeout(resolve, 1500));
+            } catch (e) {
+              toolResultText = `Error calling Robot MCP: ${e.message}`;
+              sendProgress(`Error: ${e.message}`);
+              logToolCall(question, "clear_emergency_stop", args, `Failed: ${e.message}`);
+            }
+          } else {
+            toolResultText = "Error: Robot MCP is not connected.";
+            sendProgress("Error: Robot MCP is not connected.");
+          }
+        }
+        else if (toolCall.name === "clear_return_home") {
+          logToolCall(question, "clear_return_home", args, "Clearing return home latch...");
+          sendProgress("Clearing home lock...");
+          if (robotMcpClient) {
+            try {
+              const res = await robotMcpClient.callTool({ name: "clear_return_home", arguments: args });
+              toolResultText = res.content[0].text;
+              logToolCall(question, "clear_return_home", args, toolResultText);
+              sendProgress("Home lock cleared successfully.");
+              await new Promise(resolve => setTimeout(resolve, 1500));
+            } catch (e) {
+              toolResultText = `Error calling Robot MCP: ${e.message}`;
+              sendProgress(`Error: ${e.message}`);
+              logToolCall(question, "clear_return_home", args, `Failed: ${e.message}`);
+            }
+          } else {
+            toolResultText = "Error: Robot MCP is not connected.";
+            sendProgress("Error: Robot MCP is not connected.");
+          }
         }
 
         if (!skipSecondCompletion) {
@@ -1952,7 +2008,35 @@ app.all('/return-home', async (req, res) => {
   });
 });
 
+// Clear Emergency Stop Latch
+app.post('/clear-emergency-stop', async (req, res) => {
+  if (robotMcpClient) {
+    try {
+      const result = await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: {} });
+      console.log('✅ Emergency Stop Latch Cleared:', result.content[0].text);
+      res.json({ success: true, message: result.content[0].text });
+    } catch (err) {
+      res.json({ success: false, message: err.message });
+    }
+  } else {
+    res.json({ success: false, message: "Robot MCP not connected." });
+  }
+});
 
+// Clear Return Home Latch
+app.post('/clear-return-home', async (req, res) => {
+  if (robotMcpClient) {
+    try {
+      const result = await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
+      console.log('✅ Return Home Latch Cleared:', result.content[0].text);
+      res.json({ success: true, message: result.content[0].text });
+    } catch (err) {
+      res.json({ success: false, message: err.message });
+    }
+  } else {
+    res.json({ success: false, message: "Robot MCP not connected." });
+  }
+});
 
 // Serve debug dashboard
 app.get('/debug', (req, res) => {
