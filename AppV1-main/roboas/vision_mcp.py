@@ -315,6 +315,30 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                 angle_rad = math.radians(rect[2])
                 logger.info(f"[{cls_name}] OBB angle not available, using minAreaRect: {rect[2]:.1f}deg")
 
+            w_px, h_px = rect[1]
+            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics)
+            if coords is None:
+                continue
+
+            distance = depth_frame.get_distance(int(cx_px), int(cy_px))
+            w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
+            h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
+
+            detections.append({
+                "object_name": cls_name,
+                "x":           coords["x"],
+                "y":           coords["y"],
+                "z":           coords["z"],
+                "angle_deg":   coords["angle_deg"],
+                "confidence":  round(conf, 3),
+                "cx_px":       cx_px,
+                "cy_px":       cy_px,
+                "w_px":        w_px,
+                "h_px":        h_px,
+                "w_m":         w_m,
+                "h_m":         h_m,
+            })
+
 
     logger.info(
         f"Detection: {len(detections)} object(s) — "

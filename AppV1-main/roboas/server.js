@@ -325,6 +325,7 @@ const upload = multer({
 });
 
 let chatHistory = [];
+let currentPersona = "john"; // Default persona
 
 // === MCP Emoji Sync Endpoint ===
 app.get('/status-emojis', async (req, res) => {
