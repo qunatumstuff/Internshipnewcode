@@ -245,10 +245,17 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
 
             cx_px = float(obb.xywhr[0][0])
             cy_px = float(obb.xywhr[0][1])
+            w_px  = float(obb.xywhr[0][2])
+            h_px  = float(obb.xywhr[0][3])
 
             coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics)
             if coords is None:
                 continue
+
+            # Calculate physical dimensions
+            distance = depth_frame.get_distance(int(cx_px), int(cy_px))
+            w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
+            h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
             detections.append({
                 "object_name": cls_name,
@@ -259,8 +266,10 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                 "confidence":  round(conf, 3),
                 "cx_px":       cx_px,
                 "cy_px":       cy_px,
-                "w_px":        float(obb.xywhr[0][2]),
-                "h_px":        float(obb.xywhr[0][3]),
+                "w_px":        w_px,
+                "h_px":        h_px,
+                "w_m":         w_m,
+                "h_m":         h_m,
             })
 
     # ── Pass 2: Segmentation — pipe and sponge centre/endpoint positions ────────
@@ -479,7 +488,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
             }
         ],
         "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 8192},
+        "options": {"temperature": 0.1, "num_predict": 8192, "num_ctx": 16384},
         "think": False
     }
 
@@ -787,7 +796,36 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
 
     lines.append("")
 
-    # 2. Analyze XY Overlap
+    # 2. Size / Occlusion Analysis
+    lines.append("SIZE / OCCLUSION ANALYSIS:")
+    size_issue_found = False
+    for d in detections:
+        w_m = d.get("w_m")
+        h_m = d.get("h_m")
+        if w_m is None or h_m is None or w_m == 0 or h_m == 0:
+            continue
+        
+        info = OBJECT_CATALOGUE.get(d["object_name"])
+        if not info:
+            continue
+        
+        expected_area = info.get("length_m", 0.04) * info.get("breadth_m", 0.04)
+        detected_area = w_m * h_m
+        
+        if expected_area > 0 and (detected_area / expected_area) < 0.45:
+            size_issue_found = True
+            lines.append(
+                f"  - WARNING: {d['object_name']} (ID {d.get('id', '')}) appears unusually small "
+                f"(visible area is only {detected_area/expected_area*100:.0f}% of expected catalogue size). "
+                f"It is likely partially BLOCKED by another object or is a false detection. Do not pick unless certain."
+            )
+            
+    if not size_issue_found:
+        lines.append("  - All detected objects roughly match their expected physical dimensions.")
+        
+    lines.append("")
+
+    # 3. Analyze XY Overlap
     lines.append("OVERLAP ANALYSIS (XY):")
     overlap_found = False
 
