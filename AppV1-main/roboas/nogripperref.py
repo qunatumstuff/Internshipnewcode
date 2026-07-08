@@ -128,6 +128,7 @@ except ImportError:
 
 r = Robot()
 
+EMERGENCY_STOP_ACTIVE = False
 
 # =================================================================
 # ONROBOT 2FG7 GRIPPER GEOMETRY -- REAL MEASURED MODEL
@@ -159,7 +160,7 @@ GRIPPER_SAFETY_LENGTH = 0.000
 #    Z-height is fixed (a parallel 2-finger gripper's fingertips do not
 #    move up/down as it opens, only side to side).
 
-PICK_OFFSET_X_M = -0.004    # +10mm in X
+PICK_OFFSET_X_M = -0.003    # +10mm in X
 PICK_OFFSET_Y_M = -0.008   # -10mm in Y
 
 # --- FLANGE (Quick Changer) ---
@@ -2626,7 +2627,13 @@ MCP_INTENTIONAL_STOP = False
 
 def mcp_return_home():
     """Callable from robot_mcp to safely stop and return home."""
-    global MCP_INTENTIONAL_STOP
+    global MCP_INTENTIONAL_STOP, EMERGENCY_STOP_ACTIVE
+
+    if EMERGENCY_STOP_ACTIVE:
+        print("[SAFETY] Emergency stop is still latched — refusing to auto-recover or move. "
+              "Call clear_emergency_stop explicitly before attempting return_home.")
+        return
+    
     import time
     try:
         MCP_INTENTIONAL_STOP = True
@@ -3651,6 +3658,8 @@ def _mcp_normalize_detection(raw, default_index=1):
         "y": float(raw["y"]),
         "z": float(raw.get("z", 0.0)),
         "angle_deg": float(raw_angle) if raw_angle is not None else None,
+        "w_px": float(raw.get("w_px", 0.0)),#using data from camera to confirm orientation
+        "h_px": float(raw.get("h_px", 0.0)),
     }
 
 
@@ -3879,7 +3888,25 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
     # relative to HOME_RZ so planned_rz_for_object produces the correct absolute TCP RZ.
     camera_angle = target.get("angle_deg")
     if camera_angle is not None:
-        selected_object["preferred_grasp_angle_deg"] = float(camera_angle) + CAMERA_ANGLE_OFFSET_DEG - HOME_RZ
+        #selected_object["preferred_grasp_angle_deg"] = float(camera_angle) + CAMERA_ANGLE_OFFSET_DEG - HOME_RZ
+        
+        w_px = float(target.get("w_px", 0.0))
+        h_px = float(target.get("h_px", 0.0))
+        # Only apply the dynamic perpendicular correction for genuinely elongated
+        # # objects (long/width ratio significant) -- symmetric objects like cubes
+        # # don't need this and shouldn't have their angle flipped by pixel noise.
+        length_m = float(selected_object.get("length_m", 0.0))
+        width_m = float(selected_object.get("width_m", 0.0))
+        is_elongated = width_m > 0 and (length_m / width_m) > 1.5
+        
+        perpendicular_correction = 0.0
+        if is_elongated and w_px > 0 and h_px > 0:
+            if h_px > w_px :
+                perpendicular_correction = 90.0   # long axis aligned with reported angle -> need perpendicular
+                 # else: h_px > w_px means angle_deg already points along the short axis -- no correction needed
+        selected_object["preferred_grasp_angle_deg"] = float(camera_angle) + perpendicular_correction + CAMERA_ANGLE_OFFSET_DEG - HOME_RZ
+        print(f"[Grasp Angle Debug] w_px={w_px:.1f} h_px={h_px:.1f} is_elongated={is_elongated} "
+              f"correction={perpendicular_correction} final_preferred={selected_object['preferred_grasp_angle_deg']:.2f}")
         selected_object["mcp_camera_angle_deg"] = float(camera_angle)
     else:
         selected_object["mcp_camera_angle_deg"] = None  # catalogue default will be used
