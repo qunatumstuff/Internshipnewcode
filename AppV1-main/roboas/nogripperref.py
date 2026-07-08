@@ -185,7 +185,7 @@ JAW_HEIGHT_M = 0.0423               # 42.3 mm, total jaw height along Z (FIXED r
 JAW_MAX_OPENING_M = 0.039           # 39 mm max internal opening (inward-grip finger config, per datasheet)
 JAW_MIN_OPENING_M = 0.000           # 0 mm, fully closed
 JAW_THICKNESS_PAD_M = 0.007         # 7 mm added on EACH side for real jaw material thickness
-JAW_WIDTH_M = 0.027                 # 27 mm, fixed width of a single jaw (perpendicular to opening direction)
+JAW_WIDTH_M = 0.0265                 # 27 mm, fixed width of a single jaw (perpendicular to opening direction)
 JAW_CLEARANCE_M = 0.001             # 1 mm safety margin added around the jaw box
 JAW_FIXED_WIDTH_M = JAW_WIDTH_M     # kept as an alias -- older code elsewhere in this file
                                      # (placement clearance, diagnostics) already reads this name
@@ -194,7 +194,7 @@ JAW_MIN_DYNAMIC_WIDTH_M = 2 * JAW_THICKNESS_PAD_M  # 14 mm floor = fully closed 
 # Total flange-to-fingertip length. UNLIKE the old model, this does NOT
 # change between "open" and "closed" -- the real jaw height is fixed;
 # only its horizontal footprint (see get_current_jaw_width_m) changes.
-GRIPPER_LENGTH = FLANGE_LENGTH_M + NECK_LENGTH_M + JAW_HEIGHT_M + 0.03   # = 0.13165 m
+GRIPPER_LENGTH = FLANGE_LENGTH_M + NECK_LENGTH_M + JAW_HEIGHT_M + 0.027 # = 0.13165 m
 GRIPPER_LEN_OPEN = GRIPPER_LENGTH     # kept for compatibility with any old call sites
 GRIPPER_LEN_CLOSED = GRIPPER_LENGTH   # both now identical -- see note above
 ACTIVE_GRIPPER_LENGTH = GRIPPER_LENGTH
@@ -250,7 +250,7 @@ DEFAULT_GRIPPER_SPEED = 50
 # of the catalogue default. This avoids adding a manual angle-selection menu.
 DEFAULT_OBJECT_ORIENTATION_DEG = 90.0
 DEFAULT_PREFERRED_GRASP_ANGLE_DEG = 0.0
-CAMERA_ANGLE_OFFSET_DEG = 45.0 
+CAMERA_ANGLE_OFFSET_DEG = 0
 
 # Object selection catalogue. Add more objects here later.
 # Dimensions are in metres.
@@ -442,27 +442,27 @@ MCP_DIAGNOSTIC_PRINTS_ENABLED = True
 #   - the 6 cm -> 15 cm physical placement footprint
 #   - pre-pick/release clearance opening
 OBJECT_GRIP_COMMAND_SCALE = {
-    "yellow cube": 0.92,
-    "blue cube": 0.92,
-    "green cube": 0.92,
-    "red cube": 0.92,
-    "medicine": 0.85,
-    "screwdriver": 0.92,
-    "nut": 0.92,
-    "sponge": 0.92,
-    "black marker": 0.92,
+    "yellow cube": 0.88,
+    "blue cube": 0.88,
+    "green cube": 0.88,
+    "red cube": 0.88,
+    "medicine": 0.88,
+    "screwdriver": 0.88,
+    "nut": 0.88,
+    "sponge": 0.88,
+    "black marker": 0.88,
 
 }
 
 OBJECT_GRIP_COMMAND_MIN_M = {
-    "yellow cube": 0.024,
-    "blue cube": 0.029,
-    "green cube": 0.029,
-    "red cube": 0.029,
-    "medicine": 0.027,
-    "screwdriver" : 0.0171, 
-    "nut": 0.029,
-    "black marker" : 0.01953, 
+    "yellow cube": 0.0024,
+    "blue cube": 0.0029,
+    "green cube": 0.0029,
+    "red cube": 0.0029,
+    "medicine": 0.0027,
+    "screwdriver" : 0.00151, 
+    "nut": 0.0029,
+    "black marker" : 0.001953, 
 }
 # =================================================================
 # HYBRID POSITION + FORCE GRIP TUNING
@@ -1289,10 +1289,10 @@ HOME_X  = 0.419999
 HOME_Y  = 0.0
 HOME_Z  = 0.442998
 
-HOME_RX = 178.4062
-HOME_RY = 0.10052
-HOME_RZ = 105.5
-GRIPPER_RZ_OFFSET = -22.27  # Offset to make physical gripper reach desired angle
+HOME_RX = 179.93608
+HOME_RY = 0.04243
+HOME_RZ = -158.16
+GRIPPER_RZ_OFFSET = 0  # Offset to make physical gripper reach desired angle
 
 
 
@@ -3226,12 +3226,14 @@ def resolve_object_runtime_variables(selected_object, move_x, move_y, drop_slot)
     if isinstance(drop_slot, dict):
         placement_angle_deg = drop_slot.get("placement_angle_deg")
 
+    current_wrist_angle_deg = math.degrees(r.get_tcp_pose()[5])
+    
     pick_rz_deg = planned_rz_for_object(
         selected_object,
         placement_angle_deg=None,
-        reference_angle_deg=HOME_RZ,
-    )
-
+        reference_angle_deg=current_wrist_angle_deg,
+        )
+    
     drop_rz_deg = planned_rz_for_object(
         selected_object,
         placement_angle_deg=placement_angle_deg,
