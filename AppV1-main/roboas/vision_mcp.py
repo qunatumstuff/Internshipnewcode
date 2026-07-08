@@ -817,7 +817,7 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
             lines.append(
                 f"  - WARNING: {d['object_name']} (ID {d.get('id', '')}) appears unusually small "
                 f"(visible area is only {detected_area/expected_area*100:.0f}% of expected catalogue size). "
-                f"It is likely partially BLOCKED by another object or is a false detection. Do not pick unless certain."
+                f"It is likely partially BLOCKED by another object. If you see ANY object overlapping it, you MUST immediately output 'relocate' for that blocking object. Do NOT try to pick it."
             )
             
     if not size_issue_found:
@@ -989,9 +989,10 @@ async def qwen_plan_next_action(
         f"  4. If the user asks for an object NOT in the catalogue, output 'abort'.\n"
         f"  5. HIDDEN OBJECT DEDUCTION: If your target cube is visually missing, BUT the Python Sensor Analysis says an obstacle is 'Likely resting on' your target cube, you MUST deduce the target is hidden underneath it. Output 'relocate' and set 'obstacle_name' to the blocking object.\n"
         f"  6. RELOCATE OVERRIDE: If the Python Sensor Analysis explicitly says 'MUST relocate [object] first', you MUST immediately output 'relocate' and set 'obstacle_name' to that object. Do NOT second-guess it. Do NOT try to pick the target.\n"
-        f"  7. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one, output 'relocate' for that object. If clear, output 'pick'.\n"
-        f"  8. If you see an unknown object blocking the target, output 'abort'.\n"
-        f"  9. Do not re-relocate already moved objects (check history).\n\n"
+        f"  7. SIZE / OCCLUSION OVERRIDE: If the Python Sensor Analysis warns that a detection is unusually small and likely BLOCKED, you MUST relocate ANY object that is overlapping it or resting on it. Output 'relocate' and set 'obstacle_name' to the overlapping object.\n"
+        f"  8. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one, output 'relocate' for that object. If clear, output 'pick'.\n"
+        f"  9. If you see an unknown object blocking the target, output 'abort'.\n"
+        f"  10. Do not re-relocate already moved objects (check history).\n\n"
         f"AVAILABLE ACTIONS:\n"
         f"  - relocate: move one blocking object to a safe spot.\n"
         f"  - pick: pick the target.\n"
