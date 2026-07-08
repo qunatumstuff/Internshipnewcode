@@ -1288,21 +1288,19 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                       robotArgs.grasp_label = parsed.coordinates.grasp_label;
                     }
                     
+                    const completionPromise = waitForRobotEvent(900000);
                     robotMcpClient.callTool({
                       name: "pick_and_place_object",
                       arguments: robotArgs
-                    }, undefined, { timeout: 900000 }).then(async (toolResult) => {
-                      const text = toolResult.content[0].text;
-                      if (text.startsWith("Error:")) {
-                        throw new Error(text.replace("Error:", "").trim());
-                      }
-                      
-                      sendProgress(`Successfully picked up the ${args.target_name}!`, true);
-                      setTimeout(async () => {
-                        sendProgress(null, false, `I have finished picking and placing the requested object, ${args.target_name}.`);
-                        await sendWakewordCommand('unmute');
-                      }, 3000);
-                    }).catch(e => {
+                    }, undefined, { timeout: 900000 }).catch(e => console.error("Background robot pick failed:", e));
+                    
+                    await completionPromise;
+                    sendProgress(`Successfully picked up the ${args.target_name}!`, true);
+                    setTimeout(async () => {
+                      sendProgress(null, false, `I have finished picking and placing the requested object, ${args.target_name}.`);
+                      await sendWakewordCommand('unmute');
+                    }, 3000);
+                  } catch (e) {
                     sendProgress(`Robot pick error: ${e.message}`, false);
                     setTimeout(async () => {
                       if (!isExpectedStopError(e.message)) {
@@ -1312,7 +1310,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                       }
                       await sendWakewordCommand('unmute');
                     }, 5000);
-                  });
+                  }
                 } else {
                   sendProgress("Error: Robot MCP is not connected for pickup.", false);
                   setTimeout(async () => {
@@ -1436,11 +1434,11 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           sendProgress(`Executing pick-and-place for "${args.object_name}"...`, true);
           
           if (robotMcpClient) {
+            const completionPromise = waitForRobotEvent(900000);
             robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args }, undefined, { timeout: 900000 })
-              .then((res) => {
-                const text = res.content[0].text;
-                if (text.startsWith("Error:")) throw new Error(text.replace("Error:", "").trim());
-                
+              .catch(e => console.error("Background robot pick failed:", e));
+            
+            completionPromise.then(() => {
                 sendProgress(`Pick-and-place completed for "${args.object_name}".`, true);
                 setTimeout(async () => {
                   sendProgress(null, false, `I have finished picking and placing the requested object, ${args.object_name}.`);
@@ -1475,11 +1473,11 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           logToolCall(question, "relocate_object", args, "Calling Robot MCP in background...");
           sendProgress(`Relocating obstacle "${args.obstacle_name}"...`, true);
           if (robotMcpClient) {
+            const completionPromise = waitForRobotEvent(900000);
             robotMcpClient.callTool({ name: "relocate_object", arguments: args }, undefined, { timeout: 900000 })
-              .then((res) => {
-                const text = res.content[0].text;
-                if (text.startsWith("Error:")) throw new Error(text.replace("Error:", "").trim());
-                
+              .catch(e => console.error("Background robot relocation failed:", e));
+            
+            completionPromise.then(() => {
                 sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`, true);
                 setTimeout(async () => {
                   sendProgress(null, false, `I have relocated the object ${args.obstacle_name}.`);

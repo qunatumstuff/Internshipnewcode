@@ -160,7 +160,7 @@ GRIPPER_SAFETY_LENGTH = 0.000
 #    move up/down as it opens, only side to side).
 
 PICK_OFFSET_X_M = -0.004    # +10mm in X
-PICK_OFFSET_Y_M = -0.01   # -10mm in Y
+PICK_OFFSET_Y_M = -0.008   # -10mm in Y
 
 # --- FLANGE (Quick Changer) ---
 FLANGE_DIAMETER_M = 0.071          # 71 mm, datasheet-confirmed Quick Changer diameter
@@ -194,7 +194,7 @@ JAW_MIN_DYNAMIC_WIDTH_M = 2 * JAW_THICKNESS_PAD_M  # 14 mm floor = fully closed 
 # Total flange-to-fingertip length. UNLIKE the old model, this does NOT
 # change between "open" and "closed" -- the real jaw height is fixed;
 # only its horizontal footprint (see get_current_jaw_width_m) changes.
-GRIPPER_LENGTH = FLANGE_LENGTH_M + NECK_LENGTH_M + JAW_HEIGHT_M + 0.027 # = 0.13165 m
+GRIPPER_LENGTH = FLANGE_LENGTH_M + NECK_LENGTH_M + JAW_HEIGHT_M + 0.025 # = 0.13165 m
 GRIPPER_LEN_OPEN = GRIPPER_LENGTH     # kept for compatibility with any old call sites
 GRIPPER_LEN_CLOSED = GRIPPER_LENGTH   # both now identical -- see note above
 ACTIVE_GRIPPER_LENGTH = GRIPPER_LENGTH
@@ -250,7 +250,7 @@ DEFAULT_GRIPPER_SPEED = 50
 # of the catalogue default. This avoids adding a manual angle-selection menu.
 DEFAULT_OBJECT_ORIENTATION_DEG = 90.0
 DEFAULT_PREFERRED_GRASP_ANGLE_DEG = 0.0
-CAMERA_ANGLE_OFFSET_DEG = 0
+CAMERA_ANGLE_OFFSET_DEG = 20
 
 # Object selection catalogue. Add more objects here later.
 # Dimensions are in metres.
@@ -1263,6 +1263,7 @@ SMART_EXISTING_OBJECT_SPREAD_WEIGHT = 0.05
 # Try rotating the wrist/gripper for better placement packing.
 # These are relative offsets from the object's preferred grasp angle.
 PLACEMENT_ANGLE_OFFSETS_DEG = [-30, 0, 30]
+PLACEMENT_ANGLE_DEVIATION_WEIGHT = 0.002   # penalty per degree away from the object's natural angle
 
 # Permanent occupied-object footprint margin.
 # Keep this small. The gripper release opening is temporary and should not
@@ -2281,7 +2282,7 @@ def _placement_wall_gap_penalty(x, y, length, width):
     return 0.0
 
 
-def _placement_score(x, y, length, width, selected_object=None, placement_angle_deg=None):
+def _placement_score(x, y, length, width, selected_object=None, placement_angle_deg=None, base_angle_deg=None):# base_angle_deg check wit initial ts
     """
     Smart placement score. Lower score wins.
 
@@ -2292,6 +2293,12 @@ def _placement_score(x, y, length, width, selected_object=None, placement_angle_
       - lightweight future-fit lookahead,
       - safe wall-gap limits.
     """
+
+    angle_penalty = 0.0# angle penalty to make it not do uncessary shi 
+    if placement_angle_deg is not None and base_angle_deg is not None:
+        angle_deviation = abs(_normalise_angle_deg(placement_angle_deg - base_angle_deg))
+        angle_penalty = angle_deviation * PLACEMENT_ANGLE_DEVIATION_WEIGHT
+
     if not SMART_PLACEMENT_ENABLED:
         object_gap_x = (x - length / 2.0) - PLACEMENT_BOX_X_MIN - BOX_WALL_THICKNESS_M
         score = abs(object_gap_x - PLACEMENT_WALL_GAP_MIN_M) * 10.0
@@ -2301,7 +2308,7 @@ def _placement_score(x, y, length, width, selected_object=None, placement_angle_
             score += (object_gap_x - PLACEMENT_WALL_GAP_MAX_M) * 15.0
         score += 0.5 * (x - PLACEMENT_BOX_X_MIN)
         score -= 0.2 * (y - PLACEMENT_BOX_Y_MIN)
-        return score
+        return score + angle_penalty # added angle penalty :)
 
     corner_score = _corner_compaction_score(x, y, length, width)
     center_penalty = _center_avoidance_score(x, y)
@@ -2362,7 +2369,7 @@ def find_best_drop_slot(selected_object):
                                 y -= grid_step
                                 continue
                         
-                        score = _placement_score(x, y, length, width, selected_object, placement_angle_deg)
+                        score = _placement_score(x, y, length, width, selected_object, placement_angle_deg,base_angle_deg=base_angle)# added base_angle_deg=base_angle for angle check
                         # Prefer angles where the long gripper rectangle wastes less X margin.
                         grip_half_x, grip_half_y = rotated_gripper_half_extents_for_object(
                             selected_object,
@@ -2636,6 +2643,7 @@ def mcp_return_home():
         # This was confirmed directly from real logs on this hardware.
         r.power_on()
         r.switch_to_automatic_mode()  # must be in auto before any motion
+        r.init_program()
         time.sleep(1.5)               # give the tool power/comms line time to actually come back
 
         # Disconnect/reconnect the external device -- this replicates the
@@ -3871,7 +3879,7 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
     # relative to HOME_RZ so planned_rz_for_object produces the correct absolute TCP RZ.
     camera_angle = target.get("angle_deg")
     if camera_angle is not None:
-        selected_object["preferred_grasp_angle_deg"] = float(camera_angle) - CAMERA_ANGLE_OFFSET_DEG - HOME_RZ
+        selected_object["preferred_grasp_angle_deg"] = float(camera_angle) + CAMERA_ANGLE_OFFSET_DEG - HOME_RZ
         selected_object["mcp_camera_angle_deg"] = float(camera_angle)
     else:
         selected_object["mcp_camera_angle_deg"] = None  # catalogue default will be used

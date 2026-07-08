@@ -25,6 +25,7 @@ inference_lock = threading.Lock()
 Z_OFFSET = 0.025
 DISPLAY_ONLY_TARGET = True
 
+
 def smooth_coord(old_val, new_val, alpha=0.2, snap_thresh=0.05):    
     """
     Applies Exponential Moving Average to stabilize flickering coordinates. 
@@ -46,6 +47,7 @@ mcp = FastMCP("TIEFA_Module_B_Vision")
 
 model=YOLO("best (12).pt")
 segment=YOLO("best (11).pt")
+obb_discontinuity=YOLO("best (14).pt")  # fallback only -- used when the primary OBB model finds nothing
 
 # -----------------------------------------------------------------------------
 # 2. MCP Tools Definition (Exposed to System 2 / ZBook)
@@ -55,37 +57,37 @@ tracked=False
 
 @mcp.tool()
 def get_camera_snapshot() -> str:
-    """
-    Capture a current RGB frame from the D435i camera.
-    Returns the image as a Base64 encoded string for the VLM (System 2) to analyze.
-    If a question is provided, asks the question to Qwen and returns the text response.
-    """
     global current_rgb_frame
+
+    print("GET CAMERA SNAPSHOT FUNCTION CALLED")
+
+    if current_rgb_frame is None:
+        print("ERROR: current_rgb_frame is None")
+        return "Error: Camera frame not ready."
+
     zoom = 1.0
-    height,width,_=current_rgb_frame.shape
-    new_width=int(width/zoom)
-    new_height=int(height/zoom)
+
+    frame = current_rgb_frame.copy()
+
+    height, width, _ = frame.shape
+    print(f"Camera frame shape: {width}x{height}")
+
+    new_width = int(width / zoom)
+    new_height = int(height / zoom)
 
     miny = max(0, int((height - new_height) / 2))
     maxy = min(height, miny + new_height)
     minx = max(0, int((width - new_width) / 2))
     maxx = min(width, minx + new_width)
 
-    cropped=current_rgb_frame[miny:maxy,minx:maxx]
-    current_rgb_frame_cropped=cv2.resize(cropped,(width,height))
-    current_rgb_frame=current_rgb_frame.copy()
+    cropped = frame[miny:maxy, minx:maxx]
+    snapshot_frame = cv2.resize(cropped, (width, height))
 
 
-    if current_rgb_frame is None:
-        return "Error: Camera frame not ready."
-    
-    # Encode frame to JPEG, then to Base64
-    _, buffer = cv2.imencode('.jpg', current_rgb_frame)
-    base64_str = base64.b64encode(buffer).decode('utf-8')
-    print("Took snapshot")
-    
-    return f"data:image/jpeg;base64,{base64_str}"
 
+    print("Took snapshot successfully")
+
+    return f"data:image/jpeg;base64,{snapshot_frame}"
 
 @mcp.tool()
 def set_tracking_target(target_name: str) -> str:
@@ -222,7 +224,83 @@ def _vision_loop_inner():
 
             # Draw OBB boxes for all detected objects
             for result in results:
-                if result.obb is None:
+                if result.obb is None or len(result.obb) == 0:
+                    # ---- FALLBACK: primary OBB model (best (12).pt) found ----
+                    # ---- nothing this frame. Try obb_discontinuity          ----
+                    # ---- (best (14).pt) as a fallback detector instead.    ----
+                    fallback_results = obb_discontinuity(
+                        color_image, verbose=False, agnostic_nms=False, iou=0.35, conf=0.35
+                    )
+
+                    for fb in fallback_results:
+                        if fb.boxes is None:
+                            continue
+
+                        for box in fb.boxes:
+                            cls_id = int(box.cls[0])
+                            cls_name = obb_discontinuity.names[cls_id].lower()
+                            confidence = float(box.conf[0])
+
+                            is_target = (
+                                current_target_class is not None and
+                                cls_name == current_target_class.lower()
+                            )
+
+                            if DISPLAY_ONLY_TARGET and current_target_class is not None and not is_target:
+                                continue
+
+                            x1, y1, x2, y2 = map(int, box.xyxy[0])
+                            center_x = int((x1 + x2) / 2)
+                            center_y = int((y1 + y2) / 2)
+
+                            cv2.rectangle(color_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                            cv2.putText(
+                                color_image,
+                                f"{cls_name} FALLBACK {confidence:.2f}",
+                                (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5,
+                                (0, 0, 255),
+                                2
+                            )
+
+                            # Only update latest_3d_coords for the selected target
+                            if is_target:
+                                CAM_TO_ROBOT_T = np.array([
+                                    [0.7337634310,  0.6126652048, -0.2936538341,  0.7173839756],
+                                    [0.6785283256, -0.6388791698,  0.3625365054, -0.4903506740],
+                                    [0.0345041846, -0.4652684744, -0.8844968672,  0.7880605490],
+                                    [0.0,           0.0,           0.0,            1.0]
+                                ], dtype=np.float64)
+
+                                distance = depth_frame.get_distance(center_x, center_y)
+                                if distance > 0:
+                                    spatial_coords = rs.rs2_deproject_pixel_to_point(
+                                        intrinsics, [center_x, center_y], distance
+                                    )
+
+                                    latest_3d_coords["x"] = smooth_coord(latest_3d_coords["x"], spatial_coords[0])
+                                    latest_3d_coords["y"] = smooth_coord(latest_3d_coords["y"], spatial_coords[1])
+                                    latest_3d_coords["z"] = smooth_coord(
+                                        latest_3d_coords["z"], spatial_coords[2] + Z_OFFSET
+                                    )
+
+                                    robot = CAM_TO_ROBOT_T @ np.array(
+                                        [spatial_coords[0], spatial_coords[1], spatial_coords[2], 1.0]
+                                    )
+
+                                    cv2.putText(
+                                        color_image,
+                                        f"TARGET {cls_name} (fallback): "
+                                        f"X:{robot[0]*1000:.1f} Y:{robot[1]*1000:.1f} Z:{robot[2]*1000:.1f}mm",
+                                        (20, 70),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.7,
+                                        (0, 0, 255),
+                                        2
+                                    )
+
+                    # Done handling this (empty primary) result -- move to next frame's result
                     continue
 
                 for obb in result.obb:

@@ -136,7 +136,7 @@ CAM_TO_ROBOT_T = np.array([
 # on the top surface of the object rather than its centre.
 # 25mm raises the robot's approach height so the gripper doesn't
 # dig into the object on descent.
-Z_OFFSET_M = 0.025
+Z_OFFSET_M = 0.045
 
 server = Server("vision-mcp-server")
 

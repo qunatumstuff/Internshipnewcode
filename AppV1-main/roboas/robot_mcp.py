@@ -186,7 +186,12 @@ async def handle_list_tools() -> list[Tool]:
             name="return_home",
             description="Return home. Clears errors, ensures robot is ready, and moves to the home position safely.",
             inputSchema={"type": "object", "properties": {}}
-        )
+        ),
+        Tool(
+            name="clear_emergency_stop",
+            description="Explicitly acknowledge and clear a latched emergency stop. Required before the robot can move again after emergency_stop was triggered.",
+            inputSchema={"type": "object", "properties": {}}
+        ),
     ]
 
 # 3. Execute tool calls
@@ -305,6 +310,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
     if name == "emergency_stop":
         logger.warning("⚠️ EMERGENCY STOP TRIGGERED!")
+        robot_control.EMERGENCY_STOP_ACTIVE = True #seperate emergency since current system unning on resets to work needs this to fully stop 
         try:
             if hasattr(robot_control, 'power_off_robot'):
                 await asyncio.to_thread(robot_control.power_off_robot)
@@ -325,6 +331,11 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         except Exception as e:
             logger.error(f"Error during return home: {e}")
             return [TextContent(type="text", text=f"Error executing return home: {str(e)}")]
+    
+    if name == "clear_emergency_stop":
+        logger.warning("✅ Emergency stop manually cleared by user.")
+        robot_control.EMERGENCY_STOP_ACTIVE = False
+        return [TextContent(type="text", text="Emergency stop cleared. Robot may now be commanded again.")]
 
     raise ValueError(f"Unknown tool: {name}")
 
