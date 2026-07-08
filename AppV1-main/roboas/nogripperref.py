@@ -2632,7 +2632,7 @@ def mcp_return_home():
     if EMERGENCY_STOP_ACTIVE:
         print("[SAFETY] Emergency stop is still latched — refusing to auto-recover or move. "
               "Call clear_emergency_stop explicitly before attempting return_home.")
-        return
+        raise RuntimeError("Robot is in Emergency Stop state. Clear it before commanding.")
     
     import time
     try:

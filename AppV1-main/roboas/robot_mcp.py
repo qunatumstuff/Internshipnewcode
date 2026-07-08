@@ -342,7 +342,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         try:
             if hasattr(robot_control, 'mcp_return_home'):
                 await asyncio.to_thread(robot_control.mcp_return_home)
-            robot_control.RETURN_HOME_ACTIVE = False
+            # Latch remains active until explicitly cleared
             return [TextContent(type="text", text="Return Home Successful: Robot interrupted and moved to home position.")]
         except Exception as e:
             logger.error(f"Error during return home: {e}")

@@ -1242,6 +1242,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               console.log("🏠 [locate_object] Sending arm home before camera snapshot...");
               sendProgress("Moving arm to home position for a clear camera view...", true);
               await robotMcpClient.callTool({ name: "return_home", arguments: {} });
+              // Clear the latch immediately for autonomous flows so it can continue to pick
+              await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
               console.log("🏠 [locate_object] Arm is home. Proceeding to vision scan.");
               // Brief pause to let the arm fully settle before snapshot
               await new Promise(r => setTimeout(r, 1000));
@@ -1929,8 +1931,11 @@ app.post('/emergency-stop', async (req, res) => {
         name: "emergency_stop",
         arguments: {}
       });
-      robotSuccess = true;
       responseText = result.content[0].text;
+      if (responseText.toLowerCase().startsWith("error")) {
+        throw new Error(responseText);
+      }
+      robotSuccess = true;
       console.log('⚠️ Robot MCP Emergency Stop Success:', responseText);
     } catch (err) {
       robotError = err.message;
@@ -1973,8 +1978,11 @@ app.all('/return-home', async (req, res) => {
         name: "return_home",
         arguments: {}
       });
-      robotSuccess = true;
       responseText = result.content[0].text;
+      if (responseText.toLowerCase().startsWith("error")) {
+        throw new Error(responseText);
+      }
+      robotSuccess = true;
       console.log('🏠 Robot MCP Return Home Success:', responseText);
     } catch (err) {
       robotError = err.message;
