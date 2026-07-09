@@ -1435,6 +1435,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       return;
     }
 
+    if (eventName == 'abort_mission_triggered') {
+      _addUiLog('🛑 [WAKE] ABORT MISSION WAKEWORD TRIGGERED! Halting system.');
+      _emergencyStop();
+      return;
+    }
+
     if (eventName.startsWith('status_update:')) {
       final parts = eventName.substring('status_update:'.length).split(',');
       String rms = '0.0000';
