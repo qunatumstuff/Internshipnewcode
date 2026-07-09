@@ -597,6 +597,40 @@
             `).join('');
         }
 
+        function formatUserFriendlyMessage(msg, color) {
+            if (!msg) return '';
+            
+            if (typeof msg !== 'string') {
+                msg = JSON.stringify(msg);
+            }
+
+            // Highlight common tags
+            msg = msg.replace(/\[(GPT|RobotMCP|VisionMCP|Server|Socket|WAKE WS|OWW)\]/g, '<strong style="color: var(--accent);">[$1]</strong>');
+            msg = msg.replace(/\[(.*?)\]/g, '<strong style="color: #00f2ff;">[$1]</strong>');
+            
+            // Highlight success/failure keywords
+            msg = msg.replace(/\b(success|connected|started|ready|completed|online)\b/gi, '<span style="color: #00ff88; font-weight: bold;">$1</span>');
+            msg = msg.replace(/\b(error|failed|disconnected|timeout|warning|offline)\b/gi, '<span style="color: #ff4444; font-weight: bold;">$1</span>');
+            
+            // Attempt to parse JSON and make it look clean
+            if (msg.includes('{') && msg.includes('}')) {
+                try {
+                    const jsonStart = msg.indexOf('{');
+                    const jsonEnd = msg.lastIndexOf('}');
+                    if (jsonStart !== -1 && jsonEnd > jsonStart) {
+                        const jsonStr = msg.substring(jsonStart, jsonEnd + 1);
+                        const parsed = JSON.parse(jsonStr);
+                        const prettyJson = '<pre style="background: rgba(0,0,0,0.3); padding: 6px; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; margin-top: 6px; color: #00f2ff; border: 1px solid rgba(0,242,255,0.2);">' + JSON.stringify(parsed, null, 2) + '</pre>';
+                        msg = msg.substring(0, jsonStart) + prettyJson + msg.substring(jsonEnd + 1);
+                    }
+                } catch(e) {
+                    // Not valid JSON, leave as is
+                }
+            }
+            
+            return `<span style="color: ${color}; line-height: 1.5; font-family: 'Inter', sans-serif;">${msg}</span>`;
+        }
+
         function renderConsoleLogs() {
             const feed = document.getElementById('console-feed');
             if (systemLogs.length === 0) {
@@ -609,9 +643,12 @@
                 if (log.level === 'error') color = '#ff4444';
                 if (log.level === 'warn') color = '#ffbb33';
                 const ts = new Date(log.timestamp).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true });
-                return `<div style="margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">
-                    <span style="color: #666;">[${ts}]</span> 
-                    <span style="color: ${color};">${log.message}</span>
+                
+                const prettyMsg = formatUserFriendlyMessage(log.message, color);
+                
+                return `<div style="margin-bottom: 10px; border-left: 3px solid ${color === '#ccc' ? 'var(--accent)' : color}; padding: 6px 10px; background: rgba(255,255,255,0.03); border-radius: 0 4px 4px 0;">
+                    <div style="font-size: 0.7rem; color: #888; margin-bottom: 4px;">⏰ ${ts} ${log.level ? '• ' + log.level.toUpperCase() : ''}</div> 
+                    ${prettyMsg}
                 </div>`;
             }).join('');
             
