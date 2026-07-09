@@ -1168,6 +1168,21 @@ app.post('/ask-gpt', async (req, res) => {
       }
     }
 
+
+    let queueState = "";
+    if (isRobotBusy) {
+      const tasks = robotTaskQueue.map(t => `${t.name}(${JSON.stringify(t.args)})`).join(', ');
+      queueState = `\n\nCURRENT ROBOT STATE: BUSY
+The robot is currently executing physical tasks!
+Pending Queue: [${tasks}]
+If the user asks to pick up another object, you MUST STILL call the 'locate_object' tool to add it to the queue. 
+When doing so, acknowledge that you are currently busy but have successfully queued the new request, and will get to it shortly.
+You can also call the 'return_home' tool if the user explicitly asks you to go home.`;
+    } else {
+      queueState = `\n\nCURRENT ROBOT STATE: IDLE
+You can call 'return_home' if the user asks you to go home.`;
+    }
+
     const messages = [
       {
         role: "system",
@@ -1199,7 +1214,7 @@ ROBOTIC ARM — PICK AND PLACE RULES:
 - Approved objects the robot can pick: soy milk, umbrella, wrench, hat, cube, yellow cube, blue cube, green cube, red cube, nut, black marker, medicine, sponge, screwdriver.
 
 
-IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualContext
+IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualContext + queueState
       },
       ...chatHistory,
       { role: "user", content: question }

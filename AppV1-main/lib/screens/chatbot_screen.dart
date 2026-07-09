@@ -115,10 +115,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   String get _pName => _currentPersona == 'linda' ? 'Linda' : 'John';
   html.SpeechSynthesisUtterance? _currentUtterance;
   bool _isRobotMoving = false;
+  bool _isEStopLatched = false;
   bool get _isInteractionBlocked {
     return _isTtsInProgress ||
         _avatarState == AvatarState.thinking ||
-        _isRobotMoving ||
         (_messages.isNotEmpty && _messages.last.text == '__THINKING__');
   }
 
@@ -690,16 +690,44 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Future<void> _emergencyStop() async {
+    if (_isEStopLatched) {
+      // Clear latch
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/clear-emergency-stop'),
+          headers: {'Content-Type': 'application/json'},
+        );
+        if (response.statusCode == 200) {
+          if (mounted) {
+            setState(() {
+              _isEStopLatched = false;
+              _isRobotMoving = false;
+            });
+          }
+          _addUiLog('[HTTP] clear-emergency-stop triggered successfully');
+        }
+      } catch (e) {
+        debugPrint('Failed to clear emergency stop: $e');
+      }
+      return;
+    }
+    
     // Notify the backend immediately to halt robot hardware
     try {
-      http.post(
+      final response = await http.post(
         Uri.parse('$baseUrl/emergency-stop'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({}),
-      ).catchError((e) {
-        debugPrint('Failed to send emergency stop request: $e');
-        return http.Response('Failed', 500);
-      });
+      );
+      if (response.statusCode == 200) {
+        if (mounted) {
+          setState(() {
+            _isEStopLatched = true;
+          });
+        }
+        _addUiLog('[HTTP] emergency-stop triggered successfully');
+      } else {
+        debugPrint('Failed to send emergency stop request: ${response.statusCode}');
+      }
     } catch (e) {
       debugPrint('Failed to initialize emergency stop HTTP: $e');
     }
