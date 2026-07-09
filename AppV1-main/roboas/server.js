@@ -1352,6 +1352,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             description: "Clear the return home latch. Required before the robot can accept new pick/place commands after a return home.",
             parameters: { type: "object", properties: {} }
           }
+        },
         {
           type: "function",
           function: {
@@ -1972,8 +1973,8 @@ app.get('/debug-stream', (req, res) => {
     type: 'init', 
     data: { systemLogs, toolCallLog, currentPersona, queue: robotTaskQueue, isRobotBusy, mcpStatus: {
       emoji: isEmojiConnected ? 'Online' : 'Offline',
-      vision: visionMcpStatus === 'connected' ? 'Online' : 'Offline',
-      robot: robotMcpStatus === 'connected' ? 'Online' : 'Offline'
+      vision: isVisionConnected ? 'Online' : 'Offline',
+      robot: isRobotConnected ? 'Online' : 'Offline'
     }} 
   })}\n\n`);
 
