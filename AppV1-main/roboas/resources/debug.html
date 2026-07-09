@@ -798,43 +798,6 @@
         }
     </script>
     
-    <!-- Floating Control Panel Toggle Button -->
-    <button class="panel-btn-toggle" id="toggle-panel-btn" title="Toggle Debug Panel">🔧</button>
 
-    <!-- Collapsible Control Panel -->
-    <div class="debug-control-panel" id="debug-panel">
-        <div class="panel-header">
-            <span>Interactive Controls</span>
-            <button class="debug-btn" style="padding: 2px 6px; font-size: 0.75rem;" onclick="togglePanel(false)">✕</button>
-        </div>
-        <div class="panel-body">
-            <div class="debug-form-group">
-                <label>Quick Actions</label>
-                <div style="display: flex; gap: 8px;">
-                    <button class="debug-btn" style="flex: 1;" onclick="triggerPersona('john')">John 👨</button>
-                    <button class="debug-btn" style="flex: 1;" onclick="triggerPersona('linda')">Linda 👩</button>
-                </div>
-                <button class="debug-btn" style="margin-top: 8px; border-color: rgba(255, 68, 68, 0.4);" onclick="clearLogs()">Clear Tool Logs 🗑️</button>
-            </div>
-            
-            <hr style="border: 0; border-top: 1px solid var(--glass-border);">
-            
-            <div class="debug-form-group">
-                <label>Mock Tool Trigger</label>
-                <select class="debug-select" id="mock-tool-select" onchange="updateMockArgsPlaceholder()">
-                    <option value="locate_object">locate_object</option>
-                    <option value="pick_and_place_object">pick_and_place_object</option>
-                    <option value="relocate_object">relocate_object</option>
-                </select>
-            </div>
-            
-            <div class="debug-form-group">
-                <label>Arguments (JSON)</label>
-                <textarea class="debug-textarea" id="mock-args-input" rows="4"></textarea>
-            </div>
-            
-            <button class="debug-btn" style="background: linear-gradient(135deg, var(--accent), var(--purple)); border: none; color: white;" onclick="submitMockTool()">Execute Mock Call ⚡</button>
-        </div>
-    </div>
 </body>
 </html>
