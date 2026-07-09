@@ -258,7 +258,7 @@
         /* --- Footer Info --- */
         .analytics {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1.2fr 1fr;
             gap: 15px;
         }
 
@@ -468,96 +468,224 @@
             </div>
         </aside>
 
-        <main class="main-feed">
-            <div class="feed-header">
-                <h3 style="font-size: 1rem; color: var(--text-main); opacity: 0.7;">MCP TOOL FEED</h3>
-                <span id="update-ts" style="font-size: 0.7rem; color: var(--text-dim);">LAST UPDATE: JUST NOW</span>
+        <main class="main-feed" style="display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 20px;">
+            <div style="display: flex; flex-direction: column; height: 100%; max-height: calc(100vh - 120px);">
+                <div class="feed-header">
+                    <h3 style="font-size: 1rem; color: var(--text-main); opacity: 0.7;">MCP TOOL FEED</h3>
+                    <span id="update-ts" style="font-size: 0.7rem; color: var(--text-dim);">LAST UPDATE: JUST NOW</span>
+                </div>
+                <div class="feed-content" id="log-feed" style="flex: 1; overflow-y: auto;">
+                    <div style="padding: 40px; text-align: center; color: var(--text-dim);">Initializing data stream...</div>
+                </div>
             </div>
-            <div class="feed-content" id="log-feed">
-                <!-- Logs will be injected here -->
-                <div style="padding: 40px; text-align: center; color: var(--text-dim);">Initializing data stream...</div>
+            
+
+            <!-- TASK QUEUE PANEL -->
+            <div style="display: flex; flex-direction: column; height: 100%; max-height: calc(100vh - 120px);">
+                <div class="feed-header" style="background: rgba(0, 242, 255, 0.1); border-color: rgba(0, 242, 255, 0.2); display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="font-size: 1rem; color: var(--accent); opacity: 0.9;">ROBOT TASK QUEUE</h3>
+                    <div>
+                        <button onclick="clearQueue()" style="background: rgba(255, 50, 50, 0.2); border: 1px solid rgba(255,50,50,0.5); color: #fff; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.7rem;">Clear All</button>
+                    </div>
+                </div>
+                
+                <div style="background: rgba(0,0,0,0.4); padding: 10px; border-bottom: 1px solid var(--glass-border); display:flex; gap:10px;">
+                    <select id="manualTaskName" class="debug-select" style="width: auto;">
+                        <option value="locate_object">Locate Object</option>
+                        <option value="pick_and_place_object">Pick & Place</option>
+                        <option value="relocate_object">Relocate Object</option>
+                        <option value="return_home">Return Home</option>
+                        <option value="clear_emergency_stop">Clear E-Stop</option>
+                    </select>
+                    <input type="text" id="manualTaskTarget" class="debug-select" placeholder="Target Name" style="flex:1;">
+                    <button onclick="addManualTask()" class="debug-btn">Add Task</button>
+                </div>
+
+                <div class="feed-content" id="queue-feed" style="flex: 1; overflow-y: auto; padding: 15px; background: rgba(0,0,0,0.4);">
+                    <div style="padding: 40px; text-align: center; color: var(--text-dim);">Queue is empty</div>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; height: 100%; max-height: calc(100vh - 120px);">
+                <div class="feed-header" style="background: rgba(112, 0, 255, 0.1); border-color: rgba(112, 0, 255, 0.2);">
+                    <h3 style="font-size: 1rem; color: var(--text-main); opacity: 0.7;">CONSOLE LOGS</h3>
+                </div>
+                <div class="feed-content" id="console-feed" style="flex: 1; overflow-y: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; padding: 15px; background: rgba(0,0,0,0.4);">
+                    <div style="padding: 40px; text-align: center; color: var(--text-dim);">Waiting for console output...</div>
+                </div>
             </div>
         </main>
     </div>
 
     <script>
-        let lastLogSize = -1;
 
-        async function fetchLogs() {
-            try {
-                const response = await fetch('/tool-log');
-                const data = await response.json();
-                
-                if (data.success) {
-                    updateUI(data);
+                async function clearQueue() {
+                    await fetch('/queue-clear', { method: 'POST' });
                 }
-            } catch (err) {
-                console.error("HUD Sync Error:", err);
+                async function deleteQueueTask(id) {
+                    await fetch('/queue-delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id })
+                    });
+                }
+                async function addManualTask() {
+                    const name = document.getElementById('manualTaskName').value;
+                    const target = document.getElementById('manualTaskTarget').value;
+                    const task = { name, args: {}, question: "Manual UI injection" };
+                    if (name === "locate_object") task.args.target_name = target;
+                    if (name === "pick_and_place_object") task.args.object_name = target;
+                    if (name === "relocate_object") task.args.obstacle_name = target;
+                    
+                    await fetch('/queue-add', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ task })
+                    });
+                    document.getElementById('manualTaskTarget').value = '';
+                }
+                
+                function renderQueue(queue, isBusy) {
+                    const feed = document.getElementById('queue-feed');
+                    if (!queue || queue.length === 0) {
+                        feed.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-dim);">Queue is empty. Waiting for tasks...</div>';
+                        return;
+                    }
+                    
+                    feed.innerHTML = queue.map((task, idx) => `
+                        <div class="log-entry" style="position: relative; border-left: 3px solid ${idx === 0 && isBusy ? '#00ff88' : 'var(--accent)'}; background: ${idx === 0 && isBusy ? 'rgba(0, 255, 136, 0.05)' : 'rgba(255,255,255,0.02)'}">
+                            <div class="log-meta">
+                                <span class="log-tool" style="color: ${idx === 0 && isBusy ? '#00ff88' : 'var(--accent)'}">${task.name.toUpperCase()}</span>
+                                <span style="background: rgba(255,0,0,0.2); border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: white;" onclick="deleteQueueTask('${task.id}')">×</span>
+                            </div>
+                            <div class="log-details" style="grid-template-columns: 50px 1fr;">
+                                <div class="label">Args:</div>
+                                <div class="value">${JSON.stringify(task.args)}</div>
+                                <div class="label">Status:</div>
+                                <div class="value" style="color: ${idx === 0 && isBusy ? '#00ff88' : '#888'}">${idx === 0 && isBusy ? 'EXECUTING NOW...' : 'PENDING'}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+        // State
+        let toolLogs = [];
+        let systemLogs = [];
+
+        function renderToolLogs() {
+            const feed = document.getElementById('log-feed');
+            if (toolLogs.length === 0) {
+                feed.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-dim);">No tool logs yet.</div>';
+                return;
             }
+            
+            const logs = [...toolLogs].reverse();
+            feed.innerHTML = logs.map(log => `
+                <div class="log-entry">
+                    <div class="log-meta">
+                        <span class="log-tool">${log.toolName.toUpperCase()}</span>
+                        <span>${new Date(log.timestamp).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true })}</span>
+                    </div>
+                    <div class="log-question">"${log.userQuestion}"</div>
+                    <div class="log-details">
+                        <div class="label">Args:</div>
+                        <div class="value">${JSON.stringify(log.args)}</div>
+                        <div class="label">Status:</div>
+                        <div class="value result">${log.result}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderConsoleLogs() {
+            const feed = document.getElementById('console-feed');
+            if (systemLogs.length === 0) {
+                feed.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-dim);">No console logs yet.</div>';
+                return;
+            }
+            
+            feed.innerHTML = systemLogs.map(log => {
+                let color = '#ccc';
+                if (log.level === 'error') color = '#ff4444';
+                if (log.level === 'warn') color = '#ffbb33';
+                const ts = new Date(log.timestamp).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true });
+                return `<div style="margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">
+                    <span style="color: #666;">[${ts}]</span> 
+                    <span style="color: ${color};">${log.message}</span>
+                </div>`;
+            }).join('');
+            
+            // Auto-scroll console to bottom
+            feed.scrollTop = feed.scrollHeight;
         }
 
         function updateUI(data) {
-            // Update Persona
-            const nameEl = document.getElementById('persona-name');
-            const iconEl = document.getElementById('persona-icon');
-            const container = document.getElementById('persona-container');
+            if (data.currentPersona) {
+                const nameEl = document.getElementById('persona-name');
+                const iconEl = document.getElementById('persona-icon');
+                const container = document.getElementById('persona-container');
 
-            nameEl.innerText = data.currentPersona;
-            iconEl.innerText = data.currentPersona === 'linda' ? '👩' : '👨';
-            
-            if (data.currentPersona === 'linda') {
-                container.classList.add('persona-linda');
-                iconEl.style.borderColor = '#7000ff';
-                iconEl.style.boxShadow = '0 0 20px rgba(112, 0, 255, 0.3)';
-            } else {
-                container.classList.remove('persona-linda');
-                iconEl.style.borderColor = '#00f2ff';
-                iconEl.style.boxShadow = '0 0 20px rgba(0, 242, 255, 0.3)';
+                nameEl.innerText = data.currentPersona;
+                iconEl.innerText = data.currentPersona === 'linda' ? '👩' : '👨';
+                
+                if (data.currentPersona === 'linda') {
+                    container.classList.add('persona-linda');
+                    iconEl.style.borderColor = '#7000ff';
+                    iconEl.style.boxShadow = '0 0 20px rgba(112, 0, 255, 0.3)';
+                } else {
+                    container.classList.remove('persona-linda');
+                    iconEl.style.borderColor = '#00f2ff';
+                    iconEl.style.boxShadow = '0 0 20px rgba(0, 242, 255, 0.3)';
+                }
             }
 
-            // Update Connection Badges
             if (data.mcpStatus) {
-                updateBadge('status-emoji', data.mcpStatus.emoji);
-                updateBadge('status-vision', data.mcpStatus.vision);
-                updateBadge('status-robot', data.mcpStatus.robot);
-            }
-
-            // Update Metrics
-            document.getElementById('total-calls').innerText = data.totalCalls;
-            const now = new Date();
-            const sgTime = now.toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true });
-            document.getElementById('update-ts').innerText = `LAST UPDATE (SGT): ${sgTime}`;
-
-            // Update Feed if size changed
-            if (data.log.length !== lastLogSize) {
-                const feed = document.getElementById('log-feed');
-                
-                // Get most recent at top
-                const logs = [...data.log].reverse();
-                
-                feed.innerHTML = logs.map(log => `
-                    <div class="log-entry">
-                        <div class="log-meta">
-                            <span class="log-tool">${log.toolName.toUpperCase()}</span>
-                            <span>${new Date(log.timestamp).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true })}</span>
-                        </div>
-                        <div class="log-question">"${log.userQuestion}"</div>
-                        <div class="log-details">
-                            <div class="label">Args:</div>
-                            <div class="value">${JSON.stringify(log.args)}</div>
-                            <div class="label">Status:</div>
-                            <div class="value result">${log.result}</div>
-                        </div>
-                    </div>
-                `).join('');
-
-                lastLogSize = data.log.length;
+                updateBadge('status-emoji', data.mcpStatus.emoji === 'Online');
+                updateBadge('status-vision', data.mcpStatus.vision === 'Online');
+                updateBadge('status-robot', data.mcpStatus.robot === 'Online');
             }
         }
 
-        // Start Polling
-        fetchLogs();
-        setInterval(fetchLogs, 2000);
+        function setupSSE() {
+            const evtSource = new EventSource('/debug-stream');
+            
+            evtSource.onmessage = function(event) {
+                try {
+                    const parsed = JSON.parse(event.data);
+                    
+                    if (parsed.type === 'init') {
+                        toolLogs = parsed.data.toolCallLog || [];
+                        systemLogs = parsed.data.systemLogs || [];
+                        renderToolLogs();
+                        renderConsoleLogs();
+                        updateUI(parsed.data);
+                    } else if (parsed.type === 'tool') {
+                        toolLogs.push(parsed.data);
+                        if (toolLogs.length > 50) toolLogs.shift();
+                        renderToolLogs();
+                    } else if (parsed.type === 'queue') {
+                        renderQueue(parsed.data.queue, parsed.data.isRobotBusy);
+                    } else if (parsed.type === 'console') {
+                        systemLogs.push(parsed.data);
+                        if (systemLogs.length > 500) systemLogs.shift();
+                        renderConsoleLogs();
+                    }
+                    
+                    document.getElementById('total-calls').innerText = toolLogs.length;
+                    const now = new Date();
+                    document.getElementById('update-ts').innerText = 'LAST UPDATE (SGT): ' + now.toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true });
+                } catch (e) {
+                    console.error("Error parsing SSE data", e);
+                }
+            };
+            
+            evtSource.onerror = function(err) {
+                console.error("EventSource failed.", err);
+            };
+        }
+
+        // Initialize
+        setupSSE();
 
         // --- Debug Control Panel Code ---
         const debugPanel = document.getElementById('debug-panel');

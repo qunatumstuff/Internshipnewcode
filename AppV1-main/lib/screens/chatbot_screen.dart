@@ -46,6 +46,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   // ── Audio ──
   final _audioRecorder = AudioRecorder();
   html.AudioElement? _audioElement;
+  wa.AudioContext? _waContext;
+  wa.AudioBufferSourceNode? _waSourceNode;
   bool _isTtsInProgress = false;
   bool _isCcEnabled = true;
   String? _currentSubtitleText;
@@ -480,48 +482,43 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _remoteLog('🔊 [_speak] /tts response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        final contentType =
-            response.headers['content-type'] ?? 'audio/aac';
-        final blob = html.Blob([response.bodyBytes], contentType);
-        final blobUrl = html.Url.createObjectUrlFromBlob(blob);
+        _waContext ??= wa.AudioContext();
+        if (_waContext!.state == 'suspended') {
+          await _waContext!.resume();
+        }
 
-        final audio = html.AudioElement(blobUrl);
-        _audioElement = audio;
+        try {
+          final audioBuffer = await _waContext!.decodeAudioData(response.bodyBytes.buffer);
+          final source = _waContext!.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connectNode(_waContext!.destination!);
+          _waSourceNode = source;
 
-        audio.onEnded.listen((_) async {
-          if (_audioElement != audio) return; // Ignore events from old audio sessions
-          html.Url.revokeObjectUrl(blobUrl);
-          _stopManualWebStream();
-          
-          _addUiLog('[TTS] Audio playback ended. Starting 2-second cooldown...');
-          // Wait 2 seconds before unmuting the wake word engine to let speaker echo and ONNX model scores settle
-          await Future.delayed(const Duration(seconds: 2));
-          if (_audioElement != audio) return;
+          source.onEnded.listen((_) async {
+            if (_waSourceNode != source) return;
+            _stopManualWebStream();
+            
+            _addUiLog('[TTS] Audio playback ended. Starting 2-second cooldown...');
+            await Future.delayed(const Duration(seconds: 2));
+            if (_waSourceNode != source) return;
 
-          _addUiLog('[OWW] Cooldown finished. Unmuting wake word engine.');
-          _setWakeWordMute(false); // Re-enable wake word / restart engine
-          if (mounted) {
-            setState(() {
-              _isTtsInProgress = false;
-              _currentSubtitleText = null;
-            });
-          }
-          await _setAvatarState(AvatarState.idle);
+            _addUiLog('[OWW] Cooldown finished. Unmuting wake word engine.');
+            _setWakeWordMute(false); // Re-enable wake word / restart engine
+            if (mounted) {
+              setState(() {
+                _isTtsInProgress = false;
+                _currentSubtitleText = null;
+              });
+            }
+            await _setAvatarState(AvatarState.idle);
 
-          if (_isWakewordModeEnabled) {
-            js.context.callMethod('startWakeWordListening');
-          }
-        });
+            if (_isWakewordModeEnabled) {
+              js.context.callMethod('startWakeWordListening');
+            }
+          });
 
-        audio.onError.listen((_) {
-          if (_audioElement != audio) return; // Ignore events from old audio sessions
-          html.Url.revokeObjectUrl(blobUrl);
-          debugPrint('⚠️ Audio playback encountered an error event. Falling back to Native TTS...');
-          _speakNative(text);
-        });
+          source.start(0);
 
-        audio.play().then((_) {
-          // The browser may auto-pause our muted videos when this new audio starts playing.
           // Force all active persona videos to play immediately!
           if (mounted) {
             final states = [AvatarState.idle, AvatarState.thinking, AvatarState.talking];
@@ -533,11 +530,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               }
             }
           }
-        }).catchError((playError) {
-          if (_audioElement != audio) return;
-          debugPrint('🔇 Autoplay warning caught or audio play failed: $playError. Falling back to Native TTS...');
+        } catch (e) {
+          debugPrint('⚠️ Web Audio decoding error: $e. Falling back to Native TTS...');
           _speakNative(text);
-        });
+        }
       } else {
         debugPrint('⚠️ Server TTS returned status ${response.statusCode}, falling back to Native TTS...');
         _speakNative(text);
@@ -1278,24 +1274,22 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        final contentType = response.headers['content-type'] ?? 'audio/aac';
-        final blob = html.Blob([response.bodyBytes], contentType);
-        final blobUrl = html.Url.createObjectUrlFromBlob(blob);
-
-        final audio = html.AudioElement(blobUrl);
+        _waContext ??= wa.AudioContext();
+        if (_waContext!.state == 'suspended') {
+          await _waContext!.resume();
+        }
+        
+        final audioBuffer = await _waContext!.decodeAudioData(response.bodyBytes.buffer);
+        final source = _waContext!.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connectNode(_waContext!.destination!);
+        
         final completer = Completer<void>();
-
-        audio.onEnded.listen((_) {
-          html.Url.revokeObjectUrl(blobUrl);
+        source.onEnded.listen((_) {
           if (!completer.isCompleted) completer.complete();
         });
-
-        audio.onError.listen((_) {
-          html.Url.revokeObjectUrl(blobUrl);
-          if (!completer.isCompleted) completer.complete();
-        });
-
-        await audio.play();
+        
+        source.start(0);
         await completer.future;
       }
     } catch (e) {

@@ -39,6 +39,46 @@ try {
   console.error('Failed to load tool log from disk:', e.message);
 }
 
+// === Unified Debug Logging ===
+let systemLogs = [];
+let robotTaskQueue = [];
+let isRobotBusy = false;
+let globalQueueUpdateTrigger = null; // Callback for SSE updates
+const activeDebugConnections = [];
+
+function broadcastDebugEvent(type, data) {
+  const payload = JSON.stringify({ type, data }) + '\n\n';
+  activeDebugConnections.forEach(res => {
+    try { res.write(`data: ${payload}`); } catch (e) {}
+  });
+}
+
+// Override console methods to capture them
+const rawConsoleLog = console.log;
+const rawConsoleError = console.error;
+const rawConsoleWarn = console.warn;
+
+function captureLog(level, args) {
+  const message = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+  const entry = { timestamp: new Date().toISOString(), level, message };
+  systemLogs.push(entry);
+  if (systemLogs.length > 500) systemLogs.shift();
+  broadcastDebugEvent('console', entry);
+}
+
+console.log = function(...args) {
+  rawConsoleLog.apply(console, args);
+  captureLog('info', args);
+};
+console.error = function(...args) {
+  rawConsoleError.apply(console, args);
+  captureLog('error', args);
+};
+console.warn = function(...args) {
+  rawConsoleWarn.apply(console, args);
+  captureLog('warn', args);
+};
+
 function logToolCall(userQuestion, toolName, args, result) {
   const entry = {
     timestamp: new Date().toISOString(),
@@ -50,18 +90,20 @@ function logToolCall(userQuestion, toolName, args, result) {
   toolCallLog.push(entry);
   if (toolCallLog.length > 50) toolCallLog.shift(); // Keep last 50 entries
   
+  broadcastDebugEvent('tool', entry);
+  
   // High-Visibility Colorized Terminal Output
   const cyan = "\x1b[36m";
   const green = "\x1b[32m";
   const yellow = "\x1b[33m";
   const reset = "\x1b[0m";
 
-  console.log("\n" + "=".repeat(50));
-  console.log(`🤖 ${cyan}[MCP TOOL TRIGGERED]: ${toolName.toUpperCase()}${reset}`);
-  console.log(`❓ User Asked: "${userQuestion}"`);
-  console.log(`📦 Arguments:  ${yellow}${JSON.stringify(args)}${reset}`);
-  console.log(`✅ Result:     ${green}${result}${reset}`);
-  console.log("=".repeat(50) + "\n");
+  rawConsoleLog("\n" + "=".repeat(50));
+  rawConsoleLog(`🤖 ${cyan}[MCP TOOL TRIGGERED]: ${toolName.toUpperCase()}${reset}`);
+  rawConsoleLog(`❓ User Asked: "${userQuestion}"`);
+  rawConsoleLog(`📦 Arguments:  ${yellow}${JSON.stringify(args)}${reset}`);
+  rawConsoleLog(`✅ Result:     ${green}${result}${reset}`);
+  rawConsoleLog("=".repeat(50) + "\n");
 
   // Write to disk so Claude Desktop MCP server can read it
   try {
@@ -513,7 +555,149 @@ app.post('/robot-event', (req, res) => {
   res.json({ success: true });
 });
 
+// === Robot Task Queue Processor ===
+async function processRobotQueue() {
+  if (isRobotBusy || robotTaskQueue.length === 0) return;
+  isRobotBusy = true;
+  broadcastQueueUpdate();
+
+  const task = robotTaskQueue[0];
+  const { name, args, question } = task;
+  
+  try {
+    if (name === "locate_object" || name === "pick_and_place_object") {
+      // Step 1: Vision Scan
+      sendProgress(`Initiating workspace scan for "${args.target_name}"...`, true);
+      if (!visionMcpClient) await startVisionMcpClient();
+      
+      if (robotMcpClient) {
+        console.log("🏠 Sending arm home before camera snapshot...");
+        sendProgress("Moving arm to home position for a clear camera view...", true);
+        const homeRes = await robotMcpClient.callTool({ name: "return_home", arguments: {} });
+        if (homeRes.content && homeRes.content[0].text.toLowerCase().startsWith("error")) throw new Error(homeRes.content[0].text);
+        await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      
+      const scanRes = await visionMcpClient.callTool({ name: "locate_object", arguments: { target_name: args.target_name } }, undefined, { timeout: 900000 });
+      const parsed = JSON.parse(scanRes.content[0].text);
+      if (parsed.status !== "SUCCESS") throw new Error(parsed.message || "Obstacle blockage");
+      
+      if (parsed.snapshot_b64) sendSnapshot(parsed.snapshot_b64, parsed.target || args.target_name);
+      sendProgress(`Target "${args.target_name}" clear! Instructing robot to pick it up...`, true);
+      
+      if (robotMcpClient) {
+        const robotArgs = { object_name: parsed.target, x: parsed.coordinates.x, y: parsed.coordinates.y, z: parsed.coordinates.z, angle_deg: parsed.coordinates.angle_deg, detections: parsed.detections };
+        if (parsed.coordinates.grasp_label) robotArgs.grasp_label = parsed.coordinates.grasp_label;
+        
+        const completionPromise = waitForRobotEvent(900000);
+        const toolPromise = robotMcpClient.callTool({ name: "pick_and_place_object", arguments: robotArgs }, undefined, { timeout: 900000 });
+        await Promise.all([completionPromise, toolPromise]);
+        
+        sendProgress(`Successfully picked up the ${args.target_name}!`, true);
+        setTimeout(async () => {
+          sendProgress(null, false, `I have finished picking and placing the requested object, ${args.target_name}.`);
+          await sendWakewordCommand('unmute');
+        }, 3000);
+      }
+    } 
+    else if (name === "relocate_object") {
+      sendProgress(`Relocating obstacle "${args.obstacle_name}"...`, true);
+      if (robotMcpClient) {
+        const completionPromise = waitForRobotEvent(900000);
+        const toolPromise = robotMcpClient.callTool({ name: "relocate_object", arguments: args }, undefined, { timeout: 900000 });
+        await Promise.all([completionPromise, toolPromise]);
+        
+        sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`, true);
+        setTimeout(async () => {
+          sendProgress(null, false, `I have relocated the object ${args.obstacle_name}.`);
+          await sendWakewordCommand('unmute');
+        }, 3000);
+      }
+    }
+    else if (name === "clear_emergency_stop") {
+      sendProgress("Clearing emergency stop...");
+      if (robotMcpClient) await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: args });
+      sendProgress("Emergency stop cleared successfully.");
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    else if (name === "clear_return_home") {
+      sendProgress("Clearing home lock...");
+      if (robotMcpClient) await robotMcpClient.callTool({ name: "clear_return_home", arguments: args });
+      sendProgress("Home lock cleared successfully.");
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    else if (name === "return_home") {
+      sendProgress("Stopping robot and returning home...");
+      if (robotMcpClient) {
+        // E-stop instantly
+        await robotMcpClient.callTool({ name: "emergency_stop", arguments: {} });
+        await new Promise(r => setTimeout(r, 500));
+        // Clear latch
+        await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: {} });
+        // Go home
+        await robotMcpClient.callTool({ name: "return_home", arguments: {} });
+        
+        sendProgress("Arm has been returned to home.", true);
+        setTimeout(async () => {
+          sendProgress(null, false, "Arm has been returned to home.");
+          await sendWakewordCommand('unmute');
+        }, 3000);
+      }
+    }
+  } catch (err) {
+    console.error(`❌ Task Queue Failed: ${err.message}`);
+    sendProgress(`Robot Task Failed: ${err.message}`, false);
+    robotTaskQueue = []; // Abort queue
+    setTimeout(async () => {
+      sendProgress(null, false);
+      await sendWakewordCommand('unmute');
+    }, 5000);
+  } finally {
+    if (robotTaskQueue.length > 0 && robotTaskQueue[0].id === task.id) {
+      robotTaskQueue.shift();
+    }
+    isRobotBusy = false;
+    broadcastQueueUpdate();
+    setTimeout(processRobotQueue, 500); // Check for next task
+  }
+}
+
+function broadcastQueueUpdate() {
+  broadcastDebugEvent('queue', { queue: robotTaskQueue, isRobotBusy });
+}
+
 // === Endpoints ===
+
+// Queue API
+app.get('/queue-status', (req, res) => {
+  res.json({ queue: robotTaskQueue, isRobotBusy });
+});
+
+app.post('/queue-clear', (req, res) => {
+  robotTaskQueue = [];
+  broadcastQueueUpdate();
+  res.json({ success: true, message: 'Queue cleared' });
+});
+
+app.post('/queue-delete', express.json(), (req, res) => {
+  const id = req.body.id;
+  robotTaskQueue = robotTaskQueue.filter(t => t.id !== id);
+  broadcastQueueUpdate();
+  res.json({ success: true });
+});
+
+app.post('/queue-add', express.json(), (req, res) => {
+  const task = req.body.task;
+  task.id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+  task.status = "pending";
+  robotTaskQueue.push(task);
+  broadcastQueueUpdate();
+  if (!isRobotBusy) {
+    processRobotQueue();
+  }
+  res.json({ success: true });
+});
 
 // Progress Status SSE Channel
 let progressClients = [];
@@ -1168,6 +1352,13 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             description: "Clear the return home latch. Required before the robot can accept new pick/place commands after a return home.",
             parameters: { type: "object", properties: {} }
           }
+        {
+          type: "function",
+          function: {
+            name: "return_home",
+            description: "Return the robot arm to its safe home position.",
+            parameters: { type: "object", properties: {} }
+          }
         }
       ],
       tool_choice: "auto",
@@ -1226,160 +1417,35 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           logToolCall(question, toolCall.name, args, `switched to ${args.persona}`);
           toolResultText = `Switched to ${currentPersona}. Now greeting the user warmly as ${currentPersona === 'linda' ? 'Linda' : 'John'}.`;
         } 
-        else if (toolCall.name === "locate_object") {
-          hasRobotMovement = true;
-          logToolCall(question, "locate_object", args, "Orchestrating autonomous scan & pick in background...");
-          sendProgress(`Initiating workspace scan for "${args.target_name}"...`, true);
+        else if (["locate_object", "relocate_object", "clear_emergency_stop", "clear_return_home", "return_home"].includes(toolCall.name)) {
+          logToolCall(question, toolCall.name, args, "Pushed task to Robot Queue");
           
-          // Auto-reconnect Vision MCP if connection dropped
-          if (!visionMcpClient) {
-            console.log("🔌 Vision MCP not connected — attempting immediate reconnect...");
-            await startVisionMcpClient();
-          }
-
-          // ── STEP 0: Return arm to home so camera has a clear view ──
-          if (robotMcpClient) {
-            try {
-              console.log("🏠 [locate_object] Sending arm home before camera snapshot...");
-              sendProgress("Moving arm to home position for a clear camera view...", true);
-              const result = await robotMcpClient.callTool({ name: "return_home", arguments: {} });
-              if (result.content && result.content[0].text.toLowerCase().startsWith("error")) {
-                throw new Error(result.content[0].text);
-              }
-              // Clear the latch immediately for autonomous flows so it can continue to pick
-              await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
-              console.log("🏠 [locate_object] Arm is home. Proceeding to vision scan.");
-              // Brief pause to let the arm fully settle before snapshot
-              await new Promise(r => setTimeout(r, 1000));
-            } catch (homeErr) {
-              console.error("⚠️ [locate_object] return_home failed:", homeErr.message);
-              sendProgress(`Scan stopped: Emergency stop is active.`, false);
-              
-              // Only set answerText, don't send TTS via sendProgress to prevent double-speak
-              answerText = "I cannot move the robot arm because the emergency stop is active. Please clear it first.";
-              skipSecondCompletion = true;
-              
-              setTimeout(async () => {
-                sendProgress(null, false);
-                await sendWakewordCommand('unmute');
-              }, 1000);
-              continue; // Abort this tool call
-            }
-          }
-
-          if (visionMcpClient) {
-            // Helper: call locate_object, retrying without user_context if remote schema rejects it
-            const callLocateObject = async () => {
-              try {
-                return await visionMcpClient.callTool({ 
-                  name: "locate_object", 
-                  arguments: { target_name: args.target_name, user_context: question } 
-                }, undefined, { timeout: 900000 });
-              } catch (firstErr) {
-                // If the remote MCP rejects user_context (schema mismatch), retry without it
-                if (firstErr.message && firstErr.message.includes("Invalid")) {
-                  console.log("⚠️ Vision MCP rejected user_context — retrying without it...");
-                  return await visionMcpClient.callTool({ 
-                    name: "locate_object", 
-                    arguments: { target_name: args.target_name } 
-                  }, undefined, { timeout: 900000 });
-                }
-                throw firstErr;
-              }
-            };
-
-            // Fire-and-forget background pipeline
-            callLocateObject()
-            .then(async res => {
-              const rawText = res.content[0].text;
-              let parsed;
-              try {
-                parsed = JSON.parse(rawText);
-              } catch (jsonErr) {
-                // If the response isn't JSON, it's likely an error message from the MCP SDK
-                throw new Error(rawText.substring(0, 300));
-              }
-              logToolCall(question, "locate_object", args, parsed.status === "SUCCESS" ? "Target located" : "Scan failed");
-              
-              if (parsed.status === "SUCCESS") {
-                // Send zoomed-in snapshot of the detected target to the frontend
-                if (parsed.snapshot_b64) {
-                  sendSnapshot(parsed.snapshot_b64, parsed.target || args.target_name);
-                }
-                sendProgress(`Target "${args.target_name}" clear! Instructing robot to pick it up...`, true);
-                if (robotMcpClient) {
-                  try {
-                    const robotArgs = {
-                      object_name: parsed.target,
-                      x: parsed.coordinates.x,
-                      y: parsed.coordinates.y,
-                      z: parsed.coordinates.z,
-                      angle_deg: parsed.coordinates.angle_deg,
-                      detections: parsed.detections
-                    };
-                    if (parsed.coordinates.grasp_label) {
-                      robotArgs.grasp_label = parsed.coordinates.grasp_label;
-                    }
-                    
-                    const completionPromise = waitForRobotEvent(900000);
-                    const toolPromise = robotMcpClient.callTool({
-                      name: "pick_and_place_object",
-                      arguments: robotArgs
-                    }, undefined, { timeout: 900000 }).then(res => {
-                      if (res.content && res.content[0].text.toLowerCase().startsWith("error")) {
-                        throw new Error(res.content[0].text);
-                      }
-                    });
-                    
-                    await Promise.all([completionPromise, toolPromise]);
-                    sendProgress(`Successfully picked up the ${args.target_name}!`, true);
-                    setTimeout(async () => {
-                      sendProgress(null, false, `I have finished picking and placing the requested object, ${args.target_name}.`);
-                      await sendWakewordCommand('unmute');
-                    }, 3000);
-                  } catch (e) {
-                    sendProgress(`Robot pick error: ${e.message}`, false);
-                    setTimeout(async () => {
-                      if (!isExpectedStopError(e.message)) {
-                        sendProgress(null, false, `Sorry, I could not complete the action because: ${e.message}`);
-                      } else {
-                        sendProgress(null, false); // Don't speak expected e-stop errors out loud
-                      }
-                      await sendWakewordCommand('unmute');
-                    }, 5000);
-                  }
-                } else {
-                  sendProgress("Error: Robot MCP is not connected for pickup.", false);
-                  setTimeout(async () => {
-                    sendProgress(null, false);
-                    await sendWakewordCommand('unmute');
-                  }, 5000);
-                }
-              } else {
-                sendProgress(`Scan stopped: ${parsed.message || parsed.reasoning || "Obstacle blockage"}`, false);
-                setTimeout(async () => {
-                  sendProgress(null, false, `Scan stopped. ${parsed.message || parsed.reasoning || "Obstacle blockage"}`);
-                  await sendWakewordCommand('unmute');
-                }, 5000);
-              }
-            }).catch(e => {
-              sendProgress(`Vision MCP Error: ${e.message}`, false);
-              setTimeout(async () => {
-                sendProgress(null, false);
-                await sendWakewordCommand('unmute');
-              }, 5000);
-            });
+          robotTaskQueue.push({
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+            name: toolCall.name,
+            args: args,
+            question: question,
+            status: "pending"
+          });
+          
+          if (toolCall.name === "locate_object") {
             answerText = `I am checking the workspace for the ${args.target_name}. Once the path is clear, I will pick it up for you.`;
-          } else {
-            sendProgress("Error: Vision MCP is not connected.", false);
-            setTimeout(async () => {
-              sendProgress(null, false);
-              await sendWakewordCommand('unmute');
-            }, 5000);
-            answerText = `I'm sorry, my vision system is currently disconnected, so I can't look for the ${args.target_name}.`;
+          } else if (toolCall.name === "relocate_object") {
+            answerText = `I am moving the ${args.obstacle_name} out of the way for you.`;
+          } else if (toolCall.name === "clear_emergency_stop") {
+            answerText = "I am clearing the emergency stop for you.";
+          } else if (toolCall.name === "clear_return_home") {
+            answerText = "I am clearing the home lock for you.";
+          } else if (toolCall.name === "return_home") {
+            answerText = "I am returning the robot arm to its home position.";
           }
-
+          
           skipSecondCompletion = true;
+          
+          if (!isRobotBusy) {
+            processRobotQueue();
+          }
+          broadcastQueueUpdate();
         }
         else if (toolCall.name === "search_web") {
           logToolCall(question, "search_web", args, "Searching web...");
@@ -1390,22 +1456,8 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             toolResultText = `Search Results for '${args.query}':\n\n${topResults || "No results found."}`;
             logToolCall(question, "search_web", args, toolResultText);
           } catch (err) {
-            console.log(`DDG failed, falling back to Wikipedia: ${err.message}`);
-            try {
-              // Fallback to free Wikipedia API
-              const wikiRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(args.query)}&utf8=&format=json`);
-              const wikiData = await wikiRes.json();
-              if (wikiData.query && wikiData.query.search && wikiData.query.search.length > 0) {
-                const topResults = wikiData.query.search.slice(0, 4).map(r => `Title: ${r.title}\nSnippet: ${r.snippet.replace(/<[^>]*>?/gm, '')}`).join('\n\n');
-                toolResultText = `Search Results (Wikipedia) for '${args.query}':\n\n${topResults}`;
-                logToolCall(question, "search_web", args, toolResultText);
-              } else {
-                throw new Error("No Wikipedia results found.");
-              }
-            } catch (wikiErr) {
-              toolResultText = `Search failed: ${err.message}. Wikipedia fallback also failed: ${wikiErr.message}`;
-              logToolCall(question, "search_web", args, `Failed: DDG and Wiki both failed.`);
-            }
+            console.log(`Search failed: ${err.message}`);
+            toolResultText = `Search failed: ${err.message}`;
           }
         }
         else if (toolCall.name === "get_camera_snapshot") {
@@ -1416,26 +1468,15 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               const res = await visionMcpClient.callTool({ name: "get_camera_snapshot", arguments: args });
               toolResultText = res.content[0].text;
               logToolCall(question, "get_camera_snapshot", args, toolResultText);
-              if (args && args.question) {
-                console.log("\n🧠 \x1b[35m[QWEN RAW OUTPUT]:\x1b[0m");
-                console.log(toolResultText);
-                console.log("=".repeat(50) + "\n");
-              }
               sendProgress("Snapshot retrieved successfully.");
               await new Promise(resolve => setTimeout(resolve, 1500));
             } catch (e) {
               toolResultText = `Error calling Vision MCP: ${e.message}`;
               sendProgress(`Error: ${e.message}`);
-              logToolCall(question, "get_camera_snapshot", args, `Failed: ${e.message}`);
-              isVisionConnected = false;
-              visionMcpClient = null;
-              await new Promise(resolve => setTimeout(resolve, 2000));
             }
           } else {
             toolResultText = "Error: Vision MCP is not connected.";
             sendProgress("Error: Remote Vision MCP is not connected.");
-            logToolCall(question, "get_camera_snapshot", args, "Failed: Not Connected");
-            await new Promise(resolve => setTimeout(resolve, 2000));
           }
         }
         else if (toolCall.name === "analyse_surroundings") {
@@ -1446,149 +1487,15 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               const res = await visionMcpClient.callTool({ name: "analyse_surroundings", arguments: args });
               toolResultText = res.content[0].text;
               logToolCall(question, "analyse_surroundings", args, toolResultText);
-              console.log("\n🧠 \x1b[35m[QWEN RAW OUTPUT]:\x1b[0m");
-              console.log(toolResultText);
-              console.log("=".repeat(50) + "\n");
-              sendProgress("Analysis complete.");
+              sendProgress("Surroundings analyzed successfully.");
               await new Promise(resolve => setTimeout(resolve, 1500));
             } catch (e) {
               toolResultText = `Error calling Vision MCP: ${e.message}`;
               sendProgress(`Error: ${e.message}`);
-              logToolCall(question, "analyse_surroundings", args, `Failed: ${e.message}`);
-              isVisionConnected = false;
-              visionMcpClient = null;
-              await new Promise(resolve => setTimeout(resolve, 2000));
             }
           } else {
             toolResultText = "Error: Vision MCP is not connected.";
             sendProgress("Error: Remote Vision MCP is not connected.");
-            logToolCall(question, "analyse_surroundings", args, "Failed: Not Connected");
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        }
-        else if (toolCall.name === "pick_and_place_object") {
-          hasRobotMovement = true;
-          logToolCall(question, "pick_and_place_object", args, "Calling Robot MCP in background...");
-          sendProgress(`Executing pick-and-place for "${args.object_name}"...`, true);
-          
-          if (robotMcpClient) {
-            const completionPromise = waitForRobotEvent(900000);
-            const toolPromise = robotMcpClient.callTool({ name: "pick_and_place_object", arguments: args }, undefined, { timeout: 900000 }).then(res => {
-              if (res.content && res.content[0].text.toLowerCase().startsWith("error")) {
-                throw new Error(res.content[0].text);
-              }
-            });
-            
-            Promise.all([completionPromise, toolPromise]).then(() => {
-                sendProgress(`Pick-and-place completed for "${args.object_name}".`, true);
-                setTimeout(async () => {
-                  sendProgress(null, false, `I have finished picking and placing the requested object, ${args.object_name}.`);
-                  await sendWakewordCommand('unmute');
-                }, 3000);
-              })
-              .catch(e => {
-                sendProgress(`Error: ${e.message}`, false);
-                setTimeout(async () => {
-                  if (!isExpectedStopError(e.message)) {
-                    sendProgress(null, false, `Sorry, the action failed because of an error: ${e.message}`);
-                  } else {
-                    sendProgress(null, false); // Don't speak expected e-stop errors out loud
-                  }
-                  await sendWakewordCommand('unmute');
-                }, 5000);
-              });
-          } else {
-            sendProgress("Error: Robot MCP is not connected.", false);
-            logToolCall(question, "pick_and_place_object", args, "Failed: Not Connected");
-            setTimeout(async () => {
-              sendProgress(null, false);
-              await sendWakewordCommand('unmute');
-            }, 5000);
-          }
-          
-          answerText = `I am picking up the ${args.object_name} right now.`;
-          skipSecondCompletion = true;
-        }
-        else if (toolCall.name === "relocate_object") {
-          hasRobotMovement = true;
-          logToolCall(question, "relocate_object", args, "Calling Robot MCP in background...");
-          sendProgress(`Relocating obstacle "${args.obstacle_name}"...`, true);
-          if (robotMcpClient) {
-            const completionPromise = waitForRobotEvent(900000);
-            const toolPromise = robotMcpClient.callTool({ name: "relocate_object", arguments: args }, undefined, { timeout: 900000 }).then(res => {
-              if (res.content && res.content[0].text.toLowerCase().startsWith("error")) {
-                throw new Error(res.content[0].text);
-              }
-            });
-            
-            Promise.all([completionPromise, toolPromise]).then(() => {
-                sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`, true);
-                setTimeout(async () => {
-                  sendProgress(null, false, `I have relocated the object ${args.obstacle_name}.`);
-                  await sendWakewordCommand('unmute');
-                }, 3000);
-              })
-              .catch(e => {
-                sendProgress(`Error: ${e.message}`, false);
-                setTimeout(async () => {
-                  if (!isExpectedStopError(e.message)) {
-                    sendProgress(null, false, `Sorry, the action failed because of an error: ${e.message}`);
-                  } else {
-                    sendProgress(null, false); // Don't speak expected e-stop errors out loud
-                  }
-                  await sendWakewordCommand('unmute');
-                }, 5000);
-              });
-          } else {
-            sendProgress("Error: Robot MCP is not connected.", false);
-            logToolCall(question, "relocate_object", args, "Failed: Not Connected");
-            setTimeout(async () => {
-              sendProgress(null, false);
-              await sendWakewordCommand('unmute');
-            }, 5000);
-          }
-          
-          answerText = `I am moving the ${args.obstacle_name} out of the way for you.`;
-          skipSecondCompletion = true;
-        }
-        else if (toolCall.name === "clear_emergency_stop") {
-          logToolCall(question, "clear_emergency_stop", args, "Clearing emergency stop latch...");
-          sendProgress("Clearing emergency stop...");
-          if (robotMcpClient) {
-            try {
-              const res = await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: args });
-              toolResultText = res.content[0].text;
-              logToolCall(question, "clear_emergency_stop", args, toolResultText);
-              sendProgress("Emergency stop cleared successfully.");
-              await new Promise(resolve => setTimeout(resolve, 1500));
-            } catch (e) {
-              toolResultText = `Error calling Robot MCP: ${e.message}`;
-              sendProgress(`Error: ${e.message}`);
-              logToolCall(question, "clear_emergency_stop", args, `Failed: ${e.message}`);
-            }
-          } else {
-            toolResultText = "Error: Robot MCP is not connected.";
-            sendProgress("Error: Robot MCP is not connected.");
-          }
-        }
-        else if (toolCall.name === "clear_return_home") {
-          logToolCall(question, "clear_return_home", args, "Clearing return home latch...");
-          sendProgress("Clearing home lock...");
-          if (robotMcpClient) {
-            try {
-              const res = await robotMcpClient.callTool({ name: "clear_return_home", arguments: args });
-              toolResultText = res.content[0].text;
-              logToolCall(question, "clear_return_home", args, toolResultText);
-              sendProgress("Home lock cleared successfully.");
-              await new Promise(resolve => setTimeout(resolve, 1500));
-            } catch (e) {
-              toolResultText = `Error calling Robot MCP: ${e.message}`;
-              sendProgress(`Error: ${e.message}`);
-              logToolCall(question, "clear_return_home", args, `Failed: ${e.message}`);
-            }
-          } else {
-            toolResultText = "Error: Robot MCP is not connected.";
-            sendProgress("Error: Robot MCP is not connected.");
           }
         }
 
@@ -1943,54 +1850,22 @@ app.post('/switch-persona', (req, res) => {
 
 // Emergency Stop Endpoint (from Chatbot UI)
 app.post('/emergency-stop', async (req, res) => {
-  console.log('\n🚨 \x1b[41m\x1b[37m[EMERGENCY STOP]: Received UI signal! Halting Robot Arm...\x1b[0m\n');
+  console.log("🛑 EMERGENCY STOP TRIGGERED VIA UI");
+  robotTaskQueue = []; // Clear queue for safety
+  isRobotBusy = false;
+  broadcastQueueUpdate();
   
-  await sendWakewordCommand('mute');
-  sendProgress("Emergency stop activated. Halting the robot.", true, "Emergency stop activated. Halting the robot.");
-
-  let robotSuccess = false;
-  let robotError = null;
-  let responseText = "";
-
   if (robotMcpClient) {
     try {
-      const result = await robotMcpClient.callTool({
-        name: "emergency_stop",
-        arguments: {}
-      });
-      responseText = result.content[0].text;
-      if (responseText.toLowerCase().startsWith("error")) {
-        throw new Error(responseText);
-      }
-      robotSuccess = true;
-      console.log('⚠️ Robot MCP Emergency Stop Success:', responseText);
+      const result = await robotMcpClient.callTool({ name: "emergency_stop", arguments: {} });
+      sendProgress("Emergency Stop Activated!", false);
+      res.json({ success: true, message: result.content[0].text });
     } catch (err) {
-      robotError = err.message;
-      console.error('❌ Failed to call Robot MCP emergency_stop:', err.message);
+      res.json({ success: false, message: err.message });
     }
   } else {
-    robotError = "Robot MCP is not connected.";
-    console.error('❌ Robot MCP is not connected.');
+    res.json({ success: false, message: "Robot MCP not connected." });
   }
-
-  // Log the emergency stop event
-  logToolCall("System Emergency Button", "emergency_stop", {}, robotSuccess ? "Robot halted" : `Failed: ${robotError}`);
-
-  if (!robotSuccess) {
-    sendProgress(`Failed to stop robot: ${robotError}`, false, `Failed to stop robot. ${robotError}`);
-  } else {
-    sendProgress("Emergency stop completed successfully.", true);
-  }
-  setTimeout(async () => {
-    sendProgress(null, false);
-    await sendWakewordCommand('unmute');
-  }, 3500);
-
-  res.json({
-    success: robotSuccess,
-    message: robotSuccess ? "Emergency stop sent successfully." : `Failed to stop robot: ${robotError}`,
-    detail: responseText || robotError
-  });
 });
 
 // Return Home Endpoint (from Chatbot UI)
@@ -2085,6 +1960,30 @@ app.get('/debug', (req, res) => {
   res.sendFile(path.join(__dirname, 'resources', 'debug.html'));
 });
 
+// SSE endpoint for unified debug logs
+app.get('/debug-stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  // Send initial data state
+  res.write(`data: ${JSON.stringify({ 
+    type: 'init', 
+    data: { systemLogs, toolCallLog, currentPersona, queue: robotTaskQueue, isRobotBusy, mcpStatus: {
+      emoji: isEmojiConnected ? 'Online' : 'Offline',
+      vision: visionMcpStatus === 'connected' ? 'Online' : 'Offline',
+      robot: robotMcpStatus === 'connected' ? 'Online' : 'Offline'
+    }} 
+  })}\n\n`);
+
+  activeDebugConnections.push(res);
+  req.on('close', () => {
+    const idx = activeDebugConnections.indexOf(res);
+    if (idx >= 0) activeDebugConnections.splice(idx, 1);
+  });
+});
+
 // Serve index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'Public', 'index.html'));
@@ -2114,4 +2013,30 @@ server.listen(port, async () => {
   
   cleanupOldFiles();
   setInterval(cleanupOldFiles, 24 * 60 * 60 * 1000);
+});app.post('/return-home', async (req, res) => {
+  console.log("🏠 System UI Return Home Requested");
+  robotTaskQueue = []; // Clear queue on manual return home for safety
+  broadcastQueueUpdate();
+  
+  if (robotMcpClient) {
+    try {
+      sendProgress("Stopping robot and returning home.", true);
+      
+      // E-stop instantly
+      await robotMcpClient.callTool({ name: "emergency_stop", arguments: {} });
+      await new Promise(r => setTimeout(r, 500));
+      // Clear latch
+      await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: {} });
+      // Go home
+      await robotMcpClient.callTool({ name: "return_home", arguments: {} });
+      
+      res.json({ success: true, message: "Returned home successfully." });
+    } catch (err) {
+      res.json({ success: false, message: `Failed to return home: ${err.message}` });
+    }
+  } else {
+    res.json({ success: false, message: "Robot MCP is not connected." });
+  }
 });
+
+
