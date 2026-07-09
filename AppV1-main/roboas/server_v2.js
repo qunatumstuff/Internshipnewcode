@@ -261,7 +261,7 @@ app.use(express.json());
 
 // === OpenAI Configuration ===
 const configuration = new Configuration({
-  apiKey: "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"
+  apiKey: "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"
 });
 const openai = new OpenAIApi(configuration);
 

@@ -295,7 +295,7 @@ app.post('/client-log', (req, res) => {
 
 // === OpenAI Configuration ===
 const configuration = new Configuration({
-  apiKey: "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"
+  apiKey: "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"
 });
 const openai = new OpenAIApi(configuration);
 
@@ -1369,15 +1369,16 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                 await sendWakewordCommand('unmute');
               }, 5000);
             });
+            answerText = `I am checking the workspace for the ${args.target_name}. Once the path is clear, I will pick it up for you.`;
           } else {
             sendProgress("Error: Vision MCP is not connected.", false);
             setTimeout(async () => {
               sendProgress(null, false);
               await sendWakewordCommand('unmute');
             }, 5000);
+            answerText = `I'm sorry, my vision system is currently disconnected, so I can't look for the ${args.target_name}.`;
           }
 
-          answerText = `I am checking the workspace for the ${args.target_name}. Once the path is clear, I will pick it up for you.`;
           skipSecondCompletion = true;
         }
         else if (toolCall.name === "search_web") {
@@ -1655,6 +1656,7 @@ app.post('/tts', async (req, res) => {
   const postData = JSON.stringify({
     model: "tts-1",
     voice: voicePersona === "linda" ? "nova" : "onyx",
+    response_format: "aac",
     input: text
   });
 
@@ -1688,7 +1690,7 @@ app.post('/tts', async (req, res) => {
         attemptFinished = true;
         console.log('✅ OpenAI TTS Success');
         logToolCall("System Event", "tts_success", { text, attempt }, "OpenAI TTS generated successfully.");
-        res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('Content-Type', 'audio/aac');
         openaiRes.pipe(res);
       } else {
         let errData = '';

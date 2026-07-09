@@ -328,7 +328,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           if (!mounted) return;
           final bool isAtEnd = controller.value.isInitialized && 
                                controller.value.duration > Duration.zero &&
-                               controller.value.position >= controller.value.duration;
+                               (controller.value.duration - controller.value.position).inMilliseconds < 250;
                                
           if (!controller.value.isPlaying && asset.contains(_currentPersona)) {
             if (isAtEnd) {
@@ -476,12 +476,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         Uri.parse('$baseUrl/tts'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'text': text, 'persona': _currentPersona}),
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 60));
       _remoteLog('🔊 [_speak] /tts response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final contentType =
-            response.headers['content-type'] ?? 'audio/mpeg';
+            response.headers['content-type'] ?? 'audio/aac';
         final blob = html.Blob([response.bodyBytes], contentType);
         final blobUrl = html.Url.createObjectUrlFromBlob(blob);
 
@@ -583,6 +583,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         utterance.voice = selectedVoice;
       }
 
+      Timer? keepAliveTimer;
+
       utterance.onStart.listen((_) {
         debugPrint('📢 [NATIVE TTS] Started speaking...');
         if (mounted) {
@@ -601,9 +603,19 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             }
           }
         }
+        
+        keepAliveTimer = Timer.periodic(const Duration(seconds: 14), (timer) {
+          if (synth.speaking == true) {
+            synth.pause();
+            synth.resume();
+          } else {
+            timer.cancel();
+          }
+        });
       });
 
       utterance.onEnd.listen((_) async {
+        keepAliveTimer?.cancel();
         if (_currentUtterance != utterance) return;
         debugPrint('📢 [NATIVE TTS] Completed successfully.');
         _stopManualWebStream();
@@ -628,6 +640,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       });
 
       utterance.onError.listen((e) async {
+        keepAliveTimer?.cancel();
         if (_currentUtterance != utterance) return;
         debugPrint('❌ [NATIVE TTS] Error: $e');
         _stopManualWebStream();
@@ -1256,6 +1269,40 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     return '$protocol://$socketHost$wsPort/wakeword';
   }
 
+  Future<void> _speakSilent(String text) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/tts'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'text': text, 'persona': _currentPersona}),
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final contentType = response.headers['content-type'] ?? 'audio/aac';
+        final blob = html.Blob([response.bodyBytes], contentType);
+        final blobUrl = html.Url.createObjectUrlFromBlob(blob);
+
+        final audio = html.AudioElement(blobUrl);
+        final completer = Completer<void>();
+
+        audio.onEnded.listen((_) {
+          html.Url.revokeObjectUrl(blobUrl);
+          if (!completer.isCompleted) completer.complete();
+        });
+
+        audio.onError.listen((_) {
+          html.Url.revokeObjectUrl(blobUrl);
+          if (!completer.isCompleted) completer.complete();
+        });
+
+        await audio.play();
+        await completer.future;
+      }
+    } catch (e) {
+      debugPrint('Error silent TTS: $e');
+    }
+  }
+
   Future<void> _handleWakeWordEvent() async {
     _addUiLog('[FLUTTER] calling manual mic function');
     
@@ -1270,6 +1317,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       if (_isWakewordModeEnabled) {
         _changeState(HandsOffState.userRecording);
       }
+      
+      // Stop the wake word engine while saying "hey" to prevent loops
+      _setWakeWordMute(true);
+      await _speakSilent("Hey");
+      _setWakeWordMute(false);
+      
       await _listen(); // start recording
     }
   }
