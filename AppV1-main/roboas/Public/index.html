@@ -199,6 +199,7 @@
       detectCallbackAttached = false;
       window.johnScoresWindow = [];
       window.johnV2ScoresWindow = [];
+      window.heyJohnScoresWindow = [];
       window.lindaScoresWindow = [];
       window.lindaV2ScoresWindow = [];
       window.abortMissionScoresWindow = [];
@@ -207,7 +208,7 @@
 
         engine = new WakeWordEngine({
           baseAssetUrl: '/models',
-          keywords: ['john', 'john_v2', 'linda', 'linda_v2', 'abort_mission'],
+          keywords: ['john', 'john_v2', 'hey_john', 'linda', 'linda_v2', 'abort_mission'],
           detectionThreshold: 99.0, // Disable built-in threshold callback to prevent cooldown locks
           cooldownMs: 2500,
           ortWasmPath: '/ort/',
@@ -257,6 +258,7 @@
           const now = Date.now();
           let johnScore = 0;
           let johnV2Score = 0;
+          let heyJohnScore = 0;
           let lindaScore = 0;
           let lindaV2Score = 0;
           let abortMissionScore = 0;
@@ -281,23 +283,30 @@
               const s = engine._keywordModels.abort_mission.scores;
               abortMissionScore = s[s.length - 1] || 0;
             }
+            if (engine._keywordModels.hey_john && engine._keywordModels.hey_john.scores) {
+              const s = engine._keywordModels.hey_john.scores;
+              heyJohnScore = s[s.length - 1] || 0;
+            }
           }
 
           // Maintain rolling score peaks for the last 5 seconds (5000ms)
           window.johnScoresWindow.push({ score: johnScore, timestamp: now });
           window.johnV2ScoresWindow.push({ score: johnV2Score, timestamp: now });
+          window.heyJohnScoresWindow.push({ score: heyJohnScore, timestamp: now });
           window.lindaScoresWindow.push({ score: lindaScore, timestamp: now });
           window.lindaV2ScoresWindow.push({ score: lindaV2Score, timestamp: now });
           window.abortMissionScoresWindow.push({ score: abortMissionScore, timestamp: now });
 
           window.johnScoresWindow = window.johnScoresWindow.filter(item => now - item.timestamp <= 5000);
           window.johnV2ScoresWindow = window.johnV2ScoresWindow.filter(item => now - item.timestamp <= 5000);
+          window.heyJohnScoresWindow = window.heyJohnScoresWindow.filter(item => now - item.timestamp <= 5000);
           window.lindaScoresWindow = window.lindaScoresWindow.filter(item => now - item.timestamp <= 5000);
           window.lindaV2ScoresWindow = window.lindaV2ScoresWindow.filter(item => now - item.timestamp <= 5000);
           window.abortMissionScoresWindow = window.abortMissionScoresWindow.filter(item => now - item.timestamp <= 5000);
 
           const johnPeak = Math.max(...window.johnScoresWindow.map(item => item.score), 0);
           const johnV2Peak = Math.max(...window.johnV2ScoresWindow.map(item => item.score), 0);
+          const heyJohnPeak = Math.max(...window.heyJohnScoresWindow.map(item => item.score), 0);
           const lindaPeak = Math.max(...window.lindaScoresWindow.map(item => item.score), 0);
           const lindaV2Peak = Math.max(...window.lindaV2ScoresWindow.map(item => item.score), 0);
           const abortMissionPeak = Math.max(...window.abortMissionScoresWindow.map(item => item.score), 0);
@@ -314,6 +323,23 @@
               console.log(`[OWW] Abort Mission detected (score: ${abortMissionScore.toFixed(4)})`);
               if (onEventCallback) onEventCallback('abort_mission_triggered');
               setTimeout(() => { window.abortMissionCooldownActive = false; }, 2500);
+            }
+          }
+
+          // Check Hey John Manual Threshold (fires same John callback)
+          if (heyJohnScore >= johnThresh) {
+            if (speechActive && !window.johnCooldownActive && !window.wakewordDetectionMuted) {
+              window.johnCooldownActive = true;
+              console.log(`[OWW] Hey John detected (score: ${heyJohnScore.toFixed(4)})`);
+              if (onDetectJohnCallback) onDetectJohnCallback(heyJohnScore, 'hey_john');
+              setTimeout(() => { window.johnCooldownActive = false; }, 2500);
+            }
+          } else if (heyJohnScore >= (johnThresh - 0.10) && heyJohnScore > 0.001) {
+            if (speechActive && !window.heyJohnNearMissCooldown && !window.wakewordDetectionMuted) {
+              window.heyJohnNearMissCooldown = true;
+              console.log(`[OWW] Hey John near miss: score ${heyJohnScore.toFixed(2)}`);
+              if (onEventCallback) onEventCallback(`near_miss:hey_john=${heyJohnScore.toFixed(2)}`);
+              setTimeout(() => { window.heyJohnNearMissCooldown = false; }, 1500);
             }
           }
 
