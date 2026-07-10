@@ -314,6 +314,7 @@
           const speechActive = engine ? engine._isSpeechActive : false;
           const johnThresh = window.johnThreshold || 0.001;
           const lindaThresh = window.lindaThreshold || 0.0009;
+          const heyJohnThresh = 0.0005;
 
           
           // Check Abort Mission Manual Threshold
@@ -327,14 +328,14 @@
           }
 
           // Check Hey John Manual Threshold (fires same John callback)
-          if (heyJohnScore >= johnThresh) {
+          if (heyJohnScore >= heyJohnThresh) {
             if (speechActive && !window.johnCooldownActive && !window.wakewordDetectionMuted) {
               window.johnCooldownActive = true;
               console.log(`[OWW] Hey John detected (score: ${heyJohnScore.toFixed(4)})`);
               if (onDetectJohnCallback) onDetectJohnCallback(heyJohnScore, 'hey_john');
               setTimeout(() => { window.johnCooldownActive = false; }, 2500);
             }
-          } else if (heyJohnScore >= (johnThresh - 0.10) && heyJohnScore > 0.001) {
+          } else if (heyJohnScore >= (heyJohnThresh / 2) && heyJohnScore > 0.0001) {
             if (speechActive && !window.heyJohnNearMissCooldown && !window.wakewordDetectionMuted) {
               window.heyJohnNearMissCooldown = true;
               console.log(`[OWW] Hey John near miss: score ${heyJohnScore.toFixed(2)}`);

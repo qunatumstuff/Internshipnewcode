@@ -1,26 +1,5 @@
 [
   {
-    "timestamp": "2026-07-10T05:13:05.281Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-10T05:13:05.286Z",
-    "userQuestion": "Can you pick up the sponge?",
-    "toolName": "ask-gpt_response",
-    "args": {
-      "persona": "john",
-      "emoji": "🤖"
-    },
-    "result": "I am checking the workspace for the sponge. Once the path is clear, I will pick it up for you."
-  },
-  {
     "timestamp": "2026-07-10T05:13:05.336Z",
     "userQuestion": "System Event",
     "toolName": "tts_request",
@@ -494,5 +473,24 @@
       "hasTts": false
     },
     "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-07-10T05:35:31.226Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Hey"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-10T05:35:32.961Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Hey",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
   }
 ]
