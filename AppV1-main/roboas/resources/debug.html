@@ -327,6 +327,55 @@
         .panel-body::-webkit-scrollbar { width: 4px; }
         .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+        /* ─── LOG TABS ─── */
+        .log-tabs {
+            display: flex;
+            gap: 2px;
+            padding: 0 16px 0;
+            border-top: 1px solid var(--border);
+            background: rgba(0,0,0,0.2);
+            overflow-x: auto;
+        }
+
+        .log-tab {
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-muted);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.73rem;
+            font-weight: 600;
+            padding: 8px 12px;
+            cursor: pointer;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            transition: color 0.2s, border-color 0.2s;
+        }
+
+        .log-tab:hover { color: var(--text); }
+
+        .log-tab.active {
+            color: var(--cyan);
+            border-bottom-color: var(--cyan);
+        }
+
+        /* ─── SOURCE BADGES ─── */
+        .src-badge {
+            display: inline-block;
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 4px;
+            margin-right: 6px;
+            vertical-align: middle;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .src-badge.src-robot_mcp  { background: rgba(0,230,255,0.12); color: var(--cyan);   border: 1px solid rgba(0,230,255,0.2); }
+        .src-badge.src-vision_mcp { background: rgba(0,255,170,0.1);  color: var(--green);  border: 1px solid rgba(0,255,170,0.2); }
+        .src-badge.src-qwen       { background: rgba(124,58,237,0.12); color: #a78bfa;       border: 1px solid rgba(124,58,237,0.25); }
+
         /* ─── QUEUE TOOLBAR ─── */
         .queue-toolbar {
             padding: 10px 14px;
@@ -696,15 +745,22 @@
             </div>
         </div>
 
-        <!-- PANEL 3: SYSTEM MESSAGES -->
+        <!-- PANEL 3: SYSTEM MESSAGES (TABBED) -->
         <div class="glass panel">
-            <div class="panel-head">
+            <div class="panel-head" style="flex-direction: column; align-items: stretch; gap: 10px; padding-bottom: 0;">
                 <div class="panel-head-left">
                     <div class="ph-icon purple">📡</div>
                     <div>
                         <div class="ph-title">System Messages</div>
-                        <div class="ph-subtitle">Live updates from the system</div>
+                        <div class="ph-subtitle">Live updates — filter by source</div>
                     </div>
+                </div>
+                <div class="log-tabs" id="log-tabs">
+                    <button class="log-tab active" onclick="switchTab('all')">All</button>
+                    <button class="log-tab" onclick="switchTab('server')">🖥️ Server</button>
+                    <button class="log-tab" onclick="switchTab('robot_mcp')">🤖 Robot Arm</button>
+                    <button class="log-tab" onclick="switchTab('vision_mcp')">📷 Vision</button>
+                    <button class="log-tab" onclick="switchTab('qwen')">🧠 Qwen</button>
                 </div>
             </div>
             <div class="panel-body" id="console-feed">
@@ -801,9 +857,36 @@
 
     // ── CONSOLE LOGS ──
     let systemLogs = [];
+    let activeTab = 'all';
+
+    const TAB_SOURCES = {
+        all:        null,
+        server:     null, // all logs without a source field = server
+        robot_mcp:  'robot_mcp',
+        vision_mcp: 'vision_mcp',
+        qwen:       'qwen',
+    };
+
+    const TAB_EMPTY = {
+        all:        'No messages yet.',
+        server:     'No server messages yet.',
+        robot_mcp:  'No Robot Arm logs yet.\nMake sure robot_mcp.py is running and SERVER_HOST is set.',
+        vision_mcp: 'No Vision logs yet.\nMake sure vision_mcp.py is running and SERVER_HOST is set.',
+        qwen:       'No Qwen output yet.\nQwen logs appear when the vision MCP sends an image for analysis.',
+    };
+
+    function switchTab(tab) {
+        activeTab = tab;
+        document.querySelectorAll('.log-tab').forEach((btn, i) => {
+            const tabs = ['all','server','robot_mcp','vision_mcp','qwen'];
+            btn.classList.toggle('active', tabs[i] === tab);
+        });
+        renderConsoleLogs();
+    }
+
     function friendlyMsg(msg) {
         if (!msg) return '';
-        msg = msg.replace(/^\[(GPT|Server|MCP|OWW|WAKE WS|VisionMCP|RobotMCP)\]\s*/i, '');
+        msg = String(msg).replace(/^\[(GPT|Server|MCP|OWW|WAKE WS|VisionMCP|RobotMCP)\]\s*/i, '');
         msg = msg.replace(/\b(connected|success|ready|completed|online)\b/gi, '<strong style="color:var(--green)">$1</strong>');
         msg = msg.replace(/\b(error|failed|disconnected|timeout|offline)\b/gi,  '<strong style="color:var(--red)">$1</strong>');
         msg = msg.replace(/\b(warning|warn)\b/gi, '<strong style="color:var(--amber)">$1</strong>');
@@ -812,16 +895,26 @@
 
     function renderConsoleLogs() {
         const f = document.getElementById('console-feed');
-        if (!systemLogs.length) {
-            f.innerHTML = `<div class="empty"><div class="empty-glyph">📭</div><p>Waiting for system messages…</p></div>`;
+        let filtered;
+        if (activeTab === 'all') {
+            filtered = systemLogs;
+        } else if (activeTab === 'server') {
+            filtered = systemLogs.filter(l => !l.source || l.source === 'server');
+        } else {
+            filtered = systemLogs.filter(l => l.source === activeTab);
+        }
+        if (!filtered.length) {
+            f.innerHTML = `<div class="empty"><div class="empty-glyph">📭</div><p>${TAB_EMPTY[activeTab]}</p></div>`;
             return;
         }
-        f.innerHTML = systemLogs.map(log => {
-            const ts = new Date(log.timestamp).toLocaleTimeString('en-SG',{timeZone:'Asia/Singapore',hour12:true});
+        f.innerHTML = filtered.map(log => {
+            const ts  = new Date(log.timestamp).toLocaleTimeString('en-SG',{timeZone:'Asia/Singapore',hour12:true});
             const cls = log.level === 'error' ? 'error' : log.level === 'warn' ? 'warn' : 'info';
+            const srcBadge = log.source && log.source !== 'server'
+                ? `<span class="src-badge src-${log.source}">${log.source.replace('_',' ')}</span>` : '';
             return `<div class="log-line ${cls}">
                 <div class="log-ts">${ts}</div>
-                <div class="log-txt">${friendlyMsg(log.message)}</div>
+                <div class="log-txt">${srcBadge}${friendlyMsg(log.message)}</div>
             </div>`;
         }).join('');
         f.scrollTop = f.scrollHeight;
