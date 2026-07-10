@@ -583,6 +583,8 @@ async function processRobotQueue() {
 
   const task = robotTaskQueue[0];
   const { name, args, question } = task;
+  global._taskAborted = false;
+
   
   try {
     if (name === "locate_object" || name === "pick_and_place_object") {
@@ -594,12 +596,15 @@ async function processRobotQueue() {
         console.log("🏠 Sending arm home before camera snapshot...");
         sendProgress("Moving arm to home position for a clear camera view...", true);
         const homeRes = await robotMcpClient.callTool({ name: "return_home", arguments: {} });
+        if (global._taskAborted) throw new Error("Task cancelled by user.");
         if (homeRes.content && homeRes.content[0].text.toLowerCase().startsWith("error")) throw new Error(homeRes.content[0].text);
         await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
         await new Promise(r => setTimeout(r, 1000));
       }
       
+      if (global._taskAborted) throw new Error("Task cancelled by user.");
       const scanRes = await visionMcpClient.callTool({ name: "locate_object", arguments: { target_name: args.target_name } }, undefined, { timeout: 900000 });
+      if (global._taskAborted) throw new Error("Task cancelled by user.");
       const parsed = JSON.parse(scanRes.content[0].text);
       if (parsed.status !== "SUCCESS") throw new Error(parsed.message || "Obstacle blockage");
       
@@ -613,6 +618,7 @@ async function processRobotQueue() {
         const completionPromise = waitForRobotEvent(900000);
         const toolPromise = robotMcpClient.callTool({ name: "pick_and_place_object", arguments: robotArgs }, undefined, { timeout: 900000 });
         await Promise.all([completionPromise, toolPromise]);
+        if (global._taskAborted) throw new Error("Task cancelled by user.");
         
         sendProgress(`Successfully picked up the ${args.target_name}!`, true);
         setTimeout(async () => {
@@ -627,6 +633,7 @@ async function processRobotQueue() {
         const completionPromise = waitForRobotEvent(900000);
         const toolPromise = robotMcpClient.callTool({ name: "relocate_object", arguments: args }, undefined, { timeout: 900000 });
         await Promise.all([completionPromise, toolPromise]);
+        if (global._taskAborted) throw new Error("Task cancelled by user.");
         
         sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`, true);
         setTimeout(async () => {
@@ -667,12 +674,21 @@ async function processRobotQueue() {
     }
   } catch (err) {
     console.error(`❌ Task Queue Failed: ${err.message}`);
+    // Show status bar message
     sendProgress(`Robot Task Failed: ${err.message}`, false);
-    robotTaskQueue = []; // Abort queue
+    // John speaks a friendly verbal reply about the failure
+    const failedTarget = task && task.args
+      ? (task.args.target_name || task.args.object_name || task.args.obstacle_name || '')
+      : '';
+    const friendlyFailMsg = failedTarget
+      ? `I'm sorry, I was unable to find ${failedTarget} on the table. Please check if it is within my workspace and try again.`
+      : `I'm sorry, something went wrong with that task. Please try again.`;
     setTimeout(async () => {
-      sendProgress(null, false);
+      sendProgress(null, false, friendlyFailMsg);
       await sendWakewordCommand('unmute');
-    }, 5000);
+    }, 2000);
+    robotTaskQueue = []; // Abort remaining queue
+    window._taskAborted = true;
   } finally {
     if (robotTaskQueue.length > 0 && robotTaskQueue[0].id === task.id) {
       robotTaskQueue.shift();
@@ -696,16 +712,23 @@ app.get('/queue-status', (req, res) => {
 
 app.post('/queue-clear', (req, res) => {
   robotTaskQueue = [];
+  global._taskAborted = true;  // Signal any in-progress task to stop after current step
   broadcastQueueUpdate();
   res.json({ success: true, message: 'Queue cleared' });
 });
 
 app.post('/queue-delete', express.json(), (req, res) => {
   const id = req.body.id;
+  const wasFirst = robotTaskQueue.length > 0 && robotTaskQueue[0].id === id;
   robotTaskQueue = robotTaskQueue.filter(t => t.id !== id);
+  if (wasFirst) {
+    // The currently running task was deleted — signal abort
+    global._taskAborted = true;
+  }
   broadcastQueueUpdate();
   res.json({ success: true });
 });
+
 
 app.post('/queue-add', express.json(), (req, res) => {
   const task = req.body.task;

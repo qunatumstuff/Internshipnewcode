@@ -655,7 +655,7 @@ def is_inside_placement_box(det: dict) -> bool:
 
 def is_target_match(target: str, object_name: str) -> bool:
     """Helper to match logical target names against YOLO object_names."""
-    if target in ["soy milk", "soymilk", "umbrella", "wrench", "hat"]:
+    if target in ["soy milk", "soymilk", "umbrella", "wrench", "hat", "blue cube", "red cube", "green cube", "yellow cube"]:
         return "cube" in object_name
     return target in object_name
 
