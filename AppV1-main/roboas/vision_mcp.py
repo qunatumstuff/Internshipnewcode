@@ -344,6 +344,30 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                 angle_rad = math.radians(rect[2])
                 logger.info(f"[{cls_name}] OBB angle not available, using minAreaRect: {rect[2]:.1f}deg")
 
+            w_px, h_px = rect[1]
+            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics)
+            if coords is None:
+                continue
+
+            distance = depth_frame.get_distance(int(cx_px), int(cy_px))
+            w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
+            h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
+
+            detections.append({
+                "object_name": cls_name,
+                "x":           coords["x"],
+                "y":           coords["y"],
+                "z":           coords["z"],
+                "angle_deg":   coords["angle_deg"],
+                "confidence":  round(float(conf), 3),
+                "cx_px":       cx_px,
+                "cy_px":       cy_px,
+                "w_px":        w_px,
+                "h_px":        h_px,
+                "w_m":         w_m,
+                "h_m":         h_m,
+            })
+
 
     logger.info(
         f"Detection: {len(detections)} object(s) — "
@@ -1022,9 +1046,10 @@ async def qwen_plan_next_action(
         f"  1. Look at the image AND read the Python sensor analysis.\n"
         f"  2. IMPORTANT: Do NOT try to visually look for the stickers on the cubes. The camera cannot see them clearly. You MUST blindly trust the following mapping.\n"
         f"  3. STICKER MAPPING: The stickers (soy milk, hat, wrench, umbrella) are on the GREEN, RED, BLUE, and YELLOW cubes respectively. If the user asked for one of these, find the matching colored cube. If the user asked for a colored cube directly (e.g., 'blue cube'), pick THAT specific colored cube. The target you must pick is '{target}'.\n"
-        f"  4. If the user asks for an object NOT in the catalogue, output 'abort'.\n"
-        f"  5. HIDDEN OBJECT DEDUCTION: If your target cube is visually missing, BUT the Python Sensor Analysis says an obstacle is 'Likely resting on' your target cube, you MUST deduce the target is hidden underneath it. Output 'relocate' and set 'obstacle_name' to the blocking object.\n"
-        f"  6. RELOCATE OVERRIDE: If the Python Sensor Analysis explicitly says 'MUST relocate [object] first', you MUST immediately output 'relocate' and set 'obstacle_name' to that object. Do NOT second-guess it. Do NOT try to pick the target.\n"
+        f"  4. CRITICAL COLOR CHECK: If you are asked to pick up a specific colored cube (e.g., 'blue cube'), you MUST visually verify the target cube matches that color. If the requested color is missing from the image entirely, output 'abort' and write 'not found' in your reasoning. Do NOT pick a differently colored cube just to be helpful.\n"
+        f"  5. If the user asks for an object NOT in the catalogue, output 'abort'.\n"
+        f"  6. HIDDEN OBJECT DEDUCTION: If your target cube is visually missing, BUT the Python Sensor Analysis says an obstacle is 'Likely resting on' your target cube, you MUST deduce the target is hidden underneath it. Output 'relocate' and set 'obstacle_name' to the blocking object.\n"
+        f"  7. RELOCATE OVERRIDE: If the Python Sensor Analysis explicitly says 'MUST relocate [object] first', you MUST immediately output 'relocate' and set 'obstacle_name' to that object. Do NOT second-guess it. Do NOT try to pick the target.\n"
         f"  7. SIZE / OCCLUSION OVERRIDE: If the Python Sensor Analysis warns that a detection is unusually small and likely BLOCKED, you MUST relocate ANY object that is overlapping it or resting on it. Output 'relocate' and set 'obstacle_name' to the overlapping object.\n"
         f"  8. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one, output 'relocate' for that object. If clear, output 'pick'.\n"
         f"  9. If you see an unknown object blocking the target, output 'abort'.\n"

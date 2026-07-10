@@ -606,7 +606,7 @@ async function processRobotQueue() {
       const scanRes = await visionMcpClient.callTool({ name: "locate_object", arguments: { target_name: args.target_name } }, undefined, { timeout: 900000 });
       if (global._taskAborted) throw new Error("Task cancelled by user.");
       const parsed = JSON.parse(scanRes.content[0].text);
-      if (parsed.status !== "SUCCESS") throw new Error(parsed.message || "Obstacle blockage");
+      if (parsed.status !== "SUCCESS") throw new Error(parsed.message || parsed.reasoning || "Obstacle blockage");
       
       if (parsed.snapshot_b64) sendSnapshot(parsed.snapshot_b64, parsed.target || args.target_name);
       sendProgress(`Target "${args.target_name}" clear! Instructing robot to pick it up...`, true);
@@ -696,13 +696,13 @@ async function processRobotQueue() {
           : `I'm sorry, something went wrong with that task. Please try again.`;
       }
       setTimeout(async () => {
-        sendProgress(null, false, friendlyFailMsg);
+        if (!isRobotBusy) sendProgress(null, false, friendlyFailMsg);
         await sendWakewordCommand('unmute');
       }, 2000);
       robotTaskQueue = []; // Abort remaining queue on actual failure
     } else {
       setTimeout(async () => {
-        sendProgress(null, false);
+        if (!isRobotBusy) sendProgress(null, false);
         await sendWakewordCommand('unmute');
       }, 2000);
     }
@@ -1925,9 +1925,23 @@ app.post('/switch-persona', (req, res) => {
   res.json({ success: true, persona });
 });
 
+// Cancel Task Endpoint
+app.post('/cancel-task', (req, res) => {
+  console.log('\n🚫 \x1b[41m\x1b[37m[CANCEL BUTTON]: Received UI signal! Cancelling current task...\x1b[0m\n');
+  
+  global._taskAborted = true;
+  robotTaskQueue = [];
+  isRobotBusy = false;
+  broadcastQueueUpdate();
+  
+  sendProgress("Task cancelled by user.");
+  res.json({ success: true, message: "Task cancelled" });
+});
+
 // Emergency Stop Endpoint (from Chatbot UI)
 app.post('/emergency-stop', async (req, res) => {
   console.log("🛑 EMERGENCY STOP TRIGGERED VIA UI");
+  global._taskAborted = true;
   robotTaskQueue = []; // Clear queue for safety
   isRobotBusy = false;
   broadcastQueueUpdate();

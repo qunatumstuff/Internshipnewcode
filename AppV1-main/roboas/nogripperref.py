@@ -160,8 +160,8 @@ GRIPPER_SAFETY_LENGTH = 0.000
 #    Z-height is fixed (a parallel 2-finger gripper's fingertips do not
 #    move up/down as it opens, only side to side).
 
-PICK_OFFSET_X_M = -0.003    # +10mm in X
-PICK_OFFSET_Y_M = -0.008   # -10mm in Y
+PICK_OFFSET_X_M = -0.002    # +10mm in X
+PICK_OFFSET_Y_M = -0.009   # -10mm in Y
 
 # --- FLANGE (Quick Changer) ---
 FLANGE_DIAMETER_M = 0.071          # 71 mm, datasheet-confirmed Quick Changer diameter
@@ -2337,7 +2337,7 @@ def _placement_score(x, y, length, width, selected_object=None, placement_angle_
                 
         score -= nearest_edge_dist * SMART_EXISTING_OBJECT_SPREAD_WEIGHT
 
-    return score
+    return score + angle_penalty
 
 
 
