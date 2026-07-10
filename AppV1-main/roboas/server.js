@@ -687,7 +687,7 @@ async function processRobotQueue() {
       const lowerErr = err.message.toLowerCase();
       
       if (lowerErr.includes('emergency stop') || lowerErr.includes('powered off')) {
-        friendlyFailMsg = "Emergency stop activated.";
+        friendlyFailMsg = "The robot is in an emergency stop state. Please clear the emergency stop before commanding me.";
       } else if (lowerErr.includes('not found')) {
         friendlyFailMsg = `I'm sorry, I was unable to find ${failedTarget} on the table. Please check if it is within my workspace and try again.`;
       } else {
@@ -1273,7 +1273,7 @@ ROBOTIC ARM — PICK AND PLACE RULES:
 - Once you call 'locate_object', the system will automatically find the coordinates and trigger the robot arm for you.
 - You do NOT need to call 'pick_and_place_object' yourself.
 - Approved objects the robot can pick: soy milk, umbrella, wrench, hat, cube, yellow cube, blue cube, green cube, red cube, nut, black marker, medicine, sponge, screwdriver.
-
+- CRITICAL: ONLY call 'clear_emergency_stop' if the user explicitly asks you to clear the emergency stop. NEVER call it when the user asks you to pick up an object.
 
 IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualContext + queueState
       },
