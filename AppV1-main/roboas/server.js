@@ -675,20 +675,28 @@ async function processRobotQueue() {
   } catch (err) {
     console.error(`❌ Task Queue Failed: ${err.message}`);
     // Show status bar message
-    sendProgress(`Robot Task Failed: ${err.message}`, false);
-    // John speaks a friendly verbal reply about the failure
-    const failedTarget = task && task.args
-      ? (task.args.target_name || task.args.object_name || task.args.obstacle_name || '')
-      : '';
-    const friendlyFailMsg = failedTarget
-      ? `I'm sorry, I was unable to find ${failedTarget} on the table. Please check if it is within my workspace and try again.`
-      : `I'm sorry, something went wrong with that task. Please try again.`;
-    setTimeout(async () => {
-      sendProgress(null, false, friendlyFailMsg);
-      await sendWakewordCommand('unmute');
-    }, 2000);
-    robotTaskQueue = []; // Abort remaining queue
-    window._taskAborted = true;
+    sendProgress(err.message === "Task cancelled by user." ? "Task was cancelled." : `Robot Task Failed: ${err.message}`, false);
+    
+    if (err.message !== "Task cancelled by user.") {
+      // John speaks a friendly verbal reply about the failure
+      const failedTarget = task && task.args
+        ? (task.args.target_name || task.args.object_name || task.args.obstacle_name || '')
+        : '';
+      const friendlyFailMsg = failedTarget
+        ? `I'm sorry, I was unable to find ${failedTarget} on the table. Please check if it is within my workspace and try again.`
+        : `I'm sorry, something went wrong with that task. Please try again.`;
+      setTimeout(async () => {
+        sendProgress(null, false, friendlyFailMsg);
+        await sendWakewordCommand('unmute');
+      }, 2000);
+      robotTaskQueue = []; // Abort remaining queue on actual failure
+    } else {
+      setTimeout(async () => {
+        sendProgress(null, false);
+        await sendWakewordCommand('unmute');
+      }, 2000);
+    }
+    global._taskAborted = true;
   } finally {
     if (robotTaskQueue.length > 0 && robotTaskQueue[0].id === task.id) {
       robotTaskQueue.shift();
