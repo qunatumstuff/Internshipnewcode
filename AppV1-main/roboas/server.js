@@ -682,9 +682,19 @@ async function processRobotQueue() {
       const failedTarget = task && task.args
         ? (task.args.target_name || task.args.object_name || task.args.obstacle_name || '')
         : '';
-      const friendlyFailMsg = failedTarget
-        ? `I'm sorry, I was unable to find ${failedTarget} on the table. Please check if it is within my workspace and try again.`
-        : `I'm sorry, something went wrong with that task. Please try again.`;
+        
+      let friendlyFailMsg = '';
+      const lowerErr = err.message.toLowerCase();
+      
+      if (lowerErr.includes('emergency stop')) {
+        friendlyFailMsg = "I cannot complete the task because the robot is in an emergency stop state. Please clear the emergency latch first.";
+      } else if (lowerErr.includes('not found')) {
+        friendlyFailMsg = `I'm sorry, I was unable to find ${failedTarget} on the table. Please check if it is within my workspace and try again.`;
+      } else {
+        friendlyFailMsg = failedTarget
+          ? `I'm sorry, I encountered an error while trying to handle the ${failedTarget}. Please try again.`
+          : `I'm sorry, something went wrong with that task. Please try again.`;
+      }
       setTimeout(async () => {
         sendProgress(null, false, friendlyFailMsg);
         await sendWakewordCommand('unmute');
