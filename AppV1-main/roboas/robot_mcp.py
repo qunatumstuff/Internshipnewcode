@@ -5,6 +5,8 @@ import logging
 import os
 import importlib.util
 import json
+import threading
+import urllib.request as _urllib_req
 from typing import Any
 
 from mcp.server import Server
@@ -15,6 +17,35 @@ import uvicorn
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("robot-mcp")
+
+# ─────────────────────────────────────────────────────────────
+# Remote log forwarding — sends log lines to server.js /python-log
+# so they appear live in the debug website.
+# Set SERVER_HOST env var to the IP of the Node server if running remotely.
+# ─────────────────────────────────────────────────────────────
+_SERVER_HOST = os.environ.get("SERVER_HOST", "localhost")
+_LOG_URL = f"http://{_SERVER_HOST}:3000/python-log"
+
+def remote_log(level: str, message: str):
+    """Fire-and-forget: POST a log line to the debug website."""
+    def _post():
+        try:
+            payload = json.dumps({"source": "robot_mcp", "level": level, "message": message}).encode()
+            req = _urllib_req.Request(_LOG_URL, data=payload, headers={"Content-Type": "application/json"})
+            with _urllib_req.urlopen(req, timeout=2): pass
+        except Exception:
+            pass  # Never let logging break the robot
+    threading.Thread(target=_post, daemon=True).start()
+
+class _RemoteHandler(logging.Handler):
+    def emit(self, record):
+        lvl = "error" if record.levelno >= logging.ERROR else "warn" if record.levelno >= logging.WARNING else "info"
+        remote_log(lvl, self.format(record))
+
+_rh = _RemoteHandler()
+_rh.setFormatter(logging.Formatter("%(message)s"))
+logger.addHandler(_rh)
+
 
 # ------------------------------------------------------------
 # Load the main robot controller without renaming its functions.

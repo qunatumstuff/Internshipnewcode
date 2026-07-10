@@ -555,6 +555,26 @@ app.post('/robot-event', (req, res) => {
   res.json({ success: true });
 });
 
+// === Python Remote Log Ingestion ===
+// robot_mcp.py, vision_mcp.py, and the Qwen laptop all POST here.
+// Body: { source: 'robot_mcp' | 'vision_mcp' | 'qwen', level: 'info'|'warn'|'error', message: '...' }
+app.post('/python-log', (req, res) => {
+  const { source = 'python', level = 'info', message = '' } = req.body;
+  const allowedSources = ['robot_mcp', 'vision_mcp', 'qwen'];
+  const safeSource = allowedSources.includes(source) ? source : 'python';
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level,
+    source: safeSource,
+    message: String(message)
+  };
+  systemLogs.push(entry);
+  if (systemLogs.length > 500) systemLogs.shift();
+  broadcastDebugEvent('console', entry);
+  res.json({ ok: true });
+});
+
+
 // === Robot Task Queue Processor ===
 async function processRobotQueue() {
   if (isRobotBusy || robotTaskQueue.length === 0) return;
