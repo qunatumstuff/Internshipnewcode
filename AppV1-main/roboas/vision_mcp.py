@@ -3,7 +3,6 @@ import time
 import logging
 import json
 import urllib.request
-import urllib.request as _urllib_req
 import os
 import math
 import threading
@@ -28,36 +27,6 @@ import camera
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("vision-mcp")
-
-# ─────────────────────────────────────────────────────────────
-# Remote log forwarding — sends log lines to server.js /python-log
-# so they appear live in the debug website.
-# Set SERVER_HOST env var to the IP of the Node server if running remotely.
-# e.g.  SERVER_HOST=192.168.1.50 python vision_mcp.py
-# ─────────────────────────────────────────────────────────────
-_SERVER_HOST = os.environ.get("SERVER_HOST", "localhost")
-_LOG_URL = f"http://{_SERVER_HOST}:3000/python-log"
-
-def remote_log(level: str, message: str, source: str = "vision_mcp"):
-    """Fire-and-forget: POST a log line to the debug website."""
-    def _post():
-        try:
-            payload = json.dumps({"source": source, "level": level, "message": message}).encode()
-            req = _urllib_req.Request(_LOG_URL, data=payload, headers={"Content-Type": "application/json"})
-            with _urllib_req.urlopen(req, timeout=2): pass
-        except Exception:
-            pass  # Never let logging break vision
-    threading.Thread(target=_post, daemon=True).start()
-
-class _RemoteHandler(logging.Handler):
-    def emit(self, record):
-        lvl = "error" if record.levelno >= logging.ERROR else "warn" if record.levelno >= logging.WARNING else "info"
-        remote_log(lvl, self.format(record), source="vision_mcp")
-
-_rh = _RemoteHandler()
-_rh.setFormatter(logging.Formatter("%(message)s"))
-logger.addHandler(_rh)
-
 
 # ==========================================
 # CONFIGURATION
@@ -167,7 +136,7 @@ CAM_TO_ROBOT_T = np.array([
 # on the top surface of the object rather than its centre.
 # 25mm raises the robot's approach height so the gripper doesn't
 # dig into the object on descent.
-Z_OFFSET_M = 0.045
+Z_OFFSET_M = 0.035
 
 server = Server("vision-mcp-server")
 
@@ -346,30 +315,6 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                 angle_rad = math.radians(rect[2])
                 logger.info(f"[{cls_name}] OBB angle not available, using minAreaRect: {rect[2]:.1f}deg")
 
-            w_px, h_px = rect[1]
-            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics)
-            if coords is None:
-                continue
-
-            distance = depth_frame.get_distance(int(cx_px), int(cy_px))
-            w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
-            h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
-
-            detections.append({
-                "object_name": cls_name,
-                "x":           coords["x"],
-                "y":           coords["y"],
-                "z":           coords["z"],
-                "angle_deg":   coords["angle_deg"],
-                "confidence":  round(conf, 3),
-                "cx_px":       cx_px,
-                "cy_px":       cy_px,
-                "w_px":        w_px,
-                "h_px":        h_px,
-                "w_m":         w_m,
-                "h_m":         h_m,
-            })
-
 
     logger.info(
         f"Detection: {len(detections)} object(s) — "
@@ -544,7 +489,8 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         ],
         "stream": False,
         "options": {"temperature": 0.1, "num_predict": 8192, "num_ctx": 16384},
-        "think": False
+        "think": False,
+        "keep_alive": -1   # -1 = keep the model loaded indefinitely, no reload between requests
     }
 
     print("IMAGE SIZE:", len(raw_b64))
@@ -559,15 +505,13 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
     loop = asyncio.get_running_loop()
     def fetch():
         logger.info("SENDING TO QWEN...")
-        remote_log("info", "⏳ Sending image to Qwen for analysis...", source="qwen")
         with urllib.request.urlopen(req, timeout=300) as response:
             print("Qwen http received")
             return json.loads(response.read().decode("utf-8"))
     try:
         result = await loop.run_in_executor(None, fetch)
         logger.info("QWEN RESPONSE RECEIVED")
-        remote_log("info", "📨 Qwen response received.", source="qwen")
-        remote_log("info", f"📋 Raw Qwen result: {str(result)[:300]}", source="qwen")
+        print("RAW OLLAMA RESULT:", result)
 
         if "error" in result:
            traceback.print_exc()
@@ -590,12 +534,10 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
             return "Ollama API Error: Model returned empty string."
             
         logger.info(f"[Qwen] {response_text[:120]}")
-        remote_log("info", f"🧠 Qwen says: {response_text[:300]}", source="qwen")
         return response_text
     except Exception as e:
         import traceback
         traceback.print_exc()
-        remote_log("error", f"❌ Qwen network error: {e}", source="qwen")
         print(f"Qwen network error: {e}")
         return f"Ollama API Error: {e}"
 
