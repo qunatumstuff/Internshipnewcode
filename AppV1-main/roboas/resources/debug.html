@@ -3,838 +3,904 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ROBOAS | DEBUG HUD</title>
+    <title>LARA 5 · System Monitor</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #050505;
-            --accent: #00f2ff;
-            --accent-glow: rgba(0, 242, 255, 0.3);
-            --purple: #7000ff;
-            --purple-glow: rgba(112, 0, 255, 0.3);
-            --glass: rgba(255, 255, 255, 0.03);
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --text-main: #e0e0e0;
-            --text-dim: #888;
+            --bg: #0d0f14;
+            --surface: #161a22;
+            --surface2: #1e2330;
+            --border: rgba(255,255,255,0.07);
+            --accent: #4f8ef7;
+            --green: #22c55e;
+            --red: #ef4444;
+            --amber: #f59e0b;
+            --purple: #a855f7;
+            --text: #e2e8f0;
+            --text-muted: #64748b;
+            --text-dim: #94a3b8;
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            background-color: var(--bg);
-            color: var(--text-main);
-            font-family: 'Outfit', sans-serif;
-            overflow: hidden;
-            height: 100vh;
-            background-image: 
-                radial-gradient(circle at 20% 20%, var(--purple-glow) 0%, transparent 40%),
-                radial-gradient(circle at 80% 80%, var(--accent-glow) 0%, transparent 40%);
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
 
-        .hud-container {
-            display: grid;
-            grid-template-columns: 350px 1fr;
-            grid-template-rows: 80px 1fr;
-            gap: 20px;
-            padding: 20px;
-            height: 100vh;
-            max-width: 1600px;
-            margin: 0 auto;
-        }
-
-        /* --- Header --- */
-        header {
-            grid-column: 1 / -1;
+        /* ── TOP BANNER ── */
+        .top-banner {
+            background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 18px 32px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            padding: 0 20px;
-            background: var(--glass);
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
 
-        .logo {
+        .banner-left { display: flex; align-items: center; gap: 16px; }
+
+        .banner-logo {
+            font-size: 1.4rem;
             font-weight: 800;
-            font-size: 1.5rem;
-            letter-spacing: 2px;
-            background: linear-gradient(to right, var(--accent), var(--purple));
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            text-transform: uppercase;
+            letter-spacing: -0.5px;
+            color: white;
         }
 
-        .status-badge {
+        .banner-logo span { color: var(--accent); }
+
+        .banner-subtitle {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            border-left: 1px solid var(--border);
+            padding-left: 16px;
+            margin-left: 4px;
+        }
+
+        .live-badge {
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 0.9rem;
+            gap: 8px;
+            background: rgba(34,197,94,0.1);
+            border: 1px solid rgba(34,197,94,0.25);
+            border-radius: 999px;
+            padding: 6px 14px;
+            font-size: 0.8rem;
             font-weight: 600;
+            color: var(--green);
         }
 
-        .dot {
-            width: 10px;
-            height: 10px;
-            background: #00ff88;
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--green);
             border-radius: 50%;
-            box-shadow: 0 0 10px #00ff88;
-            animation: pulse 1.5s infinite;
+            animation: blink 1.5s infinite;
         }
 
-        @keyframes pulse {
-            0% { opacity: 0.4; }
-            50% { opacity: 1; }
-            100% { opacity: 0.4; }
+        @keyframes blink { 0%,100%{opacity:.4} 50%{opacity:1} }
+
+        /* ── LAYOUT ── */
+        .page { padding: 28px 32px; display: flex; flex-direction: column; gap: 24px; max-width: 1500px; margin: 0 auto; }
+
+        /* ── STATUS ROW ── */
+        .status-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
         }
 
-        /* --- Sidebar (System Info) --- */
-        .sidebar {
+        .status-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px 22px;
             display: flex;
-            flex-direction: column;
-            gap: 20px;
+            align-items: center;
+            gap: 16px;
+            transition: border-color 0.3s;
         }
 
-        .card {
-            background: var(--glass);
-            backdrop-filter: blur(12px);
-            border: 1px solid var(--glass-border);
+        .status-card:hover { border-color: rgba(79,142,247,0.3); }
+
+        .status-icon {
+            width: 46px;
+            height: 46px;
             border-radius: 12px;
-            padding: 20px;
-        }
-
-        .card-title {
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            color: var(--text-dim);
-            letter-spacing: 1px;
-            margin-bottom: 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .card-value {
-            font-size: 1.8rem;
-            font-weight: 600;
-            color: var(--accent);
-            text-shadow: 0 0 15px var(--accent-glow);
-        }
-
-        .persona-card {
-            text-align: center;
-        }
-
-        .persona-avatar {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            background: var(--glass-border);
-            margin: 0 auto 15px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 2.5rem;
-            border: 2px solid var(--accent);
-            box-shadow: 0 0 20px var(--accent-glow);
-            transition: all 0.5s ease;
+            font-size: 1.4rem;
+            flex-shrink: 0;
         }
 
-        .persona-linda .persona-avatar {
-            border-color: var(--purple);
-            box-shadow: 0 0 20px var(--purple-glow);
-        }
+        .status-icon.blue  { background: rgba(79,142,247,0.12); }
+        .status-icon.green { background: rgba(34,197,94,0.12); }
+        .status-icon.amber { background: rgba(245,158,11,0.12); }
+        .status-icon.purple{ background: rgba(168,85,247,0.12); }
 
-        .persona-name {
-            font-size: 1.5rem;
-            text-transform: capitalize;
-            letter-spacing: 1px;
-        }
+        .status-card-info { flex: 1; }
 
-        /* --- Main Feed --- */
-        .main-feed {
-            background: var(--glass);
-            backdrop-filter: blur(12px);
-            border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .feed-header {
-            padding: 15px 20px;
-            border-bottom: 1px solid var(--glass-border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .feed-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        .feed-content::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .feed-content::-webkit-scrollbar-thumb {
-            background: var(--glass-border);
-            border-radius: 3px;
-        }
-
-        .log-entry {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid var(--glass-border);
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 10px;
-            animation: slideIn 0.3s ease-out;
-            transition: transform 0.2s;
-        }
-
-        .log-entry:hover {
-            transform: scale(1.005);
-            background: rgba(255, 255, 255, 0.04);
-        }
-
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .log-meta {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.75rem;
-            margin-bottom: 8px;
-            color: var(--text-dim);
-        }
-
-        .log-tool {
-            color: var(--accent);
-            font-weight: 700;
-        }
-
-        .log-question {
-            font-size: 0.9rem;
-            color: var(--text-main);
-            margin-bottom: 10px;
-            font-style: italic;
-        }
-
-        .log-details {
-            display: grid;
-            grid-template-columns: 80px 1fr;
-            gap: 10px;
-            font-size: 0.8rem;
-        }
-
-        .label {
-            color: var(--text-dim);
+        .status-card-label {
+            font-size: 0.72rem;
+            font-weight: 600;
             text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
         }
 
-        .value {
-            color: var(--accent);
-            word-break: break-all;
+        .status-card-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text);
         }
 
-        .result {
-            color: #ff9d00;
+        .status-card-sub {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
         }
 
-        /* --- Footer Info --- */
-        .analytics {
+        /* ── CONNECTION BADGES ── */
+        .connections-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 22px;
+        }
+
+        .conn-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .conn-list {
             display: grid;
-            grid-template-columns: 1fr 1.2fr 1fr;
-            gap: 15px;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 10px;
         }
 
-        .mini-card {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            padding: 15px;
-            text-align: center;
+        .conn-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
         }
 
-        /* --- Debug Control Panel --- */
-        .debug-control-panel {
-            position: fixed;
-            bottom: 85px;
-            right: 20px;
-            width: 330px;
-            height: 420px;
-            background: rgba(10, 10, 10, 0.85);
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.85), 0 0 25px rgba(0, 242, 255, 0.15);
-            z-index: 1000;
+        .conn-name {
+            font-size: 0.82rem;
+            font-weight: 500;
+        }
+
+        .conn-name small {
+            display: block;
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .conn-badge {
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 3px 9px;
+            border-radius: 999px;
+        }
+
+        .conn-badge.online  { background: rgba(34,197,94,0.15);  color: var(--green);  border: 1px solid rgba(34,197,94,0.3); }
+        .conn-badge.offline { background: rgba(239,68,68,0.12);  color: var(--red);    border: 1px solid rgba(239,68,68,0.25); }
+
+        /* ── 3-COLUMN MAIN GRID ── */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1.1fr 1fr;
+            gap: 20px;
+            min-height: 0;
+        }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
             display: flex;
             flex-direction: column;
-            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            opacity: 0;
-            transform: translateY(20px) scale(0.95);
-            pointer-events: none;
-            resize: both;
             overflow: hidden;
-            min-width: 280px;
-            min-height: 250px;
-            max-width: 90vw;
-            max-height: 80vh;
-        }
-
-        .debug-control-panel.active {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-            pointer-events: all;
+            height: calc(100vh - 380px);
+            min-height: 340px;
         }
 
         .panel-header {
-            padding: 12px 15px;
-            background: rgba(255, 255, 255, 0.03);
-            border-bottom: 1px solid var(--glass-border);
-            font-weight: 700;
-            font-size: 0.8rem;
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-            color: var(--accent);
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
         }
 
-        .panel-body {
-            padding: 15px;
-            flex: 1;
-            overflow-y: auto;
+        .panel-title {
             display: flex;
-            flex-direction: column;
-            gap: 15px;
+            align-items: center;
+            gap: 10px;
         }
 
-        .panel-body::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .panel-body::-webkit-scrollbar-thumb {
-            background: var(--glass-border);
-            border-radius: 2px;
-        }
-
-        .panel-btn-toggle {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: linear-gradient(135deg, var(--accent), var(--purple));
-            color: #fff;
-            border: none;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            font-size: 1.35rem;
-            cursor: pointer;
-            box-shadow: 0 5px 15px rgba(0, 242, 255, 0.4);
-            z-index: 1001;
+        .panel-title-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: transform 0.3s, box-shadow 0.3s;
+            font-size: 1rem;
         }
 
-        .panel-btn-toggle:hover {
-            transform: scale(1.08) rotate(15deg);
-            box-shadow: 0 5px 25px rgba(0, 242, 255, 0.6);
+        .panel-title-icon.blue   { background: rgba(79,142,247,0.15); }
+        .panel-title-icon.green  { background: rgba(34,197,94,0.15); }
+        .panel-title-icon.purple { background: rgba(168,85,247,0.15); }
+
+        .panel-title-text h3 {
+            font-size: 0.92rem;
+            font-weight: 700;
         }
 
-        .panel-btn-toggle:active {
-            transform: scale(0.92);
-        }
-        
-        .debug-btn {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--glass-border);
-            color: var(--text-main);
-            padding: 8px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-family: inherit;
-            font-size: 0.8rem;
-            font-weight: 600;
-            transition: all 0.2s;
-        }
-        
-        .debug-btn:hover {
-            background: rgba(0, 242, 255, 0.12);
-            border-color: var(--accent);
-            box-shadow: 0 0 10px rgba(0, 242, 255, 0.2);
-        }
-        
-        .debug-select, .debug-textarea {
-            background: rgba(0, 0, 0, 0.6);
-            border: 1px solid var(--glass-border);
-            color: var(--text-main);
-            padding: 8px;
-            border-radius: 6px;
-            font-family: inherit;
-            font-size: 0.8rem;
-            width: 100%;
-        }
-
-        .debug-textarea {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.75rem;
-        }
-        
-        .debug-select:focus, .debug-textarea:focus {
-            outline: none;
-            border-color: var(--accent);
-            box-shadow: 0 0 8px var(--accent-glow);
-        }
-        
-        .debug-form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        
-        .debug-form-group label {
+        .panel-title-text p {
             font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 1px;
+        }
+
+        .panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px;
+        }
+
+        .panel-body::-webkit-scrollbar { width: 5px; }
+        .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        /* ── TOOL LOG ENTRY ── */
+        .entry {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 10px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+
+        .entry-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .entry-action {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .action-pill {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 999px;
+            background: rgba(79,142,247,0.15);
+            color: var(--accent);
+            border: 1px solid rgba(79,142,247,0.25);
             text-transform: uppercase;
-            color: var(--text-dim);
             letter-spacing: 0.5px;
         }
+
+        .entry-time {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+        }
+
+        .entry-question {
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            font-style: italic;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .entry-detail-row {
+            display: flex;
+            gap: 6px;
+            align-items: flex-start;
+            margin-bottom: 6px;
+            font-size: 0.78rem;
+        }
+
+        .detail-key {
+            color: var(--text-muted);
+            font-weight: 600;
+            flex-shrink: 0;
+            min-width: 60px;
+        }
+
+        .detail-val {
+            color: var(--text-dim);
+            word-break: break-word;
+        }
+
+        .detail-val.success { color: var(--green); font-weight: 600; }
+        .detail-val.error   { color: var(--red);   font-weight: 600; }
+
+        /* ── QUEUE ENTRY ── */
+        .queue-entry {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .queue-entry.active-task {
+            border-color: rgba(34,197,94,0.4);
+            background: rgba(34,197,94,0.04);
+        }
+
+        .queue-step-num {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(79,142,247,0.15);
+            border: 1px solid rgba(79,142,247,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--accent);
+            flex-shrink: 0;
+        }
+
+        .queue-entry.active-task .queue-step-num {
+            background: rgba(34,197,94,0.15);
+            border-color: rgba(34,197,94,0.4);
+            color: var(--green);
+        }
+
+        .queue-entry-info { flex: 1; }
+
+        .queue-entry-name {
+            font-size: 0.88rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .queue-entry-detail {
+            font-size: 0.74rem;
+            color: var(--text-muted);
+        }
+
+        .queue-entry-status {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 3px 9px;
+            border-radius: 999px;
+        }
+
+        .queue-entry-status.running {
+            background: rgba(34,197,94,0.15);
+            color: var(--green);
+            border: 1px solid rgba(34,197,94,0.3);
+        }
+
+        .queue-entry-status.waiting {
+            background: rgba(100,116,139,0.12);
+            color: var(--text-muted);
+            border: 1px solid rgba(100,116,139,0.25);
+        }
+
+        .queue-delete-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            transition: all 0.2s;
+        }
+
+        .queue-delete-btn:hover {
+            background: rgba(239,68,68,0.1);
+            border-color: rgba(239,68,68,0.3);
+            color: var(--red);
+        }
+
+        /* ── ADD TASK FORM ── */
+        .add-task-bar {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0,0,0,0.2);
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .add-task-bar select,
+        .add-task-bar input {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 7px 10px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.8rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .add-task-bar select:focus,
+        .add-task-bar input:focus { border-color: var(--accent); }
+
+        .add-task-bar input { flex: 1; }
+
+        .btn-add {
+            background: var(--accent);
+            border: none;
+            color: white;
+            border-radius: 8px;
+            padding: 7px 14px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn-add:hover { opacity: 0.85; }
+
+        .btn-clear {
+            background: rgba(239,68,68,0.1);
+            border: 1px solid rgba(239,68,68,0.25);
+            color: var(--red);
+            border-radius: 8px;
+            padding: 7px 12px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-clear:hover { background: rgba(239,68,68,0.2); }
+
+        /* ── CONSOLE LOG ── */
+        .log-item {
+            display: flex;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            border-left: 3px solid transparent;
+            background: rgba(255,255,255,0.02);
+            font-size: 0.78rem;
+            line-height: 1.5;
+        }
+
+        .log-item.info   { border-left-color: var(--accent); }
+        .log-item.warn   { border-left-color: var(--amber); background: rgba(245,158,11,0.04); }
+        .log-item.error  { border-left-color: var(--red);   background: rgba(239,68,68,0.04); }
+
+        .log-time { color: var(--text-muted); flex-shrink: 0; font-size: 0.7rem; padding-top: 2px; }
+        .log-msg  { color: var(--text-dim); word-break: break-word; }
+
+        /* ── EMPTY STATES ── */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            gap: 8px;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .empty-state .empty-icon { font-size: 2rem; opacity: 0.4; }
+        .empty-state p { opacity: 0.6; }
+
+        /* ── SCROLLBAR ── */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
     </style>
 </head>
 <body>
-        <div class="hud-container">
-        <header>
-            <div class="logo">Roboas Control</div>
-            <div class="status-badge">
-                <div class="dot"></div>
-                SYSTEM ACTIVE
-            </div>
-        </header>
 
-        <aside class="sidebar">
-            <div class="card persona-card" id="persona-container">
-                <div class="card-title">Current Persona</div>
-                <div class="persona-avatar" id="persona-icon">🤖</div>
-                <div class="persona-name" id="persona-name">Syncing...</div>
-            </div>
+<!-- TOP BANNER -->
+<div class="top-banner">
+    <div class="banner-left">
+        <div class="banner-logo">LARA <span>5</span></div>
+        <div class="banner-subtitle">System Monitor · Live View</div>
+    </div>
+    <div class="live-badge">
+        <div class="live-dot"></div>
+        LIVE
+    </div>
+</div>
 
-            <div class="card">
-                <div class="card-title">Activity Metrics</div>
-                <div class="analytics">
-                    <div class="mini-card">
-                        <div class="card-title">Tool Calls</div>
-                        <div class="card-value" id="total-calls">0</div>
-                    </div>
-                    <div class="mini-card">
-                        <div class="card-title">Latency</div>
-                        <div class="card-value" style="font-size: 1.2rem; color: #00ff88;">Nominal</div>
-                    </div>
-                </div>
-            </div>
+<div class="page">
 
-            <div class="card">
-                <div class="card-title">Connection Status</div>
-                <div style="font-size: 0.95rem; margin-bottom: 10px;">Server: <span style="color: #00ff88; font-weight: 600;">Online</span> (Port 3000)</div>
-                <div style="font-size: 0.85rem; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
-                    <span>Emoji MCP:</span>
-                    <span id="status-emoji" style="padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; background: rgba(255,0,0,0.1); color: #ff4444;">Offline</span>
-                </div>
-                <div style="font-size: 0.85rem; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
-                    <span>Vision MCP:</span>
-                    <span id="status-vision" style="padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; background: rgba(255,0,0,0.1); color: #ff4444;">Offline</span>
-                </div>
-                <div style="font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
-                    <span>Robot MCP:</span>
-                    <span id="status-robot" style="padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; background: rgba(255,0,0,0.1); color: #ff4444;">Offline</span>
-                </div>
+    <!-- STATUS ROW -->
+    <div class="status-row">
+        <div class="status-card">
+            <div class="status-icon blue">🤖</div>
+            <div class="status-card-info">
+                <div class="status-card-label">Active Assistant</div>
+                <div class="status-card-value" id="persona-name">Syncing…</div>
+                <div class="status-card-sub">Currently talking to you</div>
             </div>
-        </aside>
+        </div>
 
-        <main class="main-feed" style="display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 20px;">
-            <div style="display: flex; flex-direction: column; height: 100%; max-height: calc(100vh - 120px);">
-                <div class="feed-header">
-                    <h3 style="font-size: 1rem; color: var(--text-main); opacity: 0.7;">MCP TOOL FEED</h3>
-                    <span id="update-ts" style="font-size: 0.7rem; color: var(--text-dim);">LAST UPDATE: JUST NOW</span>
-                </div>
-                <div class="feed-content" id="log-feed" style="flex: 1; overflow-y: auto;">
-                    <div style="padding: 40px; text-align: center; color: var(--text-dim);">Initializing data stream...</div>
-                </div>
+        <div class="status-card">
+            <div class="status-icon green">⚡</div>
+            <div class="status-card-info">
+                <div class="status-card-label">Actions Taken</div>
+                <div class="status-card-value" id="total-calls">0</div>
+                <div class="status-card-sub">Total robot tool calls this session</div>
             </div>
-            
+        </div>
 
-            <!-- TASK QUEUE PANEL -->
-            <div style="display: flex; flex-direction: column; height: 100%; max-height: calc(100vh - 120px);">
-                <div class="feed-header" style="background: rgba(0, 242, 255, 0.1); border-color: rgba(0, 242, 255, 0.2); display: flex; justify-content: space-between; align-items: center;">
-                    <h3 style="font-size: 1rem; color: var(--accent); opacity: 0.9;">ROBOT TASK QUEUE</h3>
-                    <div>
-                        <button onclick="clearQueue()" style="background: rgba(255, 50, 50, 0.2); border: 1px solid rgba(255,50,50,0.5); color: #fff; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.7rem;">Clear All</button>
-                    </div>
-                </div>
-                
-                <div style="background: rgba(0,0,0,0.4); padding: 10px; border-bottom: 1px solid var(--glass-border); display:flex; gap:10px;">
-                    <select id="manualTaskName" class="debug-select" style="width: auto;">
-                        <option value="locate_object">Locate Object</option>
-                        <option value="pick_and_place_object">Pick & Place</option>
-                        <option value="relocate_object">Relocate Object</option>
-                        <option value="return_home">Return Home</option>
-                        <option value="clear_emergency_stop">Clear E-Stop</option>
-                    </select>
-                    <input type="text" id="manualTaskTarget" class="debug-select" placeholder="Target Name" style="flex:1;">
-                    <button onclick="addManualTask()" class="debug-btn">Add Task</button>
-                </div>
-
-                <div class="feed-content" id="queue-feed" style="flex: 1; overflow-y: auto; padding: 15px; background: rgba(0,0,0,0.4);">
-                    <div style="padding: 40px; text-align: center; color: var(--text-dim);">Queue is empty</div>
-                </div>
+        <div class="status-card">
+            <div class="status-icon amber">🕐</div>
+            <div class="status-card-info">
+                <div class="status-card-label">Last Updated</div>
+                <div class="status-card-value" style="font-size:0.95rem;" id="update-ts">–</div>
+                <div class="status-card-sub">Data refreshes automatically</div>
             </div>
+        </div>
 
-            <div style="display: flex; flex-direction: column; height: 100%; max-height: calc(100vh - 120px);">
-                <div class="feed-header" style="background: rgba(112, 0, 255, 0.1); border-color: rgba(112, 0, 255, 0.2);">
-                    <h3 style="font-size: 1rem; color: var(--text-main); opacity: 0.7;">CONSOLE LOGS</h3>
-                </div>
-                <div class="feed-content" id="console-feed" style="flex: 1; overflow-y: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; padding: 15px; background: rgba(0,0,0,0.4);">
-                    <div style="padding: 40px; text-align: center; color: var(--text-dim);">Waiting for console output...</div>
-                </div>
+        <div class="status-card">
+            <div class="status-icon purple">🖥️</div>
+            <div class="status-card-info">
+                <div class="status-card-label">Server</div>
+                <div class="status-card-value" style="color:var(--green)">Online</div>
+                <div class="status-card-sub">Running on Port 3000</div>
             </div>
-        </main>
+        </div>
     </div>
 
-    <script>
+    <!-- CONNECTION BADGES -->
+    <div class="connections-card">
+        <div class="conn-title">🔌 Hardware & Service Connections</div>
+        <div class="conn-list">
+            <div class="conn-item">
+                <div class="conn-name">
+                    Emoji Service
+                    <small>Reaction animations</small>
+                </div>
+                <div class="conn-badge offline" id="status-emoji">Offline</div>
+            </div>
+            <div class="conn-item">
+                <div class="conn-name">
+                    Camera Vision
+                    <small>RealSense object detection</small>
+                </div>
+                <div class="conn-badge offline" id="status-vision">Offline</div>
+            </div>
+            <div class="conn-item">
+                <div class="conn-name">
+                    Robot Arm
+                    <small>LARA physical movements</small>
+                </div>
+                <div class="conn-badge offline" id="status-robot">Offline</div>
+            </div>
+        </div>
+    </div>
 
-                async function clearQueue() {
-                    await fetch('/queue-clear', { method: 'POST' });
-                }
-                async function deleteQueueTask(id) {
-                    await fetch('/queue-delete', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id })
-                    });
-                }
-                async function addManualTask() {
-                    const name = document.getElementById('manualTaskName').value;
-                    const target = document.getElementById('manualTaskTarget').value;
-                    const task = { name, args: {}, question: "Manual UI injection" };
-                    if (name === "locate_object") task.args.target_name = target;
-                    if (name === "pick_and_place_object") task.args.object_name = target;
-                    if (name === "relocate_object") task.args.obstacle_name = target;
-                    
-                    await fetch('/queue-add', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ task })
-                    });
-                    document.getElementById('manualTaskTarget').value = '';
-                }
-                
-                function renderQueue(queue, isBusy) {
-                    const feed = document.getElementById('queue-feed');
-                    if (!queue || queue.length === 0) {
-                        feed.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-dim);">Queue is empty. Waiting for tasks...</div>';
-                        return;
-                    }
-                    
-                    feed.innerHTML = queue.map((task, idx) => `
-                        <div class="log-entry" style="position: relative; border-left: 3px solid ${idx === 0 && isBusy ? '#00ff88' : 'var(--accent)'}; background: ${idx === 0 && isBusy ? 'rgba(0, 255, 136, 0.05)' : 'rgba(255,255,255,0.02)'}">
-                            <div class="log-meta">
-                                <span class="log-tool" style="color: ${idx === 0 && isBusy ? '#00ff88' : 'var(--accent)'}">${task.name.toUpperCase()}</span>
-                                <span style="background: rgba(255,0,0,0.2); border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: white;" onclick="deleteQueueTask('${task.id}')">×</span>
-                            </div>
-                            <div class="log-details" style="grid-template-columns: 50px 1fr;">
-                                <div class="label">Args:</div>
-                                <div class="value">${JSON.stringify(task.args)}</div>
-                                <div class="label">Status:</div>
-                                <div class="value" style="color: ${idx === 0 && isBusy ? '#00ff88' : '#888'}">${idx === 0 && isBusy ? 'EXECUTING NOW...' : 'PENDING'}</div>
-                            </div>
-                        </div>
-                    `).join('');
-                }
+    <!-- 3 PANEL GRID -->
+    <div class="main-grid">
 
-        // State
-        let toolLogs = [];
-        let systemLogs = [];
-
-        function renderToolLogs() {
-            const feed = document.getElementById('log-feed');
-            if (toolLogs.length === 0) {
-                feed.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-dim);">No tool logs yet.</div>';
-                return;
-            }
-            
-            const logs = [...toolLogs].reverse();
-            feed.innerHTML = logs.map(log => `
-                <div class="log-entry">
-                    <div class="log-meta">
-                        <span class="log-tool">${log.toolName.toUpperCase()}</span>
-                        <span>${new Date(log.timestamp).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true })}</span>
-                    </div>
-                    <div class="log-question">"${log.userQuestion}"</div>
-                    <div class="log-details">
-                        <div class="label">Args:</div>
-                        <div class="value">${JSON.stringify(log.args)}</div>
-                        <div class="label">Status:</div>
-                        <div class="value result">${log.result}</div>
+        <!-- PANEL 1: TOOL LOG -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon blue">🛠️</div>
+                    <div class="panel-title-text">
+                        <h3>Recent Actions</h3>
+                        <p>What the robot has been doing</p>
                     </div>
                 </div>
-            `).join('');
+            </div>
+            <div class="panel-body" id="log-feed">
+                <div class="empty-state">
+                    <div class="empty-icon">💤</div>
+                    <p>No actions have been taken yet.<br>Ask John or Linda to do something!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL 2: TASK QUEUE -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon green">📋</div>
+                    <div class="panel-title-text">
+                        <h3>Task Queue</h3>
+                        <p>Upcoming jobs for the robot arm</p>
+                    </div>
+                </div>
+                <button class="btn-clear" onclick="clearQueue()">Clear All</button>
+            </div>
+            <div class="add-task-bar">
+                <select id="manualTaskName">
+                    <option value="locate_object">📍 Locate Object</option>
+                    <option value="pick_and_place_object">🤏 Pick &amp; Place</option>
+                    <option value="relocate_object">🔀 Move Out of Way</option>
+                    <option value="return_home">🏠 Return Home</option>
+                    <option value="clear_emergency_stop">🔓 Clear E-Stop</option>
+                </select>
+                <input type="text" id="manualTaskTarget" placeholder="Object name (e.g. cube)">
+                <button class="btn-add" onclick="addManualTask()">+ Add</button>
+            </div>
+            <div class="panel-body" id="queue-feed">
+                <div class="empty-state">
+                    <div class="empty-icon">✅</div>
+                    <p>Queue is empty.<br>The robot is ready for a new task!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL 3: CONSOLE LOGS -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon purple">📡</div>
+                    <div class="panel-title-text">
+                        <h3>System Messages</h3>
+                        <p>Live updates from the system</p>
+                    </div>
+                </div>
+            </div>
+            <div class="panel-body" id="console-feed">
+                <div class="empty-state">
+                    <div class="empty-icon">📭</div>
+                    <p>Waiting for system messages…</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    // ── TOOL NAME → FRIENDLY NAME ──
+    const TOOL_NAMES = {
+        locate_object:        { label: 'Locate Object',     icon: '📍' },
+        pick_and_place_object:{ label: 'Pick & Place',      icon: '🤏' },
+        relocate_object:      { label: 'Move Out of Way',   icon: '🔀' },
+        return_home:          { label: 'Return to Home',    icon: '🏠' },
+        clear_emergency_stop: { label: 'Clear Emergency',   icon: '🔓' },
+        emergency_stop:       { label: 'Emergency Stop',    icon: '🛑' },
+    };
+
+    function friendlyTool(name) {
+        const t = TOOL_NAMES[name];
+        return t ? `${t.icon} ${t.label}` : name;
+    }
+
+    function friendlyArgs(name, args) {
+        if (!args || Object.keys(args).length === 0) return 'No extra details';
+        if (name === 'locate_object' && args.target_name) return `Looking for: <strong>${args.target_name}</strong>`;
+        if (name === 'pick_and_place_object' && args.object_name) return `Picking up: <strong>${args.object_name}</strong>`;
+        if (name === 'relocate_object' && args.obstacle_name) return `Moving: <strong>${args.obstacle_name}</strong>`;
+        return Object.entries(args).map(([k,v]) => `${k}: <strong>${v}</strong>`).join(' · ');
+    }
+
+    function friendlyResult(result) {
+        if (!result) return '';
+        const lower = String(result).toLowerCase();
+        if (lower.includes('success') || lower.includes('complete') || lower.includes('done')) {
+            return `<span class="detail-val success">✅ Success</span>`;
         }
-
-        function formatUserFriendlyMessage(msg, color) {
-            if (!msg) return '';
-            
-            if (typeof msg !== 'string') {
-                msg = JSON.stringify(msg);
-            }
-
-            // Highlight common tags
-            msg = msg.replace(/\[(GPT|RobotMCP|VisionMCP|Server|Socket|WAKE WS|OWW)\]/g, '<strong style="color: var(--accent);">[$1]</strong>');
-            msg = msg.replace(/\[(.*?)\]/g, '<strong style="color: #00f2ff;">[$1]</strong>');
-            
-            // Highlight success/failure keywords
-            msg = msg.replace(/\b(success|connected|started|ready|completed|online)\b/gi, '<span style="color: #00ff88; font-weight: bold;">$1</span>');
-            msg = msg.replace(/\b(error|failed|disconnected|timeout|warning|offline)\b/gi, '<span style="color: #ff4444; font-weight: bold;">$1</span>');
-            
-            // Attempt to parse JSON and make it look clean
-            if (msg.includes('{') && msg.includes('}')) {
-                try {
-                    const jsonStart = msg.indexOf('{');
-                    const jsonEnd = msg.lastIndexOf('}');
-                    if (jsonStart !== -1 && jsonEnd > jsonStart) {
-                        const jsonStr = msg.substring(jsonStart, jsonEnd + 1);
-                        const parsed = JSON.parse(jsonStr);
-                        const prettyJson = '<pre style="background: rgba(0,0,0,0.3); padding: 6px; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; margin-top: 6px; color: #00f2ff; border: 1px solid rgba(0,242,255,0.2);">' + JSON.stringify(parsed, null, 2) + '</pre>';
-                        msg = msg.substring(0, jsonStart) + prettyJson + msg.substring(jsonEnd + 1);
-                    }
-                } catch(e) {
-                    // Not valid JSON, leave as is
-                }
-            }
-            
-            return `<span style="color: ${color}; line-height: 1.5; font-family: 'Inter', sans-serif;">${msg}</span>`;
+        if (lower.includes('error') || lower.includes('fail')) {
+            return `<span class="detail-val error">❌ Failed</span>`;
         }
+        return `<span class="detail-val">${result}</span>`;
+    }
 
-        function renderConsoleLogs() {
-            const feed = document.getElementById('console-feed');
-            if (systemLogs.length === 0) {
-                feed.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-dim);">No console logs yet.</div>';
-                return;
-            }
-            
-            feed.innerHTML = systemLogs.map(log => {
-                let color = '#ccc';
-                if (log.level === 'error') color = '#ff4444';
-                if (log.level === 'warn') color = '#ffbb33';
-                const ts = new Date(log.timestamp).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true });
-                
-                const prettyMsg = formatUserFriendlyMessage(log.message, color);
-                
-                return `<div style="margin-bottom: 10px; border-left: 3px solid ${color === '#ccc' ? 'var(--accent)' : color}; padding: 6px 10px; background: rgba(255,255,255,0.03); border-radius: 0 4px 4px 0;">
-                    <div style="font-size: 0.7rem; color: #888; margin-bottom: 4px;">⏰ ${ts} ${log.level ? '• ' + log.level.toUpperCase() : ''}</div> 
-                    ${prettyMsg}
-                </div>`;
-            }).join('');
-            
-            // Auto-scroll console to bottom
-            feed.scrollTop = feed.scrollHeight;
+    // ── RENDER TOOL LOGS ──
+    let toolLogs = [];
+    function renderToolLogs() {
+        const feed = document.getElementById('log-feed');
+        if (toolLogs.length === 0) {
+            feed.innerHTML = `<div class="empty-state"><div class="empty-icon">💤</div><p>No actions have been taken yet.<br>Ask John or Linda to do something!</p></div>`;
+            return;
         }
+        feed.innerHTML = [...toolLogs].reverse().map(log => {
+            const ts = new Date(log.timestamp).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true });
+            return `<div class="entry">
+                <div class="entry-top">
+                    <div class="entry-action">
+                        <span class="action-pill">${friendlyTool(log.toolName)}</span>
+                    </div>
+                    <span class="entry-time">${ts}</span>
+                </div>
+                ${log.userQuestion ? `<div class="entry-question">"${log.userQuestion}"</div>` : ''}
+                <div class="entry-detail-row">
+                    <span class="detail-key">Details:</span>
+                    <span class="detail-val">${friendlyArgs(log.toolName, log.args)}</span>
+                </div>
+                <div class="entry-detail-row">
+                    <span class="detail-key">Result:</span>
+                    ${friendlyResult(log.result)}
+                </div>
+            </div>`;
+        }).join('');
+    }
 
-        function updateUI(data) {
-            if (data.currentPersona) {
-                const nameEl = document.getElementById('persona-name');
-                const iconEl = document.getElementById('persona-icon');
-                const container = document.getElementById('persona-container');
-
-                nameEl.innerText = data.currentPersona;
-                iconEl.innerText = data.currentPersona === 'linda' ? '👩' : '👨';
-                
-                if (data.currentPersona === 'linda') {
-                    container.classList.add('persona-linda');
-                    iconEl.style.borderColor = '#7000ff';
-                    iconEl.style.boxShadow = '0 0 20px rgba(112, 0, 255, 0.3)';
-                } else {
-                    container.classList.remove('persona-linda');
-                    iconEl.style.borderColor = '#00f2ff';
-                    iconEl.style.boxShadow = '0 0 20px rgba(0, 242, 255, 0.3)';
-                }
-            }
-
-            if (data.mcpStatus) {
-                updateBadge('status-emoji', data.mcpStatus.emoji === 'Online');
-                updateBadge('status-vision', data.mcpStatus.vision === 'Online');
-                updateBadge('status-robot', data.mcpStatus.robot === 'Online');
-            }
+    // ── RENDER QUEUE ──
+    function renderQueue(queue, isBusy) {
+        const feed = document.getElementById('queue-feed');
+        if (!queue || queue.length === 0) {
+            feed.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><p>Queue is empty.<br>The robot is ready for a new task!</p></div>`;
+            return;
         }
+        feed.innerHTML = queue.map((task, idx) => {
+            const isActive = idx === 0 && isBusy;
+            const t = TOOL_NAMES[task.name];
+            const icon = t ? t.icon : '⚙️';
+            const label = t ? t.label : task.name;
+            let argStr = '';
+            if (task.args) {
+                if (task.args.object_name) argStr = task.args.object_name;
+                else if (task.args.target_name) argStr = task.args.target_name;
+                else if (task.args.obstacle_name) argStr = task.args.obstacle_name;
+            }
+            return `<div class="queue-entry ${isActive ? 'active-task' : ''}">
+                <div class="queue-step-num">${isActive ? '▶' : idx + 1}</div>
+                <div class="queue-entry-info">
+                    <div class="queue-entry-name">${icon} ${label}</div>
+                    ${argStr ? `<div class="queue-entry-detail">Target: ${argStr}</div>` : ''}
+                </div>
+                <span class="queue-entry-status ${isActive ? 'running' : 'waiting'}">${isActive ? 'Running' : 'Waiting'}</span>
+                <button class="queue-delete-btn" onclick="deleteQueueTask('${task.id}')">Remove</button>
+            </div>`;
+        }).join('');
+    }
 
-        function setupSSE() {
-            const evtSource = new EventSource('/debug-stream');
-            
-            evtSource.onmessage = function(event) {
-                try {
-                    const parsed = JSON.parse(event.data);
-                    
-                    if (parsed.type === 'init') {
-                        toolLogs = parsed.data.toolCallLog || [];
-                        systemLogs = parsed.data.systemLogs || [];
-                        renderToolLogs();
-                        renderConsoleLogs();
-                        updateUI(parsed.data);
-                    } else if (parsed.type === 'tool') {
-                        toolLogs.push(parsed.data);
-                        if (toolLogs.length > 50) toolLogs.shift();
-                        renderToolLogs();
-                    } else if (parsed.type === 'queue') {
-                        renderQueue(parsed.data.queue, parsed.data.isRobotBusy);
-                    } else if (parsed.type === 'console') {
-                        systemLogs.push(parsed.data);
-                        if (systemLogs.length > 500) systemLogs.shift();
-                        renderConsoleLogs();
-                    }
-                    
-                    document.getElementById('total-calls').innerText = toolLogs.length;
-                    const now = new Date();
-                    document.getElementById('update-ts').innerText = 'LAST UPDATE (SGT): ' + now.toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true });
-                } catch (e) {
-                    console.error("Error parsing SSE data", e);
-                }
-            };
-            
-            evtSource.onerror = function(err) {
-                console.error("EventSource failed.", err);
-            };
+    // ── RENDER CONSOLE LOGS ──
+    let systemLogs = [];
+
+    function friendlyLogMessage(msg) {
+        if (!msg) return '';
+        // strip common internal prefixes for cleaner display
+        msg = msg.replace(/^\[(GPT|Server|MCP|OWW|WAKE WS|VisionMCP|RobotMCP)\]\s*/i, '');
+        // highlight key words
+        msg = msg.replace(/\b(connected|success|ready|completed|online)\b/gi, '<strong style="color:var(--green)">$1</strong>');
+        msg = msg.replace(/\b(error|failed|disconnected|timeout|offline)\b/gi, '<strong style="color:var(--red)">$1</strong>');
+        msg = msg.replace(/\b(warning|warn)\b/gi, '<strong style="color:var(--amber)">$1</strong>');
+        return msg;
+    }
+
+    function renderConsoleLogs() {
+        const feed = document.getElementById('console-feed');
+        if (systemLogs.length === 0) {
+            feed.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><p>Waiting for system messages…</p></div>`;
+            return;
         }
+        feed.innerHTML = systemLogs.map(log => {
+            const ts = new Date(log.timestamp).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true });
+            const level = log.level === 'error' ? 'error' : log.level === 'warn' ? 'warn' : 'info';
+            return `<div class="log-item ${level}">
+                <div class="log-time">${ts}</div>
+                <div class="log-msg">${friendlyLogMessage(log.message)}</div>
+            </div>`;
+        }).join('');
+        feed.scrollTop = feed.scrollHeight;
+    }
 
-        // Initialize
-        setupSSE();
+    // ── UI UPDATES ──
+    function updateUI(data) {
+        if (data.currentPersona) {
+            const name = data.currentPersona;
+            document.getElementById('persona-name').innerText = name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        if (data.mcpStatus) {
+            updateBadge('status-emoji',  data.mcpStatus.emoji  === 'Online');
+            updateBadge('status-vision', data.mcpStatus.vision === 'Online');
+            updateBadge('status-robot',  data.mcpStatus.robot  === 'Online');
+        }
+    }
 
-        // --- Debug Control Panel Code ---
-        const debugPanel = document.getElementById('debug-panel');
-        const toggleBtn = document.getElementById('toggle-panel-btn');
-        
-        toggleBtn.addEventListener('click', () => {
-            const isActive = debugPanel.classList.contains('active');
-            togglePanel(!isActive);
+    function updateBadge(id, isOnline) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.className = 'conn-badge ' + (isOnline ? 'online' : 'offline');
+        el.innerText  = isOnline ? 'Online' : 'Offline';
+    }
+
+    // ── QUEUE ACTIONS ──
+    async function clearQueue() {
+        if (!confirm('Remove all tasks from the queue?')) return;
+        await fetch('/queue-clear', { method: 'POST' });
+    }
+
+    async function deleteQueueTask(id) {
+        await fetch('/queue-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
         });
-        
-        function togglePanel(open) {
-            if (open) {
-                debugPanel.classList.add('active');
-                toggleBtn.style.transform = 'rotate(90deg)';
-            } else {
-                debugPanel.classList.remove('active');
-                toggleBtn.style.transform = 'rotate(0deg)';
-            }
-        }
-        
-        async function triggerPersona(persona) {
+    }
+
+    async function addManualTask() {
+        const name   = document.getElementById('manualTaskName').value;
+        const target = document.getElementById('manualTaskTarget').value.trim();
+        const task   = { name, args: {}, question: 'Manual entry from monitor' };
+        if (name === 'locate_object')         task.args.target_name   = target;
+        if (name === 'pick_and_place_object') task.args.object_name   = target;
+        if (name === 'relocate_object')       task.args.obstacle_name = target;
+        await fetch('/queue-add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task })
+        });
+        document.getElementById('manualTaskTarget').value = '';
+    }
+
+    // ── SSE ──
+    function setupSSE() {
+        const es = new EventSource('/debug-stream');
+        es.onmessage = function(event) {
             try {
-                const res = await fetch('/switch-persona', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ persona, silent: false })
-                });
-                const result = await res.json();
-                if (result.success) {
-                    fetchLogs();
+                const p = JSON.parse(event.data);
+                if (p.type === 'init') {
+                    toolLogs   = p.data.toolCallLog || [];
+                    systemLogs = p.data.systemLogs  || [];
+                    renderToolLogs();
+                    renderConsoleLogs();
+                    updateUI(p.data);
+                } else if (p.type === 'tool') {
+                    toolLogs.push(p.data);
+                    if (toolLogs.length > 50) toolLogs.shift();
+                    renderToolLogs();
+                } else if (p.type === 'queue') {
+                    renderQueue(p.data.queue, p.data.isRobotBusy);
+                } else if (p.type === 'console') {
+                    systemLogs.push(p.data);
+                    if (systemLogs.length > 500) systemLogs.shift();
+                    renderConsoleLogs();
                 }
-            } catch (err) {
-                console.error("Failed to switch persona:", err);
-            }
-        }
-        
-        async function clearLogs() {
-            if (!confirm("Are you sure you want to clear the logs?")) return;
-            try {
-                const res = await fetch('/debug/clear-logs', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                const result = await res.json();
-                if (result.success) {
-                    fetchLogs();
-                }
-            } catch (err) {
-                console.error("Failed to clear logs:", err);
-            }
-        }
-        
-        const placeholders = {
-            locate_object: '{\n  "target_name": "cube",\n  "x": -0.1009,\n  "y": -0.1316,\n  "z": 0.9670\n}',
-            pick_and_place_object: '{\n  "object_name": "cube",\n  "x": 0.285,\n  "y": -0.120,\n  "z": 0.050,\n  "angle_deg": 45\n}',
-            relocate_object: '{\n  "obstacle_name": "medicine",\n  "obstacle_x": 0.310,\n  "obstacle_y": -0.050,\n  "obstacle_z": 0.020\n}'
+                document.getElementById('total-calls').innerText = toolLogs.length;
+                const now = new Date();
+                document.getElementById('update-ts').innerText = now.toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore', hour12: true });
+            } catch(e) { console.error('SSE parse error', e); }
         };
-        
-        function updateMockArgsPlaceholder() {
-            const select = document.getElementById('mock-tool-select');
-            const textarea = document.getElementById('mock-args-input');
-            textarea.value = placeholders[select.value] || '{}';
-        }
-        
-        updateMockArgsPlaceholder();
-        
-        async function submitMockTool() {
-            const select = document.getElementById('mock-tool-select');
-            const textarea = document.getElementById('mock-args-input');
-            
-            let args = {};
-            try {
-                args = JSON.parse(textarea.value);
-            } catch (err) {
-                alert("Arguments must be a valid JSON object");
-                return;
-            }
-            
-            try {
-                const res = await fetch('/debug/trigger-mock-tool', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ toolName: select.value, args })
-                });
-                const result = await res.json();
-                if (result.success) {
-                    alert("Mock executed successfully! Log recorded in feed.");
-                    fetchLogs();
-                } else {
-                    alert("Error: " + result.message);
-                }
-            } catch (err) {
-                console.error("Mock Execution Error:", err);
-                alert("Execution Failed: " + err.message);
-            }
-        }
+        es.onerror = () => console.error('SSE disconnected');
+    }
 
-        function updateBadge(elementId, isConnected) {
-            const el = document.getElementById(elementId);
-            if (!el) return;
-            if (isConnected) {
-                el.innerText = 'Online';
-                el.style.background = 'rgba(0, 255, 136, 0.1)';
-                el.style.color = '#00ff88';
-            } else {
-                el.innerText = 'Offline';
-                el.style.background = 'rgba(255, 68, 68, 0.1)';
-                el.style.color = '#ff4444';
-            }
-        }
-    </script>
-    
-
+    setupSSE();
+</script>
 </body>
 </html>
