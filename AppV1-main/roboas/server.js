@@ -686,8 +686,8 @@ async function processRobotQueue() {
       let friendlyFailMsg = '';
       const lowerErr = err.message.toLowerCase();
       
-      if (lowerErr.includes('emergency stop')) {
-        friendlyFailMsg = "I cannot complete the task because the robot is in an emergency stop state. Please clear the emergency latch first.";
+      if (lowerErr.includes('emergency stop') || lowerErr.includes('powered off')) {
+        friendlyFailMsg = "Emergency stop activated.";
       } else if (lowerErr.includes('not found')) {
         friendlyFailMsg = `I'm sorry, I was unable to find ${failedTarget} on the table. Please check if it is within my workspace and try again.`;
       } else {
@@ -1935,6 +1935,7 @@ app.post('/emergency-stop', async (req, res) => {
   if (robotMcpClient) {
     try {
       const result = await robotMcpClient.callTool({ name: "emergency_stop", arguments: {} });
+      sendProgress(null, false, "Emergency stop activated.");
       sendProgress("Emergency Stop Activated!", false);
       res.json({ success: true, message: result.content[0].text });
     } catch (err) {

@@ -1021,7 +1021,7 @@ async def qwen_plan_next_action(
         f"INSTRUCTIONS:\n"
         f"  1. Look at the image AND read the Python sensor analysis.\n"
         f"  2. IMPORTANT: Do NOT try to visually look for the stickers on the cubes. The camera cannot see them clearly. You MUST blindly trust the following mapping.\n"
-        f"  3. STICKER MAPPING: The stickers (soy milk, hat, wrench, umbrella) are on the GREEN, RED, BLUE, and YELLOW cubes respectively. Python has already mapped the user's request to the correct '{resolved_target}' for you. Just pick the '{resolved_target}'. Do NOT overthink the mapping.\n"
+        f"  3. STICKER MAPPING: The stickers (soy milk, hat, wrench, umbrella) are on the GREEN, RED, BLUE, and YELLOW cubes respectively. If the user asked for one of these, find the matching colored cube. If the user asked for a colored cube directly (e.g., 'blue cube'), pick THAT specific colored cube. The target you must pick is '{target}'.\n"
         f"  4. If the user asks for an object NOT in the catalogue, output 'abort'.\n"
         f"  5. HIDDEN OBJECT DEDUCTION: If your target cube is visually missing, BUT the Python Sensor Analysis says an obstacle is 'Likely resting on' your target cube, you MUST deduce the target is hidden underneath it. Output 'relocate' and set 'obstacle_name' to the blocking object.\n"
         f"  6. RELOCATE OVERRIDE: If the Python Sensor Analysis explicitly says 'MUST relocate [object] first', you MUST immediately output 'relocate' and set 'obstacle_name' to that object. Do NOT second-guess it. Do NOT try to pick the target.\n"
