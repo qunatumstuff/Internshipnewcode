@@ -28,6 +28,35 @@ import camera
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("vision-mcp")
 
+# ─────────────────────────────────────────────────────────────
+# Remote log forwarding — sends log lines to server.js /python-log
+# so they appear live in the debug website.
+# Set SERVER_HOST env var to the IP of the Node server if running remotely.
+# e.g.  SERVER_HOST=192.168.1.50 python vision_mcp.py
+# ─────────────────────────────────────────────────────────────
+_SERVER_HOST = os.environ.get("SERVER_HOST", "localhost")
+_LOG_URL = f"http://{_SERVER_HOST}:3000/python-log"
+
+def remote_log(level: str, message: str, source: str = "vision_mcp"):
+    """Fire-and-forget: POST a log line to the debug website."""
+    def _post():
+        try:
+            payload = json.dumps({"source": source, "level": level, "message": message}).encode()
+            req = urllib.request.Request(_LOG_URL, data=payload, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=2): pass
+        except Exception:
+            pass  # Never let logging break vision
+    threading.Thread(target=_post, daemon=True).start()
+
+class _RemoteHandler(logging.Handler):
+    def emit(self, record):
+        lvl = "error" if record.levelno >= logging.ERROR else "warn" if record.levelno >= logging.WARNING else "info"
+        remote_log(lvl, self.format(record), source="vision_mcp")
+
+_rh = _RemoteHandler()
+_rh.setFormatter(logging.Formatter("%(message)s"))
+logger.addHandler(_rh)
+
 # ==========================================
 # CONFIGURATION
 # ==========================================
@@ -505,17 +534,20 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
     loop = asyncio.get_running_loop()
     def fetch():
         logger.info("SENDING TO QWEN...")
+        remote_log("info", "⏳ Sending image to Qwen for analysis...", source="qwen")
         with urllib.request.urlopen(req, timeout=300) as response:
             print("Qwen http received")
             return json.loads(response.read().decode("utf-8"))
     try:
         result = await loop.run_in_executor(None, fetch)
         logger.info("QWEN RESPONSE RECEIVED")
-        print("RAW OLLAMA RESULT:", result)
+        remote_log("info", "📨 Qwen response received.", source="qwen")
+        remote_log("info", f"📋 Raw result: {str(result)[:300]}", source="qwen")
 
         if "error" in result:
            traceback.print_exc()
            print("FULL OLLAMA ERROR RESULT:", json.dumps(result, indent=2))
+           remote_log("error", f"❌ Ollama API Error: {result['error']}", source="qwen")
            print(f"Ollama API Error: {result['error']}")
            return f"Ollama API Error: {result['error']}"
         
@@ -531,13 +563,16 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         if not response_text.strip():
             dr = result.get("done_reason", "")
             logger.error(f"Qwen returned empty content (done_reason={dr}). No answer produced.")
+            remote_log("error", f"❌ Qwen returned empty content (done_reason={dr}).", source="qwen")
             return "Ollama API Error: Model returned empty string."
             
         logger.info(f"[Qwen] {response_text[:120]}")
+        remote_log("info", f"🧠 Qwen says: {response_text[:300]}", source="qwen")
         return response_text
     except Exception as e:
         import traceback
         traceback.print_exc()
+        remote_log("error", f"❌ Qwen network error: {e}", source="qwen")
         print(f"Qwen network error: {e}")
         return f"Ollama API Error: {e}"
 
