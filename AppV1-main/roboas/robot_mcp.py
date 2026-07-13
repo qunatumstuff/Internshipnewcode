@@ -137,6 +137,10 @@ async def handle_list_tools() -> list[Tool]:
                         "type": "array",
                         "description": "Full YOLO detection list for the current scene. Used for placement boundary occupancy.",
                         "items": {"type": "object"}
+                    },
+                    "gap_mm_reduction_percent": {
+                        "type": "number",
+                        "description": "Optional. If a previous grasp failed, you can reduce the commanded gap by a percentage (e.g., 5 or 10) to squeeze the object tighter."
                     }
                 },
                 "required": ["object_name", "x", "y", "z"]
@@ -254,9 +258,12 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         grasp_label = args.get("grasp_label", None)
         detections  = args.get("detections", None)
 
+        gap_mm_reduction_percent = float(args.get("gap_mm_reduction_percent", 0.0))
+
         logger.info(
             f"MCP pick_and_place_object: {object_name} at ({x}, {y}, {z}) "
-            f"angle={angle_deg} grasp={grasp_label} detections_count={len(detections) if detections else 0}"
+            f"angle={angle_deg} grasp={grasp_label} detections_count={len(detections) if detections else 0} "
+            f"gap_mm_reduction_percent={gap_mm_reduction_percent}"
         )
         try:
             result = await asyncio.to_thread(
@@ -266,6 +273,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 angle=angle_deg,
                 detections=detections,
                 grasp_label=grasp_label,
+                gap_mm_reduction_percent=gap_mm_reduction_percent,
             )
             return [TextContent(type="text", text=f"Completed: {result}")]
         except Exception as e:

@@ -737,7 +737,22 @@
                     <option value="return_home">🏠 Return Home</option>
                     <option value="clear_emergency_stop">🔓 Clear E-Stop</option>
                 </select>
-                <input class="qt-input" type="text" id="manualTaskTarget" placeholder="Object name (e.g. cube)">
+                <select class="qt-input" id="manualTaskTarget">
+                    <option value="cube" selected>Cube (Any)</option>
+                    <option value="red cube">Red Cube</option>
+                    <option value="blue cube">Blue Cube</option>
+                    <option value="green cube">Green Cube</option>
+                    <option value="yellow cube">Yellow Cube</option>
+                    <option value="medicine">Medicine</option>
+                    <option value="sponge">Sponge</option>
+                    <option value="screwdriver">Screwdriver</option>
+                    <option value="nut">Nut</option>
+                    <option value="black marker">Black Marker</option>
+                    <option value="soy milk">Soy Milk</option>
+                    <option value="umbrella">Umbrella</option>
+                    <option value="wrench">Wrench</option>
+                    <option value="hat">Hat</option>
+                </select>
                 <button class="btn-add" onclick="addManualTask()">+ Add</button>
             </div>
             <div class="panel-body" id="queue-feed">

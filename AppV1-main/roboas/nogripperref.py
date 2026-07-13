@@ -996,6 +996,16 @@ def gripper_grip_object_plain(object_width_m):
 
     #gripper_move_percent(close_percent, force=MAX_FORCE_PERCENT, speed=40)
     gap_mm = percent_to_commanded_opening_m(close_percent) * 1000
+    
+    # Apply dynamic gap reduction for retries (if requested by Velkan/agent)
+    selected_object = globals().get("SELECTED_OBJECT", {})
+    if selected_object:
+        reduction_percent = float(selected_object.get("_gap_mm_reduction_percent", 0.0))
+        if reduction_percent > 0.0:
+            original_gap = gap_mm
+            gap_mm = gap_mm * (1.0 - (reduction_percent / 100.0))
+            print(f"[Grip Retrying] Applying {reduction_percent}% reduction to gap_mm: {original_gap:.1f}mm -> {gap_mm:.1f}mm")
+
     width_cmd = _gap_mm_to_width_command(gap_mm)
     try:
         #NEW: proactively check for a lingering error before attempting,
@@ -3761,7 +3771,7 @@ def diagnostic_print_placement_and_box(sequence):
     )
 
 
-def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angle=None, detections=None, grasp_label=None):
+def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angle=None, detections=None, grasp_label=None, gap_mm_reduction_percent=0.0):
     """
     Build the internal pick_sequence from MCP data.
 
@@ -3910,6 +3920,8 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
         selected_object["grasp_offset_z_m"] = 0.0
         selected_object["_chosen_grasp_label"] = grasp_label
 
+    selected_object["_gap_mm_reduction_percent"] = gap_mm_reduction_percent
+
     sequence = [{
         "index": 1,
         "pick_x": float(target["x"]) + PICK_OFFSET_X_M,
@@ -3941,7 +3953,7 @@ def mcp_robot_startup_once():
 
 
 
-def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, detections=None, grasp_label=None):
+def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, detections=None, grasp_label=None, gap_mm_reduction_percent=0.0):
     """
     MCP entry point for robot execution.
 
@@ -3973,6 +3985,7 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
             angle=angle,
             detections=detections,
             grasp_label=grasp_label,
+            gap_mm_reduction_percent=gap_mm_reduction_percent,
         )
 
         preplan_all_drop_slots(sequence)
