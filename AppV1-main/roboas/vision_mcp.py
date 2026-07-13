@@ -1042,6 +1042,7 @@ async def qwen_plan_next_action(
         f"PYTHON SENSOR ANALYSIS (Depth Elevation & XY Overlap):\n"
         f"{scene_analysis}\n\n"
         f"HISTORY:\n{history_summary}\n\n"
+        f"PLACEMENT BOX BOUNDS: X: 0.248m to 0.586m, Y: 0.055m to 0.280m. Objects within this area are already safely placed and should generally not be picked.\n\n"
         f"INSTRUCTIONS:\n"
         f"  1. Look at the image AND read the Python sensor analysis.\n"
         f"  2. IMPORTANT: Do NOT try to visually look for the stickers on the cubes. The camera cannot see them clearly. You MUST blindly trust the following mapping.\n"
@@ -1336,10 +1337,41 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     "history": action_history,
                 }))]
 
+            # Resolve logical target to physical color name if it's a sticker
+            target_base = target
+            STICKER_MAPPINGS_EXACT = {
+                "umbrella": "yellow cube",
+                "wrench": "blue cube",
+                "soy milk": "green cube",
+                "soymilk": "green cube",
+                "hat": "red cube"
+            }
+            if target_base in STICKER_MAPPINGS_EXACT:
+                target_base = STICKER_MAPPINGS_EXACT[target_base]
+                
+            # Restore original fuzzy match array for Qwen fallback and depth analysis
             target_detections = [
                 d for d in detections
                 if is_target_match(target, d.get("object_name", "")) and not is_inside_placement_box(d)
             ]
+                
+            exact_matches_outside = [
+                d for d in detections
+                if d.get("object_name", "") == target_base and not is_inside_placement_box(d)
+            ]
+            
+            exact_matches_inside = [
+                d for d in detections
+                if d.get("object_name", "") == target_base and is_inside_placement_box(d)
+            ]
+            
+            if exact_matches_inside and not exact_matches_outside:
+                return [TextContent(type="text", text=json.dumps({
+                    "status": "ALREADY_PLACED",
+                    "message": f"'{target}' is already inside the placement box.",
+                    "history": action_history,
+                }))]
+
 
             if not target_detections:
                 # ── Hidden-target inference ──────────────────────────────
@@ -1393,21 +1425,21 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 sensor_reasoning = ""
 
                 # Check 1: Z-axis elevation mismatch (Stacked target)
-                if expected_h is not None and len(target_detections) == 1:
+                if expected_h is not None and len(exact_matches_outside) == 1:
                     expected_z = expected_h / 2
-                    target_z = target_detections[0]["z"]
+                    target_z = exact_matches_outside[0]["z"]
                     excess = target_z - expected_z
                     if excess > 0.020:
                         # Target is elevated. Find nearby objects with HIGHER Z
                         # (meaning they are ON TOP of the target and must be relocated).
                         # If no nearby object has higher Z, the target itself is on top
                         # and is accessible — do NOT force relocate.
-                        target_x = target_detections[0]["x"]
-                        target_y = target_detections[0]["y"]
+                        target_x = exact_matches_outside[0]["x"]
+                        target_y = exact_matches_outside[0]["y"]
                         best_obstacle = None
                         min_dist = 9999.0
                         for d in detections:
-                            if d is target_detections[0] or is_inside_placement_box(d):
+                            if d is exact_matches_outside[0] or is_inside_placement_box(d):
                                 continue
                             dx = d["x"] - target_x
                             dy = d["y"] - target_y
@@ -1424,8 +1456,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                             logger.info(f"Target '{target}' is elevated (+{excess*1000:.0f}mm) but has highest Z among nearby objects. Target is on top and accessible.")
 
                 # Check 2: XY overlap
-                if not sensor_obstacle and len(target_detections) == 1:
-                    target_det = target_detections[0]
+                if not sensor_obstacle and len(exact_matches_outside) == 1:
+                    target_det = exact_matches_outside[0]
                     target_radius = math.hypot(
                         target_info.get("length_m", 0.04),
                         target_info.get("breadth_m", 0.04),
@@ -1436,7 +1468,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
                     target_z = target_det["z"]
                     for d in detections:
-                        if is_target_match(target, d.get("object_name", "")) or is_inside_placement_box(d):
+                        if d is target_det or is_inside_placement_box(d):
                             continue
                         if check_overlap_obb(d, target_det, clearance=0.015):
                             # Only flag as obstacle if the overlapping object has HIGHER Z
@@ -1459,11 +1491,30 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         "next_action": "relocate",
                         "obstacle_name": sensor_obstacle,
                         "reasoning": sensor_reasoning,
-                        "raw_output": "Sensor detection override — bypassed Qwen",
+                        "raw_output": "Python deterministic inference (obstacle avoidance)",
                     }
                 else:
-                    # ── Normal flow: Qwen safety gate ────────────────────────
-                    print("BEFORE QWEN")
+                    if len(exact_matches_outside) == 1:
+                        # Safe to bypass Qwen! We have exactly one target and NO Python-detected obstacles.
+                        det = exact_matches_outside[0]
+                        logger.info(f"Unambiguous EXACT single detection for '{target}' with NO Python obstacles. Bypassing Qwen.")
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "SUCCESS",
+                            "target": target,
+                            "coordinates": {
+                                "x": det["x"],
+                                "y": det["y"],
+                                "z": det["z"],
+                                "angle_deg": det["angle_deg"],
+                                "grasp_label": det.get("grasp_label")
+                            },
+                            "detections": [d.get("object_name") for d in detections],
+                            "history": action_history,
+                            "snapshot_b64": frame_b64
+                        }))]
+                        
+                    # Qwen fallback!
+                    logger.info("Delegating complex visual scene to Qwen VL...")
                     snapshot_b64 = None
                     try:
                         snapshot_b64 = crop_target_snapshot(target_detections)

@@ -363,6 +363,7 @@ OBJECT_CATALOGUE = {
         "height_m": 0.015,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
+        "grasp_offset_y_m": 0.002,
         "description": "Sponge",
     },
 
@@ -748,17 +749,11 @@ def calibrated_close_width_for_object(object_width_m, selected_object=None):
 
 def get_pre_pick_open_percent(object_width_m):
     """
-    Opening before descending. Math unchanged from original, EXCEPT now
-    capped at GRIPPER_MAX_SAFE_OPEN_PERCENT.
-
-    Why: real logged timeouts traced back to commanding 100% open
-    (width_cmd=87.3), which EXTRAPOLATES beyond our actual validated
-    calibration data (real logged points only go up to 28mm gap -> 75).
-    Capping at 80% keeps commands within/near the validated range
-    (80% -> ~78, very close to the confirmed-working 75 at 28mm).
+    Opening before descending. Modified to keep the gripper at a constant max
+    safe opening (GRIPPER_MAX_SAFE_OPEN_PERCENT) at all times before picking,
+    as requested by the user, instead of hugging the object closely.
     """
-    raw_percent = object_width_to_percent(object_width_m * (1.0 + PRE_PICK_EXTRA_RATIO))
-    return min(raw_percent, GRIPPER_MAX_SAFE_OPEN_PERCENT)
+    return GRIPPER_MAX_SAFE_OPEN_PERCENT
 
 
 def get_pick_close_percent(object_width_m):

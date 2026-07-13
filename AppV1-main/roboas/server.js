@@ -606,6 +606,9 @@ async function processRobotQueue() {
       const scanRes = await visionMcpClient.callTool({ name: "locate_object", arguments: { target_name: args.target_name } }, undefined, { timeout: 900000 });
       if (global._taskAborted) throw new Error("Task cancelled by user.");
       const parsed = JSON.parse(scanRes.content[0].text);
+      if (parsed.status === "ALREADY_PLACED") {
+        throw new Error("already placed: " + parsed.message);
+      }
       if (parsed.status !== "SUCCESS") throw new Error(parsed.message || parsed.reasoning || "Obstacle blockage");
       
       if (parsed.snapshot_b64) sendSnapshot(parsed.snapshot_b64, parsed.target || args.target_name);
@@ -674,8 +677,6 @@ async function processRobotQueue() {
     }
   } catch (err) {
     console.error(`❌ Task Queue Failed: ${err.message}`);
-    // Show status bar message
-    sendProgress(err.message === "Task cancelled by user." ? "Task was cancelled." : `Robot Task Failed: ${err.message}`, false);
     
     if (err.message !== "Task cancelled by user.") {
       // John speaks a friendly verbal reply about the failure
@@ -688,25 +689,30 @@ async function processRobotQueue() {
       
       if (lowerErr.includes('emergency stop') || lowerErr.includes('powered off')) {
         friendlyFailMsg = "The robot is in an emergency stop state. Please clear the emergency stop before commanding me.";
-      } else if (lowerErr.includes('not found')) {
+      } else if (lowerErr.includes('already placed')) {
+        friendlyFailMsg = `That item is already inside the placement box.`;
+      } else if (lowerErr.includes('not found') || lowerErr.includes('could not identify')) {
         friendlyFailMsg = `I'm sorry, I was unable to find ${failedTarget} on the table. Please check if it is within my workspace and try again.`;
       } else {
         friendlyFailMsg = failedTarget
           ? `I'm sorry, I encountered an error while trying to handle the ${failedTarget}. Please try again.`
           : `I'm sorry, something went wrong with that task. Please try again.`;
       }
+      
+      // Send the TTS error immediately before the next task can start and toggle isRobotBusy
+      sendProgress(`Robot Task Failed: ${err.message}`, false, friendlyFailMsg);
+      
       setTimeout(async () => {
-        if (!isRobotBusy) sendProgress(null, false, friendlyFailMsg);
+        if (!isRobotBusy) sendProgress(null, false);
         await sendWakewordCommand('unmute');
       }, 2000);
-      robotTaskQueue = []; // Abort remaining queue on actual failure
     } else {
+      sendProgress("Task was cancelled.", false);
       setTimeout(async () => {
         if (!isRobotBusy) sendProgress(null, false);
         await sendWakewordCommand('unmute');
       }, 2000);
     }
-    global._taskAborted = true;
   } finally {
     if (robotTaskQueue.length > 0 && robotTaskQueue[0].id === task.id) {
       robotTaskQueue.shift();
@@ -1237,7 +1243,7 @@ app.post('/ask-gpt', async (req, res) => {
 The robot is currently executing physical tasks!
 Pending Queue: [${tasks}]
 If the user asks to pick up another object, you MUST STILL call the 'locate_object' tool to add it to the queue. 
-When doing so, acknowledge that you are currently busy but have successfully queued the new request, and will get to it shortly.
+CRITICAL RULE: When doing so, you MUST EXACTLY say "I am still picking up the current object and will pick up the new object later." Do not say anything else about the queue.
 You can also call the 'return_home' tool if the user explicitly asks you to go home.`;
     } else {
       queueState = `\n\nCURRENT ROBOT STATE: IDLE
@@ -1506,7 +1512,11 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           });
           
           if (toolCall.name === "locate_object") {
-            answerText = `I am checking the workspace for the ${args.target_name}. Once the path is clear, I will pick it up for you.`;
+            if (isRobotBusy) {
+              answerText = "I am still picking up the current object and will pick up the new object later.";
+            } else {
+              answerText = `I am checking the workspace for the ${args.target_name}. Once the path is clear, I will pick it up for you.`;
+            }
           } else if (toolCall.name === "relocate_object") {
             answerText = `I am moving the ${args.obstacle_name} out of the way for you.`;
           } else if (toolCall.name === "clear_emergency_stop") {
@@ -1518,6 +1528,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           }
           
           skipSecondCompletion = true;
+          hasRobotMovement = true;
           
           if (!isRobotBusy) {
             processRobotQueue();
