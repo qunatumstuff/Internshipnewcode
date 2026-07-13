@@ -581,19 +581,27 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
         message = result.get("message", {})
         response_text = message.get("content", "")
 
-        # Empty content means the model burned its whole token budget thinking
-        # (done_reason 'length') and never wrote an answer. Do NOT parse the
-        # thinking ramble — it contains no JSON and will fail. Surface honestly.
+        # When /no_think is active but the model still enters thinking mode,
+        # it sometimes puts the entire answer in the 'thinking' field and
+        # leaves 'content' empty. Fall back to 'thinking' before giving up.
         if not response_text.strip():
-            dr = result.get("done_reason", "")
-            logger.error(f"Qwen returned empty content (done_reason={dr}). No answer produced.")
-            remote_log("error", f"❌ Qwen returned empty content (done_reason={dr}).", source="qwen")
-            return "Ollama API Error: Model returned empty string."
-            
+            thinking_text = message.get("thinking", "")
+            if thinking_text.strip():
+                logger.warning("Qwen put answer in 'thinking' field instead of 'content' — using thinking field.")
+                remote_log("info", "⚠️ Qwen answer was in thinking field, using it.", source="qwen")
+                response_text = thinking_text
+            else:
+                dr = result.get("done_reason", "")
+                logger.error(f"Qwen returned empty content (done_reason={dr}). No answer produced.")
+                remote_log("error", f"❌ Qwen returned empty content (done_reason={dr}).", source="qwen")
+                return "Ollama API Error: Model returned empty string."
+
         logger.info(f"[Qwen] {response_text[:120]}")
         remote_log("info", f"🧠 Qwen says: {response_text[:300]}", source="qwen")
         return response_text
+
     except Exception as e:
+
         import traceback
         traceback.print_exc()
         remote_log("error", f"❌ Qwen network error: {e}", source="qwen")
