@@ -1477,7 +1477,23 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                                 dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
                                 if dist < min_overlap_dist:
                                     min_overlap_dist = dist
-                                    overlapp                else:
+                                    overlapping_obstacle = d["object_name"]
+                            else:
+                                logger.info(f"XY overlap with '{d['object_name']}' but target '{target}' has higher Z ({target_z*1000:.0f}mm vs {d['z']*1000:.0f}mm) — target is on top, accessible.")
+
+                    if overlapping_obstacle:
+                        sensor_obstacle = overlapping_obstacle
+                        sensor_reasoning = f"XY overlap override: '{overlapping_obstacle}' overlaps with target '{target}' AND has higher Z — it is on top, requiring relocation."
+
+                if sensor_obstacle:
+                    logger.warning(f"SENSOR OVERRIDE: Relocating '{sensor_obstacle}' before picking '{target}'.")
+                    plan = {
+                        "next_action": "relocate",
+                        "obstacle_name": sensor_obstacle,
+                        "reasoning": sensor_reasoning,
+                        "raw_output": "Python deterministic inference (obstacle avoidance)",
+                    }
+                else:
                     # Always use Qwen for planning
                     logger.info("Delegating visual scene to Qwen VL...")
                     snapshot_b64 = None
@@ -1501,27 +1517,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         "raw_output": "No camera frame available, did not run qwen",
                     }
                 if "next_action" not in plan and "target_id" in plan:
-t_b64 = None
-                    try:
-                        snapshot_b64 = crop_target_snapshot(target_detections)
-                    except Exception as e:
-                        import traceback
-                        logger.error(f"Snapshot error: {traceback.format_exc()}")
-                        
-                    image_to_send = snapshot_b64 if snapshot_b64 else frame_b64
-                    plan = await qwen_plan_next_action(
-                        target,
-                        image_to_send,
-                        detections,
-                        action_history,
-                        user_context,
-                    ) if frame_b64 else {
-                        "next_action": "abort",
-                        "obstacle_name": None,
-                        "reasoning": "No camera frame — aborting for safety.",
-                        "raw_output": "No camera frame available, did not run qwen",
-                    }
-                if "next_action" not in plan and "target_id" in plan:
+
                     plan["next_action"] = "pick"
 
                 print("AFTER QWEN/SENSOR PLAN:", plan)
