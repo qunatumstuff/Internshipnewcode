@@ -528,24 +528,24 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
     prompt_with_directive = prompt
     
     payload = {
-        "model": QWEN_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": "/no_think\nYou are a robotic vision assistant. Respond ONLY with a JSON object. Do NOT use <think> tags. Do NOT reason internally. Output the JSON immediately."
-            },
-            {
-                "role": "user",
-                "content": prompt,
-                "images": [raw_b64]
-            }
-        ],
-        "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 512, "num_ctx": 8192},
-        "think": False,
-        "keep_alive": -1   # -1 = keep the model loaded indefinitely, no reload between requests
-    }
-
+    "model": QWEN_MODEL,
+    "messages": [
+        {
+            "role": "system",
+            "content": "/no_think\nYou are a robotic vision assistant. Respond ONLY with a JSON object. Do NOT use <think> tags. Do NOT reason internally. Output the JSON immediately."
+        },
+        {
+            "role": "user",
+            "content": prompt,
+            "images": [raw_b64]
+        }
+    ],
+    "stream": False,
+    "format": "json",
+    "options": {"temperature": 0.1, "num_predict": 4096, "num_ctx": 16384, "stop": ["```", "\n\n\n"]},
+    "think": False,
+    "keep_alive": -1
+}
     print("IMAGE SIZE:", len(raw_b64))
 
     url = f"http://{OLLAMA_IP}:11434/api/chat"
@@ -1059,7 +1059,7 @@ async def qwen_plan_next_action(
         f"  - relocate: move one blocking object to a safe spot.\n"
         f"  - pick: pick the target.\n"
         f"  - abort: cannot safely reach the target.\n\n"
-        f"CRITICAL INSTRUCTION: You may think first, but your final output MUST be a valid JSON block enclosed in '```json' and '```' markers.\n"
+        f"CRITICAL INSTRUCTION: Output a single JSON object directly. Do not use markdown code fences.\n"
         f"IMPORTANT: Do NOT over-think. Do NOT enter infinite loops. Keep your reasoning concise (under 100 words)  .\n\n"
         f"NO EXPLANATIONS AFTER THE JSON. ONLY OUTPUT JSON AS THE FINAL RESULT.\n\n"
         f"Pick format:\n"
