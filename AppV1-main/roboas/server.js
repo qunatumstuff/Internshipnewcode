@@ -1242,8 +1242,8 @@ app.post('/ask-gpt', async (req, res) => {
       queueState = `\n\nCURRENT ROBOT STATE: BUSY
 The robot is currently executing physical tasks!
 Pending Queue: [${tasks}]
-If the user asks to pick up another object, you MUST STILL call the 'locate_object' tool to add it to the queue. 
-CRITICAL RULE: When doing so, you MUST EXACTLY say "I am still picking up the current object and will pick up the new object later." Do not say anything else about the queue.
+If the user asks to pick up another object (or multiple objects), you MUST STILL call the 'locate_object' tool to add them to the queue. 
+CRITICAL RULE: When doing so, you MUST EXACTLY say "I am still picking up the current object and will handle the requested object later." Do not say anything else about the queue.
 You can also call the 'return_home' tool if the user explicitly asks you to go home.`;
     } else {
       queueState = `\n\nCURRENT ROBOT STATE: IDLE
@@ -1274,7 +1274,9 @@ CRITICAL OUTPUT CLEANLINESS:
 - Do NOT output raw coordinates (e.g. x, y, z values), technical tool arguments, or structured JSON/dictionary info. Keep your responses purely conversational, natural, and concise. Speak about actions in plain English, not data info.
 
 ROBOTIC ARM — PICK AND PLACE RULES:
-- When the user asks you to pick up a specific, unambiguous object, you MUST simply call the 'locate_object' tool.
+- When the user asks you to pick up a specific, unambiguous object, you MUST call the 'locate_object' tool.
+- MULTIPLE OBJECTS: If the user asks to pick up multiple objects in one request (e.g. "pick up A, then B"), you MUST call the 'locate_object' tool ONCE and pass ALL requested objects as an array to 'target_names'.
+- CRITICAL SEQUENCE RULE: The array MUST be ordered in the EXACT chronological sequence the items should be picked up (e.g., if asked "pick up A but B first", the array must be ["B", "A"]).
 - If the request is ambiguous (e.g., "I need a tool" and you have both a wrench and a screwdriver), DO NOT call 'locate_object'. Ask the user to clarify.
 - Once you call 'locate_object', the system will automatically find the coordinates and trigger the robot arm for you.
 - You do NOT need to call 'pick_and_place_object' yourself.
@@ -1314,13 +1316,16 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             parameters: {
               type: "object",
               properties: { 
-                target_name: { 
-                  type: "string", 
-                  description: "Name of the object to locate.", 
-                  enum: ["soy milk", "umbrella", "wrench", "hat", "cube", "object", "yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"] 
+                target_names: { 
+                  type: "array", 
+                  description: "List of object names to locate, in the exact chronological order requested by the user.", 
+                  items: {
+                    type: "string",
+                    enum: ["soy milk", "umbrella", "wrench", "hat", "cube", "object", "yellow cube", "blue cube", "green cube", "red cube", "nut", "black marker", "medicine", "sponge", "screwdriver"] 
+                  }
                 }
               },
-              required: ["target_name"]
+              required: ["target_names"]
             }
           }
         },
@@ -1445,6 +1450,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
         }
       ],
       tool_choice: "auto",
+      parallel_tool_calls: true
     });
 
     const responseMessage = completion.data.choices[0].message;
@@ -1501,29 +1507,46 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           toolResultText = `Switched to ${currentPersona}. Now greeting the user warmly as ${currentPersona === 'linda' ? 'Linda' : 'John'}.`;
         } 
         else if (["locate_object", "relocate_object", "clear_emergency_stop", "clear_return_home", "return_home"].includes(toolCall.name)) {
-          logToolCall(question, toolCall.name, args, "Pushed task to Robot Queue");
-          
-          robotTaskQueue.push({
-            id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-            name: toolCall.name,
-            args: args,
-            question: question,
-            status: "pending"
-          });
           
           if (toolCall.name === "locate_object") {
+            let targets = args.target_names || [];
+            if (args.target_name && targets.length === 0) targets = [args.target_name]; // fallback
+            
+            for (const target of targets) {
+              logToolCall(question, toolCall.name, { target_name: target }, "Pushed task to Robot Queue");
+              robotTaskQueue.push({
+                id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                name: toolCall.name,
+                args: { target_name: target },
+                question: question,
+                status: "pending"
+              });
+            }
+
             if (isRobotBusy) {
-              answerText = "I am still picking up the current object and will pick up the new object later.";
+              answerText = "I am still picking up the current object and will handle the requested object later.";
             } else {
-              answerText = `I am checking the workspace for the ${args.target_name}. Once the path is clear, I will pick it up for you.`;
+              if (targets.length > 1) {
+                answerText = "I am checking the workspace for the requested objects. Once the path is clear, I will pick them up in sequence.";
+              } else if (targets.length === 1) {
+                answerText = `I am checking the workspace for the ${targets[0]}. Once the path is clear, I will pick it up for you.`;
+              }
             }
           } else if (toolCall.name === "relocate_object") {
+            logToolCall(question, toolCall.name, args, "Pushed task to Robot Queue");
+            robotTaskQueue.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name: toolCall.name, args: args, question: question, status: "pending" });
             answerText = `I am moving the ${args.obstacle_name} out of the way for you.`;
           } else if (toolCall.name === "clear_emergency_stop") {
-            answerText = "I am clearing the emergency stop for you.";
+            logToolCall(question, toolCall.name, args, "Pushed task to Robot Queue");
+            robotTaskQueue.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name: toolCall.name, args: args, question: question, status: "pending" });
+            answerText = "Cleared e-stop.";
           } else if (toolCall.name === "clear_return_home") {
+            logToolCall(question, toolCall.name, args, "Pushed task to Robot Queue");
+            robotTaskQueue.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name: toolCall.name, args: args, question: question, status: "pending" });
             answerText = "I am clearing the home lock for you.";
           } else if (toolCall.name === "return_home") {
+            logToolCall(question, toolCall.name, args, "Pushed task to Robot Queue");
+            robotTaskQueue.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name: toolCall.name, args: args, question: question, status: "pending" });
             answerText = "I am returning the robot arm to its home position.";
           }
           
@@ -2033,6 +2056,7 @@ app.post('/clear-emergency-stop', async (req, res) => {
     try {
       const result = await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: {} });
       console.log('✅ Emergency Stop Latch Cleared:', result.content[0].text);
+      sendProgress(null, false, "Emergency stop has been cleared.");
       res.json({ success: true, message: result.content[0].text });
     } catch (err) {
       res.json({ success: false, message: err.message });
@@ -2048,6 +2072,7 @@ app.post('/clear-return-home', async (req, res) => {
     try {
       const result = await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
       console.log('✅ Return Home Latch Cleared:', result.content[0].text);
+      sendProgress(null, false, "Return home latch cleared.");
       res.json({ success: true, message: result.content[0].text });
     } catch (err) {
       res.json({ success: false, message: err.message });

@@ -363,6 +363,7 @@ OBJECT_CATALOGUE = {
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
         "grasp_offset_y_m": -0.005,
+        "grasp_offset_z_m": 0.006,
         "description": "Sponge",
     },
 
@@ -450,7 +451,7 @@ OBJECT_GRIP_COMMAND_SCALE = {
     "medicine": 0.88,
     "screwdriver": 0.88,
     "nut": 0.88,
-    "sponge": 0.88,
+    "sponge": 0.934,
     "black marker": 0.88,
 
 }
@@ -464,6 +465,7 @@ OBJECT_GRIP_COMMAND_MIN_M = {
     "screwdriver" : 0.00151, 
     "nut": 0.0029,
     "black marker" : 0.001953, 
+    "sponge": 0.027,
 }
 # =================================================================
 # HYBRID POSITION + FORCE GRIP TUNING
@@ -1013,16 +1015,10 @@ def gripper_grip_object_plain(object_width_m):
         print(f"[Grip WARNING] GraspWorkpiece did not confirm contact: {e}")
         try:
             r.reset_errors()
-            print("[Grip Recovery] Step 1/4: reset_errors() OK")
-
-            r.power_on()
-            print("[Grip Recovery] Step 2/4: power_on() OK")
-
-            r.switch_to_automatic_mode()
-            print("[Grip Recovery] Step 3/4: switch_to_automatic_mode() OK")
+            print("[Grip Recovery] Step 1/2: reset_errors() OK")
 
             device_reset = r.reset_external_device_error(PROCESS_FILE, ignore_no_connection=True)
-            print(f"[Grip Recovery] Step 4/4: reset_external_device_error() -> {device_reset}")
+            print(f"[Grip Recovery] Step 2/2: reset_external_device_error() -> {device_reset}")
 
         except Exception as reset_e:
             print(f"[Grip WARNING] Full recovery failed partway through: {reset_e}")

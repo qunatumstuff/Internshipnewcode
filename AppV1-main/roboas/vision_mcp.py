@@ -1042,6 +1042,13 @@ async def qwen_plan_next_action(
         "If it is not visible, output abort.\n\n"
     )
         
+    needs_2d_box = any(d.get("confidence", 1.0) < 0.35 for d in target_dets)
+    if needs_2d_box:
+        target_list_str += (
+            "WARNING: The python sensor confidence for the target is very low (<0.35). "
+            "You MUST visually verify it and output a 2D bounding box [ymin, xmin, ymax, xmax] "
+            "in normalized 0-1000 coordinates as a 'box_2d' field in your JSON output.\n\n"
+        )
     prompt = (
         f"You are the visual safety gate for a robotic arm.\n\n"
         f"GOAL: Pick up the '{resolved_target}'\n\n"
@@ -1071,7 +1078,9 @@ async def qwen_plan_next_action(
         f"IMPORTANT: Do NOT over-think. Do NOT enter infinite loops. Keep your reasoning concise (under 100 words)  .\n\n"
         f"NO EXPLANATIONS AFTER THE JSON. ONLY OUTPUT JSON AS THE FINAL RESULT.\n\n"
         f"Pick format:\n"
-        f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"reasoning":"target is visible and safe"}}\n\n'
+        f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"reasoning":"target is visible and safe"}}\n'
+        f"If a 2D box was requested, include it like this:\n"
+        f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"box_2d":[100, 200, 300, 400],"reasoning":"target is visible and safe"}}\n\n'
         f"Relocate format:\n"
         f'{{"next_action":"relocate","obstacle_name":"[name_of_blocking_object]","target_id":0,"reasoning":"[name] is blocking the target"}}\n\n'
         f"Abort format:\n"

@@ -2324,11 +2324,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             child: SafeArea(
               child: ElevatedButton.icon(
                 onPressed: _emergencyStop,
-                icon: const Icon(Icons.warning, size: 18, color: Colors.white),
-                label: const Text('E-STOP',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                icon: Icon(_isEStopLatched ? Icons.lock_open : Icons.warning, size: 18, color: Colors.white),
+                label: Text(_isEStopLatched ? 'CLEAR E-STOP' : 'E-STOP',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red[800],
+                  backgroundColor: _isEStopLatched ? Colors.green[700] : Colors.red[800],
                   foregroundColor: Colors.white,
                   elevation: 8,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
