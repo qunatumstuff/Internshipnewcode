@@ -541,7 +541,7 @@ async def ask_qwen_vision(prompt: str, base64_image: str) -> str:
             }
         ],
         "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 8192, "num_ctx": 16384},
+        "options": {"temperature": 0.1, "num_predict": 512, "num_ctx": 8192},
         "think": False,
         "keep_alive": -1   # -1 = keep the model loaded indefinitely, no reload between requests
     }
