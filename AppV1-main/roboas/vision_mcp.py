@@ -1516,6 +1516,38 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         "reasoning": "No camera frame — aborting for safety.",
                         "raw_output": "No camera frame available, did not run qwen",
                     }
+
+                    # ── Qwen failure fallback ──────────────────────────────
+                    # If Qwen errored (empty string, timeout, etc.) but YOLO
+                    # already has a clear detection, fall back to YOLO coords
+                    # rather than aborting and falsely telling the user the
+                    # object was not found.
+                    if (
+                        plan.get("next_action") == "abort"
+                        and "Ollama API Error" in plan.get("reasoning", "")
+                        and target_detections
+                    ):
+                        det = target_detections[0]
+                        logger.warning(
+                            f"Qwen failed (API error) but YOLO has '{target}' — "
+                            f"falling back to YOLO coordinates."
+                        )
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "SUCCESS",
+                            "target": target,
+                            "coordinates": {
+                                "x": det["x"],
+                                "y": det["y"],
+                                "z": det["z"],
+                                "angle_deg": det["angle_deg"],
+                                "grasp_label": det.get("grasp_label"),
+                            },
+                            "detections": [d.get("object_name") for d in detections],
+                            "history": action_history,
+                            "snapshot_b64": frame_b64,
+                            "note": "Qwen API error — used YOLO fallback",
+                        }))]
+
                 if "next_action" not in plan and "target_id" in plan:
 
                     plan["next_action"] = "pick"
