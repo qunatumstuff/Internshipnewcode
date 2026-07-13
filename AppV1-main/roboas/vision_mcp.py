@@ -1033,6 +1033,7 @@ async def qwen_plan_next_action(
         "Use the image to check if the target is visible. "
         "If it is not visible, output abort.\n\n"
     )
+        
     prompt = (
         f"You are the visual safety gate for a robotic arm.\n\n"
         f"GOAL: Pick up the '{resolved_target}'\n\n"
@@ -1044,8 +1045,8 @@ async def qwen_plan_next_action(
         f"HISTORY:\n{history_summary}\n\n"
         f"PLACEMENT BOX BOUNDS: X: 0.248m to 0.586m, Y: 0.055m to 0.280m. Objects within this area are already safely placed and should generally not be picked.\n\n"
         f"INSTRUCTIONS:\n"
-        f"  1. Look at the image AND read the Python sensor analysis.\n"
-        f"  2. IMPORTANT: Do NOT try to visually look for the stickers on the cubes. The camera cannot see them clearly. You MUST blindly trust the following mapping.\n"
+        f"  1. Look at the image AND read the Python sensor analysis for info of objects that can be picked up by the gripper.\n"
+        f"  2. IMPORTANT: Do NOT try to visually look for the stickers on the cubes. You MUST blindly trust the following mapping.\n"
         f"  3. STICKER MAPPING: The stickers (soy milk, hat, wrench, umbrella) are on the GREEN, RED, BLUE, and YELLOW cubes respectively. If the user asked for one of these, find the matching colored cube. If the user asked for a colored cube directly (e.g., 'blue cube'), pick THAT specific colored cube. The target you must pick is '{target}'.\n"
         f"  4. CRITICAL COLOR CHECK: If you are asked to pick up a specific colored cube (e.g., 'blue cube'), you MUST visually verify the target cube matches that color. If the requested color is missing from the image entirely, output 'abort' and write 'not found' in your reasoning. Do NOT pick a differently colored cube just to be helpful.\n"
         f"  5. If the user asks for an object NOT in the catalogue, output 'abort'.\n"
@@ -1054,13 +1055,12 @@ async def qwen_plan_next_action(
         f"  7. SIZE / OCCLUSION OVERRIDE: If the Python Sensor Analysis warns that a detection is unusually small and likely BLOCKED, you MUST relocate ANY object that is overlapping it or resting on it. Output 'relocate' and set 'obstacle_name' to the overlapping object.\n"
         f"  8. If the analysis shows CAUTION that the target has an anomalously high surface, look for an object sitting ON TOP OF or INSIDE/BLOCKING it. If you see one, output 'relocate' for that object. If clear, output 'pick'.\n"
         f"  9. If you see an unknown object blocking the target, output 'abort'.\n"
-        f"  10. Do not re-relocate already moved objects (check history).\n\n"
         f"AVAILABLE ACTIONS:\n"
         f"  - relocate: move one blocking object to a safe spot.\n"
         f"  - pick: pick the target.\n"
         f"  - abort: cannot safely reach the target.\n\n"
         f"CRITICAL INSTRUCTION: You may think first, but your final output MUST be a valid JSON block enclosed in '```json' and '```' markers.\n"
-        f"IMPORTANT: Do NOT over-think. Do NOT enter infinite loops. Keep your reasoning concise (under 100 words). If you cannot clearly see the requested sticker/icon, pick the best visual match or output abort.\n\n"
+        f"IMPORTANT: Do NOT over-think. Do NOT enter infinite loops. Keep your reasoning concise (under 100 words)  .\n\n"
         f"NO EXPLANATIONS AFTER THE JSON. ONLY OUTPUT JSON AS THE FINAL RESULT.\n\n"
         f"Pick format:\n"
         f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"reasoning":"target is visible and safe"}}\n\n'

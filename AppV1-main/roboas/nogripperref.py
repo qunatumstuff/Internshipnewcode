@@ -6,7 +6,6 @@ Real-robot counterpart of pick_place_sim.py.
 Key differences from the simulation version:
   - switch_to_real()        instead of switch_to_simulation()
   - power_on() / power_off() to release/lock physical brakes
-  - init_program()           to sync the motion engine
   - Real gripper             (set_digital_output)
   - Teach-pendant must be in automatic mode before running
 
@@ -363,7 +362,7 @@ OBJECT_CATALOGUE = {
         "height_m": 0.015,
         "object_orientation_deg": 90.0,
         "preferred_grasp_angle_deg": 0.0,
-        "grasp_offset_y_m": 0.002,
+        "grasp_offset_y_m": -0.005,
         "description": "Sponge",
     },
 
@@ -997,6 +996,12 @@ def gripper_grip_object_plain(object_width_m):
     gap_mm = percent_to_commanded_opening_m(close_percent) * 1000
     width_cmd = _gap_mm_to_width_command(gap_mm)
     try:
+        #NEW: proactively check for a lingering error before attempting,
+        # rather than only discovering it via a failed call.
+        if r.is_external_device_in_error(PROCESS_FILE, ignore_no_connection=True):
+            print("[Grip] Device already in error state -- clearing before attempting grip.")
+            r.reset_external_device_error(PROCESS_FILE, ignore_no_connection=True)
+
         result = _call_gripper_function(
             "GraspWorkpiece",
             {"width": width_cmd, "speed": 40, "force": MAX_FORCE_PERCENT},
@@ -1008,23 +1013,17 @@ def gripper_grip_object_plain(object_width_m):
         print(f"[Grip WARNING] GraspWorkpiece did not confirm contact: {e}")
         try:
             r.reset_errors()
-            print("[Grip Recovery] Step 1/6: reset_errors() OK")
+            print("[Grip Recovery] Step 1/4: reset_errors() OK")
 
             r.power_on()
-            print("[Grip Recovery] Step 2/6: power_on() OK")
+            print("[Grip Recovery] Step 2/4: power_on() OK")
 
             r.switch_to_automatic_mode()
-            print("[Grip Recovery] Step 3/6: switch_to_automatic_mode() OK")
+            print("[Grip Recovery] Step 3/4: switch_to_automatic_mode() OK")
 
-            r.init_program()
-            print("[Grip Recovery] Step 4/6: init_program() OK")
+            device_reset = r.reset_external_device_error(PROCESS_FILE, ignore_no_connection=True)
+            print(f"[Grip Recovery] Step 4/4: reset_external_device_error() -> {device_reset}")
 
-            r.disconnect_external_device(PROCESS_FILE, ignore_no_connection=True)
-            print("[Grip Recovery] Step 5/6: disconnect_external_device() OK")
-
-            time.sleep(0.5)
-            reconnected = r.connect_external_device(PROCESS_FILE)
-            print(f"[Grip Recovery] Step 6/6: connect_external_device() -> {reconnected}")
         except Exception as reset_e:
             print(f"[Grip WARNING] Full recovery failed partway through: {reset_e}")
         return False
@@ -2559,7 +2558,7 @@ def ensure_robot_ready(r):
         r.switch_to_automatic_mode()
         time.sleep(1)
 
-    r.init_program()
+    
     time.sleep(1)
     # Settle delay + discard-first-reading: only runs ONCE per program
     # (guarded by _MCP_ROBOT_READY), matching the reported symptom that
@@ -2645,7 +2644,6 @@ def mcp_return_home():
         # This was confirmed directly from real logs on this hardware.
         r.power_on()
         r.switch_to_automatic_mode()  # must be in auto before any motion
-        r.init_program()
         time.sleep(1.5)               # give the tool power/comms line time to actually come back
 
         # Disconnect/reconnect the external device -- this replicates the
@@ -3125,7 +3123,7 @@ def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_sp
             rotation_speed=apply_rotation_speed,
             rotation_acceleration=apply_rotation_acceleration,
             rotation_jerk=ROTATION_JERK,
-            blending=is_blending,
+            enable_blending=is_blending,
             blend_radius=BLEND_RADIUS if is_blending else 0.0,
             controller_parameters={"control_mode": "position"},
             target_pose=trajectory,
