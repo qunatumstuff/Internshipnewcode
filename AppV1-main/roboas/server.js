@@ -1275,9 +1275,9 @@ CRITICAL OUTPUT CLEANLINESS:
 
 ROBOTIC ARM — PICK AND PLACE RULES:
 - When the user asks you to pick up a specific, unambiguous object, you MUST call the 'locate_object' tool.
-- MULTIPLE OBJECTS: If the user asks to pick up multiple objects in one request (e.g. "pick up A, then B"), you MUST call the 'locate_object' tool ONCE and pass ALL requested objects as an array to 'target_names'.
-- CRITICAL SEQUENCE RULE: The array MUST be ordered in the EXACT chronological sequence the items should be picked up (e.g., if asked "pick up A but B first", the array must be ["B", "A"]).
-- If the request is ambiguous (e.g., "I need a tool" and you have both a wrench and a screwdriver), DO NOT call 'locate_object'. Ask the user to clarify.
+- MULTIPLE OBJECTS: If the user asks to pick up multiple objects in one request (e.g. "pick up A, then B"), you MUST call the 'locate_object' tool exactly ONCE and pass ALL requested objects as a single array to 'target_names'.
+- CRITICAL SEQUENCE RULE: You must absolutely NEVER change the order of the items. The array MUST be ordered in the EXACT chronological sequence the user listed them (e.g. "pick up red, blue, green" -> ["red cube", "blue cube", "green cube"]).
+- NEVER use multiple parallel tool calls for 'locate_object'. Always group them into a single array.
 - Once you call 'locate_object', the system will automatically find the coordinates and trigger the robot arm for you.
 - You do NOT need to call 'pick_and_place_object' yourself.
 - Approved objects the robot can pick: soy milk, umbrella, wrench, hat, cube, yellow cube, blue cube, green cube, red cube, nut, black marker, medicine, sponge, screwdriver.
@@ -1450,7 +1450,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
         }
       ],
       tool_choice: "auto",
-      parallel_tool_calls: true
+      parallel_tool_calls: false
     });
 
     const responseMessage = completion.data.choices[0].message;
