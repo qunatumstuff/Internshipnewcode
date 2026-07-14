@@ -261,7 +261,7 @@ app.use(express.json());
 
 // === OpenAI Configuration ===
 const configuration = new Configuration({
-  apiKey: "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"
+  apiKey: process.env.OPENAI_API_KEY
 });
 const openai = new OpenAIApi(configuration);
 
