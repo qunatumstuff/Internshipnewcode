@@ -151,7 +151,7 @@ OBJECT_CATALOGUE = {
                      "length_m": 0.03,   "breadth_m": 0.03},
 }
 
-# Camera-to-robot base frame transformation matrix.
+# Camera-to-robot base frame transformation matrix.---WHOOOO NEW MATRIX
 # Calibrated to the physical D435i mounting position.
 CAM_TO_ROBOT_T = np.array([
     [0.7328061018, 0.6121545059, -0.2970893437, 0.7217746900],
@@ -168,32 +168,6 @@ CAM_TO_ROBOT_T = np.array([
 Z_OFFSET_M = 0.035
 
 server = Server("vision-mcp-server")
-
-# ==========================================
-# BOUNDARY CHECK
-# ==========================================
-def area(x1, y1, x2, y2, x3, y3):
-    return abs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)) / 2.0)
-
-def isinside(point_x, point_y):
-    A  = area(250, -370, 250, 0, 585, 0)
-    A1 = area(point_x, point_y, 250, 0, 585, 0)
-    A2 = area(250, -370, point_x, point_y, 585, 0)
-    A3 = area(250, -370, 250, 0, point_x, point_y)
-    return A == A1 + A2 + A3
-
-def get_median_depth(depth_frame, cx, cy, radius=4):
-    valid_depths = []
-    width = depth_frame.get_width()
-    height = depth_frame.get_height()
-    for y in range(max(0, int(cy) - radius), min(height, int(cy) + radius + 1)):
-        for x in range(max(0, int(cx) - radius), min(width, int(cx) + radius + 1)):
-            depth = depth_frame.get_distance(x, y)
-            if np.isfinite(depth) and depth > 0.0:
-                valid_depths.append(depth)
-    if not valid_depths:
-        return None
-    return float(np.median(valid_depths))
 
 # ==========================================
 # DETECTION — runs on demand using camera frame
@@ -218,8 +192,8 @@ def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics):
     Convert a pixel centre + OBB angle into robot-frame XYZ and yaw.
     Returns dict {x, y, z, angle_deg} or None if depth is invalid.
     """
-    distance = get_median_depth(depth_frame, cx_px, cy_px)
-    if distance is None or distance <= 0.0:
+    distance = depth_frame.get_distance(int(cx_px), int(cy_px))
+    if distance <= 0.0:
         return None
 
     cam_pt  = rs.rs2_deproject_pixel_to_point(intrinsics, [cx_px, cy_px], distance)
@@ -279,60 +253,6 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
 
     for result in obb_results:
         if result.obb is None:
-            # RUN DISCONTINUITY FALLBACK
-            if camera.inference_lock.acquire(timeout=2.0):
-                try:
-                    disc_results = camera.obb_discontinuity(
-                        color_image, verbose=False, agnostic_nms=False, iou=0.35, conf=0.35
-                    )
-                finally:
-                    camera.inference_lock.release()
-            else:
-                continue
-
-            for disc in disc_results:
-                if disc.boxes is None:
-                    continue
-                for box in disc.boxes:
-                    cls_id = int(box.cls[0])
-                    cls_name = camera.obb_discontinuity.names[cls_id].lower()
-                    conf = float(box.conf[0])
-                    
-                    if cls_name not in OBJECT_CATALOGUE:
-                        continue
-                    
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    cx_px = (x1 + x2) / 2.0
-                    cy_px = (y1 + y2) / 2.0
-                    w_px = float(x2 - x1)
-                    h_px = float(y2 - y1)
-                    angle_rad = 0.0 # fallback has no angle
-
-                    coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics)
-                    if coords is None:
-                        continue
-                        
-                    if not isinside(coords["x"] * 1000, coords["y"] * 1000):
-                        continue
-
-                    distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
-                    w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
-                    h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
-
-                    detections.append({
-                        "object_name": cls_name,
-                        "x":           coords["x"],
-                        "y":           coords["y"],
-                        "z":           coords["z"],
-                        "angle_deg":   coords["angle_deg"],
-                        "confidence":  round(conf, 3),
-                        "cx_px":       cx_px,
-                        "cy_px":       cy_px,
-                        "w_px":        w_px,
-                        "h_px":        h_px,
-                        "w_m":         w_m,
-                        "h_m":         h_m,
-                    })
             continue
         for obb in result.obb:
             cls_id   = int(obb.cls[0])
@@ -360,12 +280,9 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics)
             if coords is None:
                 continue
-                
-            if not isinside(coords["x"] * 1000, coords["y"] * 1000):
-                continue
 
             # Calculate physical dimensions
-            distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
+            distance = depth_frame.get_distance(int(cx_px), int(cy_px))
             w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
             h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
@@ -416,13 +333,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                 continue
             largest      = max(contours, key=cv2.contourArea)
             rect         = cv2.minAreaRect(largest)
-            
-            moment       = cv2.moments(largest)
-            if moment["m00"] != 0:
-                cx_px = int(moment["m10"] / moment["m00"])
-                cy_px = int(moment["m01"] / moment["m00"])
-            else:
-                cx_px, cy_px = rect[0]
+            cx_px, cy_px = rect[0]
 
             # Use OBB angle if available (more reliable than minAreaRect on complex shapes)
             # Fall back to minAreaRect angle if OBB didn't detect this class
@@ -437,11 +348,8 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics)
             if coords is None:
                 continue
-                
-            if not isinside(coords["x"] * 1000, coords["y"] * 1000):
-                continue
 
-            distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
+            distance = depth_frame.get_distance(int(cx_px), int(cy_px))
             w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
             h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
@@ -1134,13 +1042,6 @@ async def qwen_plan_next_action(
         "If it is not visible, output abort.\n\n"
     )
         
-    needs_2d_box = any(d.get("confidence", 1.0) < 0.35 for d in target_dets)
-    if needs_2d_box:
-        target_list_str += (
-            "WARNING: The python sensor confidence for the target is very low (<0.35). "
-            "You MUST visually verify it and output a 2D bounding box [ymin, xmin, ymax, xmax] "
-            "in normalized 0-1000 coordinates as a 'box_2d' field in your JSON output.\n\n"
-        )
     prompt = (
         f"You are the visual safety gate for a robotic arm.\n\n"
         f"GOAL: Pick up the '{resolved_target}'\n\n"
@@ -1170,9 +1071,7 @@ async def qwen_plan_next_action(
         f"IMPORTANT: Do NOT over-think. Do NOT enter infinite loops. Keep your reasoning concise (under 100 words)  .\n\n"
         f"NO EXPLANATIONS AFTER THE JSON. ONLY OUTPUT JSON AS THE FINAL RESULT.\n\n"
         f"Pick format:\n"
-        f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"reasoning":"target is visible and safe"}}\n'
-        f"If a 2D box was requested, include it like this:\n"
-        f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"box_2d":[100, 200, 300, 400],"reasoning":"target is visible and safe"}}\n\n'
+        f'{{"next_action":"pick","obstacle_name":null,"target_id":0,"reasoning":"target is visible and safe"}}\n\n'
         f"Relocate format:\n"
         f'{{"next_action":"relocate","obstacle_name":"[name_of_blocking_object]","target_id":0,"reasoning":"[name] is blocking the target"}}\n\n'
         f"Abort format:\n"

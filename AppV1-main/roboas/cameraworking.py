@@ -45,9 +45,9 @@ def smooth_coord(old_val, new_val, alpha=0.2, snap_thresh=0.05):
 # Initialize F                                                                                                                                                          1`astMCP Server
 mcp = FastMCP("TIEFA_Module_B_Vision")
 
-model=YOLO("best29.pt")
-segment=YOLO("best28.pt")
-obb_discontinuity=YOLO("best (14).pt")
+model=YOLO("best (12).pt")
+segment=YOLO("best (11).pt")
+obb_discontinuity=YOLO("best (14).pt")  # fallback only -- used when the primary OBB model finds nothing
 
 # -----------------------------------------------------------------------------
 # 2. MCP Tools Definition (Exposed to System 2 / ZBook)
@@ -122,17 +122,20 @@ def rotationMatrixToEulerAngles(R):
 
 def get_median_depth(depth_frame, cx, cy, radius=4):
     valid_depths = []
+
     width = depth_frame.get_width()
     height = depth_frame.get_height()
 
-    for y in range(max(0, int(cy) - radius), min(height, int(cy) + radius + 1)):
-        for x in range(max(0, int(cx) - radius), min(width, int(cx) + radius + 1)):
+    for y in range(max(0, cy - radius), min(height, cy + radius + 1)):
+        for x in range(max(0, cx - radius), min(width, cx + radius + 1)):
             depth = depth_frame.get_distance(x, y)
+
             if np.isfinite(depth) and depth > 0.0:
                 valid_depths.append(depth)
 
     if not valid_depths:
         return None
+
     return float(np.median(valid_depths))
 
 
@@ -286,25 +289,27 @@ def _vision_loop_inner():
                                     [0.6799624012, -0.6424940804, 0.3533447178, -0.4958178639],
                                     [0.0254234164, -0.4609427488, -0.8870656302, 0.8010540878],
                                     [0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000]
-                                ], dtype=np.float64)
+                                    ], dtype=np.float64)
+                                distance = get_median_depth(depth_frame,center_x,center_y,radius=4)
+                                if distance is None:
+                                     #print(
+                                          #f"[Depth] No valid depth near {cls_name} "
+                                          #f"at pixel ({center_x}, {center_y})"
+                                          #)
+                                     continue
+                                spatial_coords = rs.rs2_deproject_pixel_to_point(intrinsics,[center_x, center_y],distance)
 
-                                distance = get_median_depth(depth_frame, center_x, center_y, radius=4)
-                                if distance is not None and distance > 0:
-                                    spatial_coords = rs.rs2_deproject_pixel_to_point(
-                                        intrinsics, [center_x, center_y], distance
+                                latest_3d_coords["x"] = smooth_coord(latest_3d_coords["x"], spatial_coords[0])
+                                latest_3d_coords["y"] = smooth_coord(latest_3d_coords["y"], spatial_coords[1])
+                                latest_3d_coords["z"] = smooth_coord(
+                                latest_3d_coords["z"], spatial_coords[2] + Z_OFFSET
                                     )
 
-                                    latest_3d_coords["x"] = smooth_coord(latest_3d_coords["x"], spatial_coords[0])
-                                    latest_3d_coords["y"] = smooth_coord(latest_3d_coords["y"], spatial_coords[1])
-                                    latest_3d_coords["z"] = smooth_coord(
-                                        latest_3d_coords["z"], spatial_coords[2] + Z_OFFSET
-                                    )
-
-                                    robot = CAM_TO_ROBOT_T @ np.array(
+                                robot = CAM_TO_ROBOT_T @ np.array(
                                         [spatial_coords[0], spatial_coords[1], spatial_coords[2], 1.0]
                                     )
 
-                                    cv2.putText(
+                                cv2.putText(
                                         color_image,
                                         f"TARGET {cls_name} (fallback): "
                                         f"X:{robot[0]*1000:.1f} Y:{robot[1]*1000:.1f} Z:{robot[2]*1000:.1f}mm",
@@ -374,10 +379,17 @@ def _vision_loop_inner():
                             [0,                0,               1]
                         ])
 
-                        distance = get_median_depth(depth_frame, center_x, center_y, radius=4)
-                        if distance is None or distance <= 0:
-                            continue
-                        spatial_coords = rs.rs2_deproject_pixel_to_point(intrinsics, [center_x, center_y], distance)
+                        distance = get_median_depth(depth_frame,center_x,center_y,radius=4)
+                        
+                        if distance is None:
+                             print(
+                                  f"[Depth] No valid fallback depth near {cls_name} "
+                                  f"at pixel ({center_x}, {center_y})"
+                                  )
+                             continue
+                        
+                    
+                        spatial_coords = rs.rs2_deproject_pixel_to_point(intrinsics,[center_x, center_y],distance)
 
                         latest_3d_coords["x"] = smooth_coord(latest_3d_coords["x"], spatial_coords[0])
                         latest_3d_coords["y"] = smooth_coord(latest_3d_coords["y"], spatial_coords[1])

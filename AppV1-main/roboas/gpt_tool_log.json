@@ -1,7 +1,7 @@
 [
   {
-    "timestamp": "2026-07-14T04:23:03.842Z",
-    "userQuestion": "Can you pick up the green cube, the blue cube, and...",
+    "timestamp": "2026-07-14T05:32:58.495Z",
+    "userQuestion": "Can you pick up the red cube?",
     "toolName": "locate_object",
     "args": {
       "target_name": "red cube"
@@ -9,170 +9,7 @@
     "result": "Pushed task to Robot Queue"
   },
   {
-    "timestamp": "2026-07-14T04:23:03.856Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Initiating workspace scan for \"green cube\"...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:03.868Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Moving arm to home position for a clear camera view...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:03.889Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-07-14T04:23:03.895Z",
-    "userQuestion": "Can you pick up the green cube, the blue cube, and...",
-    "toolName": "ask-gpt_response",
-    "args": {
-      "persona": "john",
-      "emoji": "🤖"
-    },
-    "result": "I am checking the workspace for the requested objects. Once the path is clear, I will pick them up in sequence."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:03.974Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I am checking the workspace for the requested objects. Once the path is clear, I will pick them up in sequence."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:05.615Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I am checking the workspace for the requested objects. Once the path is clear, I will pick them up in sequence.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:31.096Z",
-    "userQuestion": "System Event",
-    "toolName": "robot_event_received",
-    "args": {
-      "event": "error",
-      "error": "[BLOCKED] No safe route found from (0.589,0.273,0.435) to (0.420,0.000,0.480).\n  Tried direct + 98 single via-points + 4753 via-pairs.\n  Check that pick/drop coordinates are not too close to an obstacle, or reduce obstacle size."
-    },
-    "result": "Received robot event from python MCP."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:31.125Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Robot Task Failed: Error: [BLOCKED] No safe route found from (0.589,0.273,0.435) to (0.420,0.000,0.480).\n  Tried direct + 98 single via-points + 4753 via-pairs.\n  Check that pick/drop coordinates are not too close to an obstacle, or reduce obstacle size.",
-      "isRobotMoving": false,
-      "hasTts": true
-    },
-    "result": "I'm sorry, I encountered an error while trying to handle the green cube. Please try again."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:31.181Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I'm sorry, I encountered an error while trying to handle the green cube. Please try again."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:31.635Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Initiating workspace scan for \"blue cube\"...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:31.640Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Moving arm to home position for a clear camera view...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:33.087Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I'm sorry, I encountered an error while trying to handle the green cube. Please try again.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:49.094Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Target \"blue cube\" clear! Instructing robot to pick it up...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:49.210Z",
-    "userQuestion": "System Event",
-    "toolName": "robot_event_received",
-    "args": {
-      "event": "error",
-      "error": "[BLOCKED] No safe route found from (0.589,0.273,0.435) to (0.420,0.000,0.480).\n  Tried direct + 98 single via-points + 4753 via-pairs.\n  Check that pick/drop coordinates are not too close to an obstacle, or reduce obstacle size."
-    },
-    "result": "Received robot event from python MCP."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:49.219Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Robot Task Failed: [BLOCKED] No safe route found from (0.589,0.273,0.435) to (0.420,0.000,0.480).\n  Tried direct + 98 single via-points + 4753 via-pairs.\n  Check that pick/drop coordinates are not too close to an obstacle, or reduce obstacle size.",
-      "isRobotMoving": false,
-      "hasTts": true
-    },
-    "result": "I'm sorry, I encountered an error while trying to handle the blue cube. Please try again."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:49.263Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I'm sorry, I encountered an error while trying to handle the blue cube. Please try again."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-14T04:23:49.732Z",
+    "timestamp": "2026-07-14T05:32:58.501Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
@@ -183,7 +20,7 @@
     "result": "No TTS message."
   },
   {
-    "timestamp": "2026-07-14T04:23:49.737Z",
+    "timestamp": "2026-07-14T05:32:58.507Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
@@ -194,17 +31,438 @@
     "result": "No TTS message."
   },
   {
-    "timestamp": "2026-07-14T04:23:50.893Z",
+    "timestamp": "2026-07-14T05:32:58.525Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-07-14T05:32:58.529Z",
+    "userQuestion": "Can you pick up the red cube?",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "john",
+      "emoji": "🤖"
+    },
+    "result": "I am checking the workspace for the red cube. Once the path is clear, I will pick it up for you."
+  },
+  {
+    "timestamp": "2026-07-14T05:32:58.563Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I am checking the workspace for the red cube. Once the path is clear, I will pick it up for you."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-14T05:33:00.266Z",
     "userQuestion": "System Event",
     "toolName": "tts_success",
     "args": {
-      "text": "I'm sorry, I encountered an error while trying to handle the blue cube. Please try again.",
+      "text": "I am checking the workspace for the red cube. Once the path is clear, I will pick it up for you.",
       "attempt": 1
     },
     "result": "OpenAI TTS generated successfully."
   },
   {
-    "timestamp": "2026-07-14T04:23:53.343Z",
+    "timestamp": "2026-07-14T05:33:04.011Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Robot Task Failed: MCP error -32602: Invalid request parameters",
+      "isRobotMoving": false,
+      "hasTts": true
+    },
+    "result": "I'm sorry, I encountered an error while trying to handle the red cube. Please try again."
+  },
+  {
+    "timestamp": "2026-07-14T05:33:04.155Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I'm sorry, I encountered an error while trying to handle the red cube. Please try again."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-14T05:33:06.021Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-07-14T05:33:06.044Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I'm sorry, I encountered an error while trying to handle the red cube. Please try again.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:06.672Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Hey"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:08.450Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Hey",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:12.917Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 30217,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:15.148Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"Pick up the red cube.\""
+  },
+  {
+    "timestamp": "2026-07-14T05:34:15.196Z",
+    "userQuestion": "Pick up the red cube.",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:17.397Z",
+    "userQuestion": "Pick up the red cube.",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "red cube"
+    },
+    "result": "Pushed task to Robot Queue"
+  },
+  {
+    "timestamp": "2026-07-14T05:34:17.404Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Initiating workspace scan for \"red cube\"...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:17.420Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Moving arm to home position for a clear camera view...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:17.436Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-07-14T05:34:17.442Z",
+    "userQuestion": "Pick up the red cube.",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "john",
+      "emoji": "🤖"
+    },
+    "result": "I am checking the workspace for the red cube. Once the path is clear, I will pick it up for you."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:17.574Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I am checking the workspace for the red cube. Once the path is clear, I will pick it up for you."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:19.234Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I am checking the workspace for the red cube. Once the path is clear, I will pick it up for you.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:22.068Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Robot Task Failed: MCP error -32602: Invalid request parameters",
+      "isRobotMoving": false,
+      "hasTts": true
+    },
+    "result": "I'm sorry, I encountered an error while trying to handle the red cube. Please try again."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:22.196Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I'm sorry, I encountered an error while trying to handle the red cube. Please try again."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:23.285Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I'm sorry, I encountered an error while trying to handle the red cube. Please try again.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-07-14T05:34:24.075Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:21.882Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-07-14T05:35:21.892Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-07-14T05:35:21.908Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "idle"
+    },
+    "result": "updated to 🤗"
+  },
+  {
+    "timestamp": "2026-07-14T05:35:22.439Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:23.351Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:40.132Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Hey"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:41.160Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Hey",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:46.180Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 40217,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:48.682Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"Can you pick up the red cube?\""
+  },
+  {
+    "timestamp": "2026-07-14T05:35:48.717Z",
+    "userQuestion": "Can you pick up the red cube?",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:49.606Z",
+    "userQuestion": "Can you pick up the red cube?",
+    "toolName": "locate_object",
+    "args": {
+      "target_name": "red cube"
+    },
+    "result": "Pushed task to Robot Queue"
+  },
+  {
+    "timestamp": "2026-07-14T05:35:49.616Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Initiating workspace scan for \"red cube\"...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:49.623Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Moving arm to home position for a clear camera view...",
+      "isRobotMoving": true,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:49.636Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-07-14T05:35:49.643Z",
+    "userQuestion": "Can you pick up the red cube?",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "john",
+      "emoji": "🤖"
+    },
+    "result": "I am checking the workspace for the red cube. Once the path is clear, I will pick it up for you."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:49.746Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "I am checking the workspace for the red cube. Once the path is clear, I will pick it up for you."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:51.449Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "I am checking the workspace for the red cube. Once the path is clear, I will pick it up for you.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:57.629Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": true
+    },
+    "result": "Emergency stop activated."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:57.637Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Emergency Stop Activated!",
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:57.859Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Emergency stop activated."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-14T05:35:59.555Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Emergency stop activated.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-07-14T05:36:06.553Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
@@ -215,7 +473,7 @@
     "result": "No TTS message."
   },
   {
-    "timestamp": "2026-07-14T04:23:55.360Z",
+    "timestamp": "2026-07-14T05:36:08.568Z",
     "userQuestion": "System Event",
     "toolName": "progress_sse",
     "args": {
@@ -224,270 +482,5 @@
       "hasTts": false
     },
     "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-14T04:25:40.907Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "Hey"
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-14T04:25:41.686Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "Hey",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-07-14T04:25:46.355Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_request",
-    "args": {
-      "size": 22298,
-      "mimetype": "audio/webm"
-    },
-    "result": "Transcription request received."
-  },
-  {
-    "timestamp": "2026-07-14T04:25:48.918Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_success",
-    "args": {},
-    "result": "Transcription result: \"Shut up.\""
-  },
-  {
-    "timestamp": "2026-07-14T04:25:48.958Z",
-    "userQuestion": "Shut up.",
-    "toolName": "ask-gpt_prompt",
-    "args": {},
-    "result": "GPT request received."
-  },
-  {
-    "timestamp": "2026-07-14T04:25:50.011Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-07-14T04:25:50.018Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-14T04:25:50.024Z",
-    "userQuestion": "Shut up.",
-    "toolName": "ask-gpt_response",
-    "args": {
-      "persona": "john",
-      "emoji": "🤖"
-    },
-    "result": "Okay."
-  },
-  {
-    "timestamp": "2026-07-14T04:25:50.070Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "Okay."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-14T04:25:52.715Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "Okay.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-07-14T04:26:46.753Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "Hey"
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-14T04:26:48.208Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "Hey",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-07-14T04:26:52.735Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_request",
-    "args": {
-      "size": 29543,
-      "mimetype": "audio/webm"
-    },
-    "result": "Transcription request received."
-  },
-  {
-    "timestamp": "2026-07-14T04:26:54.404Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_success",
-    "args": {},
-    "result": "Transcription result: \"Can you pick up the black marker?\""
-  },
-  {
-    "timestamp": "2026-07-14T04:26:54.449Z",
-    "userQuestion": "Can you pick up the black marker?",
-    "toolName": "ask-gpt_prompt",
-    "args": {},
-    "result": "GPT request received."
-  },
-  {
-    "timestamp": "2026-07-14T04:26:55.401Z",
-    "userQuestion": "Can you pick up the black marker?",
-    "toolName": "locate_object",
-    "args": {
-      "target_name": "black marker"
-    },
-    "result": "Pushed task to Robot Queue"
-  },
-  {
-    "timestamp": "2026-07-14T04:26:55.409Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Initiating workspace scan for \"black marker\"...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-14T04:26:55.415Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Moving arm to home position for a clear camera view...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-14T04:26:55.423Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-07-14T04:26:55.428Z",
-    "userQuestion": "Can you pick up the black marker?",
-    "toolName": "ask-gpt_response",
-    "args": {
-      "persona": "john",
-      "emoji": "🤖"
-    },
-    "result": "I am checking the workspace for the black marker. Once the path is clear, I will pick it up for you."
-  },
-  {
-    "timestamp": "2026-07-14T04:26:55.476Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I am checking the workspace for the black marker. Once the path is clear, I will pick it up for you."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-14T04:26:56.529Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I am checking the workspace for the black marker. Once the path is clear, I will pick it up for you.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-07-14T04:27:20.944Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Target \"black marker\" clear! Instructing robot to pick it up...",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-14T04:28:10.711Z",
-    "userQuestion": "System Event",
-    "toolName": "robot_event_received",
-    "args": {
-      "event": "pick_and_place_completed"
-    },
-    "result": "Received robot event from python MCP."
-  },
-  {
-    "timestamp": "2026-07-14T04:28:10.725Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Successfully picked up the black marker!",
-      "isRobotMoving": true,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-14T04:28:13.734Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": false,
-      "hasTts": true
-    },
-    "result": "I have finished picking and placing the requested object, black marker."
-  },
-  {
-    "timestamp": "2026-07-14T04:28:13.814Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "I have finished picking and placing the requested object, black marker."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-14T04:28:16.035Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "I have finished picking and placing the requested object, black marker.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
   }
 ]
