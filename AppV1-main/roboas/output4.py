@@ -227,22 +227,31 @@ def vision_loop():
    
                         rotation_from_matrix=CAM_TO_ROBOT_T[:3,:3]
                     
-                    # Calculate center pixel of the bounding box using Depth-Based Top Face Extraction
+                        # Calculate center pixel of the bounding box using Depth-Based Top Face Extraction
                         def get_top_face_center(depth_frame, xmin, ymin, xmax, ymax):
                             min_depth = float('inf')
                             closest_pixels = []
                             margin_x = int((xmax - xmin) * 0.1)
                             margin_y = int((ymax - ymin) * 0.1)
                             
-                            for y in range(ymin + margin_y, ymax - margin_y):
-                                for x in range(xmin + margin_x, xmax - margin_x):
-                                    d = depth_frame.get_distance(x, y)
-                                    if 0.1 < d < 2.0:
-                                        if d < min_depth - 0.01:
-                                            min_depth = d
-                                            closest_pixels = [(x, y)]
-                                        elif abs(d - min_depth) <= 0.01:
-                                            closest_pixels.append((x, y))
+                            # Clamp bounds to image dimensions (640x480)
+                            safe_xmin = max(0, min(639, xmin + margin_x))
+                            safe_xmax = max(0, min(639, xmax - margin_x))
+                            safe_ymin = max(0, min(479, ymin + margin_y))
+                            safe_ymax = max(0, min(479, ymax - margin_y))
+                            
+                            for y in range(safe_ymin, safe_ymax):
+                                for x in range(safe_xmin, safe_xmax):
+                                    try:
+                                        d = depth_frame.get_distance(x, y)
+                                        if 0.1 < d < 2.0:
+                                            if d < min_depth - 0.01:
+                                                min_depth = d
+                                                closest_pixels = [(x, y)]
+                                            elif abs(d - min_depth) <= 0.01:
+                                                closest_pixels.append((x, y))
+                                    except Exception:
+                                        continue
                             
                             if not closest_pixels:
                                 return (xmin + xmax) // 2, (ymin + ymax) // 2
@@ -303,9 +312,6 @@ def vision_loop():
                                 color_image=cropped_color_image.copy()
                             else:
                                 cv2.circle(color_image, (center_x, center_y), 2, (255,0,0), -1)
-                            
-                            # Break after zooming once to prevent recursive cropping bugs on multiple objects
-                            break
 
                         else:
                             cv2.circle(color_image, (center_x, center_y), 2, (255,0,0), -1)
