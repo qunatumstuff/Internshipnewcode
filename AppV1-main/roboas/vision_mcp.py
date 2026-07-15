@@ -914,7 +914,7 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
                     if is_target_match(target, other.get("object_name", "")) or is_inside_placement_box(other):
                         continue
                     odist = math.hypot(other["x"] - target_det["x"], other["y"] - target_det["y"])
-                    if odist < 0.080 and other["z"] > d["z"] + 0.015:
+                    if odist < 0.080 and other["z"] > d["z"]:
                         blocker_on_top = other["object_name"]
                         break
             if blocker_on_top:
@@ -1569,8 +1569,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                             dx = d["x"] - target_x
                             dy = d["y"] - target_y
                             dist = (dx*dx + dy*dy)**0.5
-                            # Only consider objects that are SIGNIFICANTLY HIGHER (>15mm) to avoid YOLO duplicate box noise
-                            if dist < 0.080 and dist < min_dist and d["z"] > target_z + 0.015:
+                            # Only consider objects that are HIGHER than the target (on top of it)
+                            if dist < 0.080 and dist < min_dist and d["z"] > target_z:
                                 min_dist = dist
                                 best_obstacle = d.get("object_name")
                         if best_obstacle:
@@ -1595,8 +1595,9 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     for d in detections:
                         if d is target_det or is_inside_placement_box(d):
                             continue
-                        if check_overlap_obb(d, target_det, clearance=0.015):
-                            if d["z"] > target_z + 0.015:
+                            # Only flag as obstacle if the overlapping object has HIGHER Z
+                            # (it's physically on top of the target, blocking access)
+                            if d["z"] > target_z:
                                 dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
                                 if dist < min_overlap_dist:
                                     min_overlap_dist = dist
@@ -1708,7 +1709,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                                 dx = d["x"] - target_x
                                 dy = d["y"] - target_y
                                 dist = (dx*dx + dy*dy)**0.5
-                                if dist < 0.080 and dist < min_dist and d["z"] > target_z + 0.015:
+                                if dist < 0.080 and dist < min_dist and d["z"] > target_z:
                                     min_dist = dist
                                     best_obstacle = d.get("object_name")
 
