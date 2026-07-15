@@ -352,10 +352,10 @@ def _vision_loop_inner():
                         2
                     )
 
-                    # Red centre dot at OBB centre
+                    # Yellow centre dot at OBB centre (less accurate due to 3D perspective)
                     obb_cx = int(obb.xywhr[0][0])
                     obb_cy = int(obb.xywhr[0][1])
-                    cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
+                    cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 255, 255), -1)
 
                     cv2.putText(
                         color_image,

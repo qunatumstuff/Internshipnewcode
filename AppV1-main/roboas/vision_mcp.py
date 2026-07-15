@@ -325,6 +325,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                     h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
                     detections.append({
+                        "source":      "FALLBACK",
                         "object_name": cls_name,
                         "x":           coords["x"],
                         "y":           coords["y"],
@@ -375,6 +376,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
             detections.append({
+                "source":      "OBB",
                 "object_name": cls_name,
                 "x":           coords["x"],
                 "y":           coords["y"],
@@ -451,6 +453,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
             detections.append({
+                "source":      "SEG",
                 "object_name": cls_name,
                 "x":           coords["x"],
                 "y":           coords["y"],
@@ -1482,6 +1485,14 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 d for d in detections
                 if d.get("object_name", "") == target_base and is_inside_placement_box(d)
             ]
+            
+            # Prioritize Segmentation coordinates over OBB, as SEG moments calculate the true top-face center
+            def source_priority(d):
+                return {"SEG": 0, "OBB": 1, "FALLBACK": 2}.get(d.get("source", "OBB"), 3)
+                
+            target_detections.sort(key=source_priority)
+            exact_matches_outside.sort(key=source_priority)
+            exact_matches_inside.sort(key=source_priority)
             
             if exact_matches_inside and not exact_matches_outside:
                 return [TextContent(type="text", text=json.dumps({
