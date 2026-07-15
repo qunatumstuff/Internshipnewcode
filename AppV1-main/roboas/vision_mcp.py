@@ -175,11 +175,10 @@ def area(x1, y1, x2, y2, x3, y3):
     return abs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)) / 2.0)
 
 def isinside(point_x, point_y):
-    A  = area(250, -370, 250, 0, 585, 0)
-    A1 = area(point_x, point_y, 250, 0, 585, 0)
-    A2 = area(250, -370, point_x, point_y, 585, 0)
-    A3 = area(250, -370, 250, 0, point_x, point_y)
-    return A == A1 + A2 + A3
+    # Workspace rectangle bounds with 10mm tolerance margin
+    # X: 250 to 585 (tolerance: 240 to 595)
+    # Y: -370 to 0  (tolerance: -380 to 10)
+    return 240 <= point_x <= 595 and -380 <= point_y <= 10
 
 def get_median_depth(depth_frame, cx, cy, radius=4):
     valid_depths = []

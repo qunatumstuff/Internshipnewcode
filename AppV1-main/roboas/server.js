@@ -699,6 +699,12 @@ async function processRobotQueue() {
           : `I'm sorry, something went wrong with that task. Please try again.`;
       }
       
+      // Delay the error TTS if GPT just started speaking to prevent overlapping voices
+      const timeSinceGpt = Date.now() - (global.lastGptSpeechTime || 0);
+      if (timeSinceGpt < 5000) {
+        await new Promise(r => setTimeout(r, 5000 - timeSinceGpt));
+      }
+      
       // Send the TTS error immediately before the next task can start and toggle isRobotBusy
       sendProgress(`Robot Task Failed: ${err.message}`, false, friendlyFailMsg);
       
@@ -1646,6 +1652,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
       await sendWakewordCommand('unmute');
     }
     logToolCall(question, "ask-gpt_response", { persona: currentPersona, emoji }, answerText);
+    global.lastGptSpeechTime = Date.now();
     res.json({ success: true, answer: answerText, emoji, persona: currentPersona });
 
   } catch (err) {
