@@ -352,10 +352,31 @@ def _vision_loop_inner():
                         2
                     )
 
-                    # Yellow centre dot at OBB centre (less accurate due to 3D perspective)
                     obb_cx = int(obb.xywhr[0][0])
                     obb_cy = int(obb.xywhr[0][1])
-                    cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 255, 255), -1)
+
+                    if is_target:
+                        height, width, _ = color_image.shape
+                        xmin = min(x1, x2, x3, x4)
+                        xmax = max(x1, x2, x3, x4)
+                        ymin = min(y1, y2, y3, y4)
+                        ymax = max(y1, y2, y3, y4)
+
+                        xmin = max(0, xmin)
+                        xmax = min(width, xmax)
+                        ymin = max(0, ymin)
+                        ymax = min(height, ymax)
+
+                        cropped = color_image[ymin:ymax, xmin:xmax]
+                        if cropped.size > 0:
+                            cropped_color_image = cv2.resize(cropped, (width, height))
+                            cv2.circle(cropped_color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
+                            color_image = cropped_color_image.copy()
+                        else:
+                            cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
+                    else:
+                        # Red centre dot at OBB centre for non-targets
+                        cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
 
                     cv2.putText(
                         color_image,
