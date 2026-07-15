@@ -154,18 +154,17 @@ OBJECT_CATALOGUE = {
 # Camera-to-robot base frame transformation matrix.
 # Calibrated to the physical D435i mounting position.
 CAM_TO_ROBOT_T = np.array([
-    [0.7328061018, 0.6121545059, -0.2970893437, 0.7217746900],
-    [0.6799624012, -0.6424940804, 0.3533447178, -0.4958178639],
-    [0.0254234164, -0.4609427488, -0.8870656302, 0.8010540878],
-    [0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000],
+[0.7328061018, 0.6121545059, -0.2970893437, 0.7217746900],
+[0.6799624012, -0.6424940804, 0.3533447178, -0.4958178639],
+[-0.0349166256, -0.4652557478, -0.8865538354, 0.8232286668],
+[0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000],
 ], dtype=np.float64)
-
 # Z offset applied to every detection — compensates for the camera
 # viewing objects from above, which causes the depth reading to land
 # on the top surface of the object rather than its centre.
 # 25mm raises the robot's approach height so the gripper doesn't
 # dig into the object on descent.
-Z_OFFSET_M = 0.035
+Z_OFFSET_M = 0
 
 server = Server("vision-mcp-server")
 
@@ -176,13 +175,11 @@ def area(x1, y1, x2, y2, x3, y3):
     return abs((x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)) / 2.0)
 
 def isinside(point_x, point_y):
-    # Rectangle boundary of the robot's reachable workspace (mm).
-    # Matches the physical yellow tape rectangle on the table.
-    X_MIN = 240   # left edge
-    X_MAX = 620   # right edge
-    Y_MIN = -380  # back edge
-    Y_MAX =   10  # front edge
-    return X_MIN <= point_x <= X_MAX and Y_MIN <= point_y <= Y_MAX
+    A  = area(250, -370, 250, 0, 585, 0)
+    A1 = area(point_x, point_y, 250, 0, 585, 0)
+    A2 = area(250, -370, point_x, point_y, 585, 0)
+    A3 = area(250, -370, 250, 0, point_x, point_y)
+    return A == A1 + A2 + A3
 
 def get_median_depth(depth_frame, cx, cy, radius=4):
     valid_depths = []

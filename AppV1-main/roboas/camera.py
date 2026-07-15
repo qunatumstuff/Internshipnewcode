@@ -22,7 +22,7 @@ inference_lock = threading.Lock()
 
 # Tweak this value to add a global Z offset (in meters) to all detected objects.
 # E.g., setting it to 0.02 will raise the target pick point by 2 cm.
-Z_OFFSET = 0.035
+Z_OFFSET = 0
 DISPLAY_ONLY_TARGET = True
 
 
@@ -284,25 +284,21 @@ def _vision_loop_inner():
                                 CAM_TO_ROBOT_T = np.array([
                                     [0.7328061018, 0.6121545059, -0.2970893437, 0.7217746900],
                                     [0.6799624012, -0.6424940804, 0.3533447178, -0.4958178639],
-                                    [0.0254234164, -0.4609427488, -0.8870656302, 0.8010540878],
-                                    [0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000]
-                                ], dtype=np.float64)
+                                    [-0.0349166256, -0.4652557478, -0.8865538354, 0.8232286668],
+                                    [0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000],
+                                    ], dtype=np.float64)
 
                                 distance = get_median_depth(depth_frame, center_x, center_y, radius=4)
                                 if distance is not None and distance > 0:
-                                    spatial_coords = rs.rs2_deproject_pixel_to_point(
-                                        intrinsics, [center_x, center_y], distance
-                                    )
+                                    spatial_coords = rs.rs2_deproject_pixel_to_point(intrinsics, [center_x, center_y], distance)
 
-                                    latest_3d_coords["x"] = smooth_coord(latest_3d_coords["x"], spatial_coords[0])
-                                    latest_3d_coords["y"] = smooth_coord(latest_3d_coords["y"], spatial_coords[1])
-                                    latest_3d_coords["z"] = smooth_coord(
-                                        latest_3d_coords["z"], spatial_coords[2] + Z_OFFSET
-                                    )
-
-                                    robot = CAM_TO_ROBOT_T @ np.array(
-                                        [spatial_coords[0], spatial_coords[1], spatial_coords[2], 1.0]
-                                    )
+                                    
+                                    robot = CAM_TO_ROBOT_T @ np.array([spatial_coords[0], spatial_coords[1], spatial_coords[2], 1.0])
+                                    latest_3d_coords["x"] = smooth_coord(latest_3d_coords["x"],robot[0])
+                                    
+                                    latest_3d_coords["y"] = smooth_coord(latest_3d_coords["y"],robot[1])
+                                    
+                                    latest_3d_coords["z"] = smooth_coord(latest_3d_coords["z"],robot[2])
 
                                     cv2.putText(
                                         color_image,
@@ -356,11 +352,11 @@ def _vision_loop_inner():
                     # Only update latest_3d_coords for the selected target
                     if current_target_class and cls_name == current_target_class.lower():
                         CAM_TO_ROBOT_T = np.array([
-                            [0.7337634310,  0.6126652048, -0.2936538341,  0.7173839756],
-                            [0.6785283256, -0.6388791698,  0.3625365054, -0.4903506740],
-                            [0.0345041846, -0.4652684744, -0.8844968672,  0.7880605490],
-                            [0.0,           0.0,           0.0,            1.0]
-                        ], dtype=np.float64)
+                            [0.7328061018, 0.6121545059, -0.2970893437, 0.7217746900],
+                            [0.6799624012, -0.6424940804, 0.3533447178, -0.4958178639],
+                            [-0.0349166256, -0.4652557478, -0.8865538354, 0.8232286668],
+                            [0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000],
+                            ], dtype=np.float64)
 
                         rotation_from_matrix = CAM_TO_ROBOT_T[:3, :3]
 
