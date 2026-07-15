@@ -1194,7 +1194,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
               logToolCall(question, "locate_object", args, parsed.status === "SUCCESS" ? "Target located" : "Scan failed");
               
               if (parsed.status === "SUCCESS") {
-                sendProgress(`Target "${args.target_name}" clear! Instructing robot to pick it up...`, true);
+                sendProgress(`Target "${args.target_name}" clear! Instructing robot to pick it up...`, true, `Target ${args.target_name} is clear! Instructing robot to pick it up.`);
                 if (robotMcpClient) {
                   try {
                     const robotArgs = {
@@ -1216,7 +1216,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
                     }, undefined, { timeout: 900000 }).catch(e => console.error("Background robot pick failed:", e));
                     
                     await completionPromise;
-                    sendProgress(`Successfully picked up the ${args.target_name}!`, true);
+                    sendProgress(`Successfully picked up the ${args.target_name}!`, true, `Successfully picked up the ${args.target_name}!`);
                     setTimeout(async () => {
                       sendProgress(null, false, `I have finished picking and placing the requested object, ${args.target_name}.`);
                       await sendWakewordCommand('unmute');

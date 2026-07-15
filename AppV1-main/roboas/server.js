@@ -612,7 +612,7 @@ async function processRobotQueue() {
       if (parsed.status !== "SUCCESS") throw new Error(parsed.message || parsed.reasoning || "Obstacle blockage");
       
       if (parsed.snapshot_b64) sendSnapshot(parsed.snapshot_b64, parsed.target || args.target_name);
-      sendProgress(`Target "${args.target_name}" clear! Instructing robot to pick it up...`, true);
+      sendProgress(`Target "${args.target_name}" clear! Instructing robot to pick it up...`, true, `Target ${args.target_name} is clear! Instructing robot to pick it up.`);
       
       if (robotMcpClient) {
         const robotArgs = { object_name: parsed.target, x: parsed.coordinates.x, y: parsed.coordinates.y, z: parsed.coordinates.z, angle_deg: parsed.coordinates.angle_deg, detections: parsed.detections };
@@ -623,7 +623,7 @@ async function processRobotQueue() {
         await Promise.all([completionPromise, toolPromise]);
         if (global._taskAborted) throw new Error("Task cancelled by user.");
         
-        sendProgress(`Successfully picked up the ${args.target_name}!`, true);
+        sendProgress(`Successfully picked up the ${args.target_name}!`, true, `Successfully picked up the ${args.target_name}!`);
         setTimeout(async () => {
           sendProgress(null, false, `I have finished picking and placing the requested object, ${args.target_name}.`);
           await sendWakewordCommand('unmute');
@@ -631,14 +631,14 @@ async function processRobotQueue() {
       }
     } 
     else if (name === "relocate_object") {
-      sendProgress(`Relocating obstacle "${args.obstacle_name}"...`, true);
+      sendProgress(`Relocating obstacle "${args.obstacle_name}"...`, true, `Relocating obstacle ${args.obstacle_name} to a safe spot.`);
       if (robotMcpClient) {
         const completionPromise = waitForRobotEvent(900000);
         const toolPromise = robotMcpClient.callTool({ name: "relocate_object", arguments: args }, undefined, { timeout: 900000 });
         await Promise.all([completionPromise, toolPromise]);
         if (global._taskAborted) throw new Error("Task cancelled by user.");
         
-        sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`, true);
+        sendProgress(`Relocated "${args.obstacle_name}" to a safe spot.`, true, `Relocated ${args.obstacle_name} successfully.`);
         setTimeout(async () => {
           sendProgress(null, false, `I have relocated the object ${args.obstacle_name}.`);
           await sendWakewordCommand('unmute');
@@ -646,15 +646,15 @@ async function processRobotQueue() {
       }
     }
     else if (name === "clear_emergency_stop") {
-      sendProgress("Clearing emergency stop...");
+      sendProgress("Clearing emergency stop...", false, "Clearing emergency stop.");
       if (robotMcpClient) await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: args });
-      sendProgress("Emergency stop cleared successfully.");
+      sendProgress("Emergency stop cleared successfully.", false, "Emergency stop cleared successfully.");
       await new Promise(r => setTimeout(r, 1500));
     }
     else if (name === "clear_return_home") {
-      sendProgress("Clearing home lock...");
+      sendProgress("Clearing home lock...", false, "Clearing home lock.");
       if (robotMcpClient) await robotMcpClient.callTool({ name: "clear_return_home", arguments: args });
-      sendProgress("Home lock cleared successfully.");
+      sendProgress("Home lock cleared successfully.", false, "Home lock cleared successfully.");
       await new Promise(r => setTimeout(r, 1500));
     }
     else if (name === "return_home") {
