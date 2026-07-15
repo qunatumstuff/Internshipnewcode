@@ -136,7 +136,7 @@ async def handle_list_tools() -> list[Tool]:
                     "detections": {
                         "type": "array",
                         "description": "Full YOLO detection list for the current scene. Used for placement boundary occupancy.",
-                        "items": {"type": "string"}
+                        "items": {"type": "object"}
                     },
                     "gap_mm_reduction_percent": {
                         "type": "number",
@@ -203,7 +203,7 @@ async def handle_list_tools() -> list[Tool]:
                             "obstacle avoidance during the relocation move and to find a clear "
                             "drop spot. Each item must have object_name, x, y, z fields."
                         ),
-                        "items": {"type": "string"}
+                        "items": {"type": "object"}
                     },
                     "target_name": {
                         "type": "string",
