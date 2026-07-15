@@ -646,15 +646,15 @@ async function processRobotQueue() {
       }
     }
     else if (name === "clear_emergency_stop") {
-      sendProgress("Clearing emergency stop...", false, "Clearing emergency stop.");
+      sendProgress("Clearing emergency stop...");
       if (robotMcpClient) await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: args });
-      sendProgress("Emergency stop cleared successfully.", false, "Emergency stop cleared successfully.");
+      sendProgress("Emergency stop cleared successfully.");
       await new Promise(r => setTimeout(r, 1500));
     }
     else if (name === "clear_return_home") {
-      sendProgress("Clearing home lock...", false, "Clearing home lock.");
+      sendProgress("Clearing home lock...");
       if (robotMcpClient) await robotMcpClient.callTool({ name: "clear_return_home", arguments: args });
-      sendProgress("Home lock cleared successfully.", false, "Home lock cleared successfully.");
+      sendProgress("Home lock cleared successfully.");
       await new Promise(r => setTimeout(r, 1500));
     }
     else if (name === "return_home") {
@@ -670,7 +670,7 @@ async function processRobotQueue() {
         
         sendProgress("Arm has been returned to home.", true);
         setTimeout(async () => {
-          sendProgress(null, false, "Arm has been returned to home.");
+          sendProgress(null, false);
           await sendWakewordCommand('unmute');
         }, 3000);
       }

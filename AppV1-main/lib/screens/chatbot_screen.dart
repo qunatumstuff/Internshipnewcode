@@ -1513,6 +1513,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       return;
     }
 
+    if (eventName.startsWith('estop_status:')) {
+      final isEstop = eventName.substring('estop_status:'.length) == 'true';
+      if (mounted) {
+        setState(() {
+          _isEStopLatched = isEstop;
+        });
+      }
+      return;
+    }
+
     if (eventName.startsWith('robot_moving_status:')) {
       final isMoving = eventName.substring('robot_moving_status:'.length) == 'true';
       _addUiLog('[OWW] Robot moving status: $isMoving');

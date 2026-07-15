@@ -165,6 +165,13 @@
             onEventCallback('snapshot:' + data.snapshot_target + ':' + data.snapshot_image);
           }
         }
+        if (data.status) {
+          if (data.status === "Emergency Stop Activated!" || data.status === "Emergency stop activated.") {
+            if (onEventCallback) onEventCallback('estop_status:true');
+          } else if (data.status === "Emergency stop cleared successfully." || data.status === "Emergency stop has been cleared.") {
+            if (onEventCallback) onEventCallback('estop_status:false');
+          }
+        }
       } catch (e) {
         console.error('[JS] Error parsing SSE:', e);
       }
