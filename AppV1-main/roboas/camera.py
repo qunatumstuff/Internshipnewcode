@@ -226,6 +226,17 @@ def _vision_loop_inner():
 
                     if len(contours) > 0:
                         largest_contour = max(contours, key=cv2.contourArea)
+                        moment = cv2.moments(largest_contour)
+                        if moment["m00"] != 0:
+                            seg_cx = int(moment["m10"] / moment["m00"])
+                            seg_cy = int(moment["m01"] / moment["m00"])
+                        else:
+                            x, y, w, h = cv2.boundingRect(largest_contour)
+                            seg_cx, seg_cy = x + w // 2, y + h // 2
+
+                        # Red centre dot from moments
+                        cv2.circle(color_image, (seg_cx, seg_cy), 5, (0, 0, 255), -1)
+
                         x, y, w, h = cv2.boundingRect(largest_contour)
                         cv2.putText(
                             color_image,
@@ -269,6 +280,8 @@ def _vision_loop_inner():
                             center_y = int((y1 + y2) / 2)
 
                             cv2.rectangle(color_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                            # Red centre dot
+                            cv2.circle(color_image, (center_x, center_y), 5, (0, 0, 255), -1)
                             cv2.putText(
                                 color_image,
                                 f"{cls_name} FALLBACK {confidence:.2f}",
@@ -338,6 +351,11 @@ def _vision_loop_inner():
                         (0, 255, 255),
                         2
                     )
+
+                    # Red centre dot at OBB centre
+                    obb_cx = int(obb.xywhr[0][0])
+                    obb_cy = int(obb.xywhr[0][1])
+                    cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
 
                     cv2.putText(
                         color_image,

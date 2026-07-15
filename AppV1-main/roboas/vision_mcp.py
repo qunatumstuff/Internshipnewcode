@@ -212,9 +212,11 @@ def _rotation_matrix_to_euler(R):
     return roll, pitch, yaw
 
 
-def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics):
+def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name: str = ""):
     """
     Convert a pixel centre + OBB angle into robot-frame XYZ and yaw.
+    The depth camera reads the TOP SURFACE of an object.
+    We correct Z to the object's true centre by adding catalogue_height / 2.
     Returns dict {x, y, z, angle_deg} or None if depth is invalid.
     """
     distance = get_median_depth(depth_frame, cx_px, cy_px)
@@ -232,10 +234,15 @@ def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics):
     ])
     _, _, yaw = _rotation_matrix_to_euler(R_cam_to_robot @ R_obj_in_camera)
 
+    # Camera reads top surface. Shift Z down to object centre (height / 2).
+    cat_entry = OBJECT_CATALOGUE.get(cls_name, {})
+    height_m  = cat_entry.get("height_m", 0.0)
+    z_centre  = round(float(robot_pt[2]) + Z_OFFSET_M + (height_m / 2), 4)
+
     return {
         "x":         round(float(robot_pt[0]), 4),
         "y":         round(float(robot_pt[1]), 4),
-        "z":         round(float(robot_pt[2]) + Z_OFFSET_M, 4),  # +25mm height offset
+        "z":         z_centre,
         "angle_deg": round(math.degrees(yaw),  2),
     }
 
@@ -307,7 +314,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                     h_px = float(y2 - y1)
                     angle_rad = 0.0 # fallback has no angle
 
-                    coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics)
+                    coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
                     if coords is None:
                         continue
                         
@@ -356,7 +363,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             w_px  = float(obb.xywhr[0][2])
             h_px  = float(obb.xywhr[0][3])
 
-            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics)
+            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
             if coords is None:
                 continue
                 
@@ -433,7 +440,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                 logger.info(f"[{cls_name}] OBB angle not available, using minAreaRect: {rect[2]:.1f}deg")
 
             w_px, h_px = rect[1]
-            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics)
+            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
             if coords is None:
                 continue
                 
@@ -878,8 +885,12 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
         known_h = OBJECT_CATALOGUE.get(d["object_name"], {}).get("height_m", None)
         if known_h is None:
             continue
-        top_surface_z = d["z"] - Z_OFFSET_M
-        excess = top_surface_z - known_h
+        # Z is now the object centre. Check how far it deviates from expected centre (known_h/2).
+        Z_SENSOR_TOLERANCE = 0.007  # ±7mm — within this range trust the camera
+        expected_centre_z = known_h / 2
+        excess = d["z"] - expected_centre_z
+        if abs(excess) <= Z_SENSOR_TOLERANCE:
+            continue  # within tolerance — camera reading is reliable, not elevated
         if excess <= 0.020:
             continue
 
@@ -903,7 +914,7 @@ def compute_scene_analysis(target: str, detections: list[dict]) -> str:
                     if is_target_match(target, other.get("object_name", "")) or is_inside_placement_box(other):
                         continue
                     odist = math.hypot(other["x"] - target_det["x"], other["y"] - target_det["y"])
-                    if odist < 0.080 and other["z"] > d["z"]:
+                    if odist < 0.080 and other["z"] > d["z"] + 0.015:
                         blocker_on_top = other["object_name"]
                         break
             if blocker_on_top:
@@ -1498,6 +1509,9 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         expected_z = known_h / 2
                         excess = d["z"] - expected_z
                         implied_support = excess * 2
+                        Z_SENSOR_TOLERANCE = 0.007  # ±7mm tolerance
+                        if abs(excess) <= Z_SENSOR_TOLERANCE:
+                            continue  # camera reading is reliable
                         if excess > 0.020 and abs(implied_support - target_height) <= 0.015:
                             inferred_blocker = d
                             break
@@ -1537,7 +1551,10 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     expected_z = expected_h / 2
                     target_z = exact_matches_outside[0]["z"]
                     excess = target_z - expected_z
-                    if excess > 0.020:
+                    Z_SENSOR_TOLERANCE = 0.007  # ±7mm tolerance — trust camera
+                    if abs(excess) <= Z_SENSOR_TOLERANCE:
+                        pass  # within tolerance, treat as flat on table
+                    elif excess > 0.020:
                         # Target is elevated. Find nearby objects with HIGHER Z
                         # (meaning they are ON TOP of the target and must be relocated).
                         # If no nearby object has higher Z, the target itself is on top
@@ -1552,8 +1569,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                             dx = d["x"] - target_x
                             dy = d["y"] - target_y
                             dist = (dx*dx + dy*dy)**0.5
-                            # Only consider objects that are HIGHER than the target (on top of it)
-                            if dist < 0.080 and dist < min_dist and d["z"] > target_z:
+                            # Only consider objects that are SIGNIFICANTLY HIGHER (>15mm) to avoid YOLO duplicate box noise
+                            if dist < 0.080 and dist < min_dist and d["z"] > target_z + 0.015:
                                 min_dist = dist
                                 best_obstacle = d.get("object_name")
                         if best_obstacle:
@@ -1579,9 +1596,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                         if d is target_det or is_inside_placement_box(d):
                             continue
                         if check_overlap_obb(d, target_det, clearance=0.015):
-                            # Only flag as obstacle if the overlapping object has HIGHER Z
-                            # (it's physically on top of the target, blocking access)
-                            if d["z"] > target_z:
+                            if d["z"] > target_z + 0.015:
                                 dist = math.hypot(d["x"] - target_det["x"], d["y"] - target_det["y"])
                                 if dist < min_overlap_dist:
                                     min_overlap_dist = dist
@@ -1677,7 +1692,10 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     if expected_h is not None and target_det:
                         expected_z = expected_h / 2
                         excess = target_det["z"] - expected_z
-                        if excess > 0.020:
+                        Z_SENSOR_TOLERANCE = 0.007  # ±7mm tolerance — trust camera
+                        if abs(excess) <= Z_SENSOR_TOLERANCE:
+                            pass  # within tolerance, treat as flat on table
+                        elif excess > 0.020:
                             # Find nearby object with HIGHER Z than target (on top of it)
                             target_x = target_det["x"]
                             target_y = target_det["y"]
@@ -1690,7 +1708,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                                 dx = d["x"] - target_x
                                 dy = d["y"] - target_y
                                 dist = (dx*dx + dy*dy)**0.5
-                                if dist < 0.080 and dist < min_dist and d["z"] > target_z:
+                                if dist < 0.080 and dist < min_dist and d["z"] > target_z + 0.015:
                                     min_dist = dist
                                     best_obstacle = d.get("object_name")
 
@@ -1755,6 +1773,16 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 }))]
 
             if next_action == "relocate":
+                # ── Self-relocate guard ──────────────────────────────────
+                # You cannot relocate the target to clear a path to itself.
+                # If the target is on top of something, just pick it!
+                if obstacle_name == target:
+                    logger.warning(
+                        f"Qwen/failsafe asked to relocate '{obstacle_name}' which IS the target. "
+                        f"Forcing pick instead, since the target is accessible on top."
+                    )
+                    next_action = "pick"
+
                 # ── Repeat-relocate guard ────────────────────────────────
                 # If this obstacle was already relocated this cycle, Qwen is
                 # likely hallucinating or ignoring history. Force pick instead
@@ -1763,7 +1791,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     f"Relocated '{obstacle_name}'" in entry
                     for entry in action_history
                 )
-                if already_relocated:
+                if next_action == "relocate" and already_relocated:
                     logger.warning(
                         f"Qwen asked to relocate '{obstacle_name}' again but it was "
                         f"already relocated this cycle. Forcing pick instead."
