@@ -151,6 +151,25 @@ OBJECT_CATALOGUE = {
                      "length_m": 0.03,   "breadth_m": 0.03},
 }
 
+# Grasping offsets (X, Y, Z) in meters for each object class.
+# Edit these values to fine-tune the robot's grasping position for specific objects.
+GRASP_OFFSETS = {
+    "black marker": {"x": 0.0, "y": 0.0, "z": 0.0},
+    "blue cube":    {"x": 0.0, "y": 0.0, "z": 0.0},
+    "red cube":     {"x": 0.0, "y": 0.0, "z": 0.0},
+    "green cube":   {"x": 0.0, "y": 0.0, "z": 0.0},
+    "medicine":     {"x": 0.0, "y": 0.0, "z": 0.0},
+    "nut":          {"x": 0.0, "y": 0.0, "z": 0.0},
+    "yellow cube":  {"x": 0.0, "y": 0.0, "z": 0.0},
+    "sponge":       {"x": 0.0, "y": 0.0, "z": 0.0},
+    "screwdriver":  {"x": 0.0, "y": 0.0, "z": 0.0},
+    "cube":         {"x": 0.0, "y": 0.0, "z": 0.0},
+    "soy milk":     {"x": 0.0, "y": 0.0, "z": 0.0},
+    "umbrella":     {"x": 0.0, "y": 0.0, "z": 0.0},
+    "wrench":       {"x": 0.0, "y": 0.0, "z": 0.0},
+    "hat":          {"x": 0.0, "y": 0.0, "z": 0.0},
+}
+
 # Camera-to-robot base frame transformation matrix.
 # Calibrated to the physical D435i mounting position.
 CAM_TO_ROBOT_T = np.array([
@@ -238,9 +257,17 @@ def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name: 
     height_m  = cat_entry.get("height_m", 0.0)
     z_centre  = round(float(robot_pt[2]) + Z_OFFSET_M + (height_m / 2), 4)
 
+    x_val = float(robot_pt[0])
+    y_val = float(robot_pt[1])
+    
+    offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
+    x_val += offsets["x"]
+    y_val += offsets["y"]
+    z_centre += offsets["z"]
+
     return {
-        "x":         round(float(robot_pt[0]), 4),
-        "y":         round(float(robot_pt[1]), 4),
+        "x":         round(x_val, 4),
+        "y":         round(y_val, 4),
         "z":         z_centre,
         "angle_deg": round(math.degrees(yaw),  2),
     }

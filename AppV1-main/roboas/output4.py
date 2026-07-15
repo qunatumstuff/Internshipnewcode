@@ -88,6 +88,25 @@ def isinside(point_x, point_y):
     return 240 <= point_x <= 595 and -380 <= point_y <= 10
 
 
+# Grasping offsets (X, Y, Z) in meters for each object class.
+# Edit these values to fine-tune the robot's grasping position for specific objects.
+GRASP_OFFSETS = {
+    "black marker": {"x": 0.0, "y": 0.0, "z": 0.0},
+    "blue cube":    {"x": 0.0, "y": 0.0, "z": 0.0},
+    "red cube":     {"x": 0.0, "y": 0.0, "z": 0.0},
+    "green cube":   {"x": 0.0, "y": 0.0, "z": 0.0},
+    "medicine":     {"x": 0.0, "y": 0.0, "z": 0.0},
+    "nut":          {"x": 0.0, "y": 0.0, "z": 0.0},
+    "yellow cube":  {"x": 0.0, "y": 0.0, "z": 0.0},
+    "sponge":       {"x": 0.0, "y": 0.0, "z": 0.0},
+    "screwdriver":  {"x": 0.0, "y": 0.0, "z": 0.0},
+    "cube":         {"x": 0.0, "y": 0.0, "z": 0.0},
+    "soy milk":     {"x": 0.0, "y": 0.0, "z": 0.0},
+    "umbrella":     {"x": 0.0, "y": 0.0, "z": 0.0},
+    "wrench":       {"x": 0.0, "y": 0.0, "z": 0.0},
+    "hat":          {"x": 0.0, "y": 0.0, "z": 0.0},
+}
+
 # -----------------------------------------------------------------------------
 # 3. Vision Loop (Runs in a separate background thread)
 # -----------------------------------------------------------------------------
@@ -283,11 +302,19 @@ def vision_loop():
                         median_z=np.median(spatial_coords[2])
 
                         robot=CAM_TO_ROBOT_T @ np.array([spatial_coords[0], spatial_coords[1], median_z, 1.0])
+                        robot_x = float(robot[0])
+                        robot_y = float(robot[1])
+                        robot_z = float(robot[2])
+                        
+                        offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
+                        robot_x += offsets["x"]
+                        robot_y += offsets["y"]
+                        robot_z += offsets["z"]
                   
                         if cls_name.lower() in coordinates:
                            center_x, center_y = coordinates[cls_name.lower()]
 
-                        if isinside(robot[0]*1000, robot[1]*1000):
+                        if isinside(robot_x*1000, robot_y*1000):
                             height,width,_ = color_image.shape
                             xmin = min(x1, x2, x3, x4)
                             xmax = max(x1, x2, x3, x4)
@@ -317,8 +344,8 @@ def vision_loop():
                             cv2.circle(color_image, (center_x, center_y), 2, (255,0,0), -1)
 
                         roll,pitch,yaw=rotationMatrixToEulerAngles(rotation_from_matrix @ rotation_from_camera)
-                        cv2.putText(color_image, f"Robot Frame: X:{robot[0]*1000:.4f} Y:{robot[1]*1000:.4f} Z:{robot[2]*1000:.4f}m R:{roll/math.pi*180:.2f} P:{pitch/math.pi*180:.2f} Y:{yaw/math.pi*180:.2f} {cls_name}", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                        print(f"{cls_name} X:{robot[0]*1000:.4f} Y:{robot[1]*1000:.4f} Z:{robot[2]*1000:.4f}m R:{roll/math.pi*180:.2f} P:{pitch/math.pi*180:.2f} Y:{yaw/math.pi*180:.2f}")
+                        cv2.putText(color_image, f"Robot Frame: X:{robot_x*1000:.4f} Y:{robot_y*1000:.4f} Z:{robot_z*1000:.4f}m R:{roll/math.pi*180:.2f} P:{pitch/math.pi*180:.2f} Y:{yaw/math.pi*180:.2f} {cls_name}", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        print(f"{cls_name} X:{robot_x*1000:.4f} Y:{robot_y*1000:.4f} Z:{robot_z*1000:.4f}m R:{roll/math.pi*180:.2f} P:{pitch/math.pi*180:.2f} Y:{yaw/math.pi*180:.2f}")
 
             # Show the live feed (for debugging on i5 laptop)
             cv2.imshow("Module B: System 1 Vision Reflex", color_image)
