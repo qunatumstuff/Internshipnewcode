@@ -649,6 +649,11 @@ async function processRobotQueue() {
       sendProgress("Clearing emergency stop...");
       if (robotMcpClient) await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: args });
       sendProgress("Emergency stop cleared successfully.");
+      progressClients.forEach(client => {
+        try {
+          client.write(`data: ${JSON.stringify({ estop_status: 'inactive' })}\n\n`);
+        } catch (e) {}
+      });
       await new Promise(r => setTimeout(r, 1500));
     }
     else if (name === "clear_return_home") {
@@ -2064,6 +2069,11 @@ app.post('/clear-emergency-stop', async (req, res) => {
       const result = await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: {} });
       console.log('✅ Emergency Stop Latch Cleared:', result.content[0].text);
       sendProgress(null, false, "Emergency stop has been cleared.");
+      progressClients.forEach(client => {
+        try {
+          client.write(`data: ${JSON.stringify({ estop_status: 'inactive' })}\n\n`);
+        } catch (e) {}
+      });
       res.json({ success: true, message: result.content[0].text });
     } catch (err) {
       res.json({ success: false, message: err.message });
