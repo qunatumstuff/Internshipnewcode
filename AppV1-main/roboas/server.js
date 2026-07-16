@@ -693,7 +693,7 @@ async function processRobotQueue() {
       const lowerErr = err.message.toLowerCase();
       
       if (lowerErr.includes('emergency stop') || lowerErr.includes('powered off')) {
-        friendlyFailMsg = "The robot is in an emergency stop state. Please clear the emergency stop before commanding me.";
+        friendlyFailMsg = null; // Do not speak on emergency stop.
       } else if (lowerErr.includes('already placed')) {
         friendlyFailMsg = `That item is already inside the placement box.`;
       } else if (lowerErr.includes('not found') || lowerErr.includes('could not identify')) {
@@ -1995,7 +1995,6 @@ app.post('/emergency-stop', async (req, res) => {
   if (robotMcpClient) {
     try {
       const result = await robotMcpClient.callTool({ name: "emergency_stop", arguments: {} });
-      sendProgress(null, false, "Emergency stop activated.");
       sendProgress("Emergency Stop Activated!", false);
       res.json({ success: true, message: result.content[0].text });
     } catch (err) {
