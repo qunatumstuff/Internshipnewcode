@@ -189,6 +189,10 @@ CAM_TO_ROBOT_T = np.array([
 # dig into the object on descent.
 Z_OFFSET_M = 0
 
+# Permanent offsets calibrated to the physical robot layout
+PERMA_OFFSET_X = 0.010823847
+PERMA_OFFSET_Y = -0.001782065
+
 # ==========================================
 # TOP-SURFACE REFINEMENT INTEGRATION
 # ==========================================
@@ -249,7 +253,7 @@ def _rotation_matrix_to_euler(R):
     return roll, pitch, yaw
 
 
-def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name: str = ""):
+def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name: str = "", apply_offsets: bool = True):
     """
     Convert a pixel centre + OBB angle into robot-frame XYZ and yaw.
     The depth camera reads the TOP SURFACE of an object.
@@ -279,10 +283,11 @@ def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name: 
     x_val = float(robot_pt[0])
     y_val = float(robot_pt[1])
     
-    offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
-    x_val += offsets["x"]
-    y_val += offsets["y"]
-    z_centre += offsets["z"]
+    if apply_offsets:
+        offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
+        x_val += offsets["x"] - PERMA_OFFSET_X
+        y_val += offsets["y"] - PERMA_OFFSET_Y
+        z_centre += offsets["z"]
 
     return {
         "x":         round(x_val, 4),
@@ -409,11 +414,9 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             w_px  = float(obb.xywhr[0][2])
             h_px  = float(obb.xywhr[0][3])
 
-            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
+            # apply_offsets=False because we will apply them manually after TSR
+            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name, apply_offsets=False)
             if coords is None:
-                continue
-                
-            if not isinside(coords["x"] * 1000, coords["y"] * 1000):
                 continue
 
             # Calculate physical dimensions
@@ -422,25 +425,11 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
             # ── Top-surface refinement (flat-top classes only) ──────────────
-            # Builds the base detection first, then optionally overrides x/y
-            # with a validated top-plane centre. z is kept from the legacy
-            # _pixel_to_robot() path until downstream Z contract is confirmed.
-            detection = {
-                "source":      "OBB",
-                "object_name": cls_name,
-                "x":           coords["x"],
-                "y":           coords["y"],
-                "z":           coords["z"],
-                "angle_deg":   coords["angle_deg"],
-                "confidence":  round(conf, 3),
-                "cx_px":       cx_px,
-                "cy_px":       cy_px,
-                "w_px":        w_px,
-                "h_px":        h_px,
-                "w_m":         w_m,
-                "h_m":         h_m,
-                "position_source": "legacy_obb_center",
-            }
+            raw_robot_x = coords["x"]
+            raw_robot_y = coords["y"]
+            raw_robot_z = coords["z"]
+            position_source = "legacy_obb_center"
+            tsr_metadata = {}
 
             if cls_name in tsr.FLAT_TOP_CLASSES:
                 depth_image_arr = np.asanyarray(depth_frame.get_data())
@@ -466,48 +455,79 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                     except Exception:
                         pass  # fall back to the axis-aligned approximation above
 
-                refined = tsr.refine_top_surface_center(
-                    class_name=cls_name,
-                    obb_corners=corners_float,
-                    image_shape=color_image.shape,
-                    depth_image=depth_image_arr,
-                    depth_scale=camera.current_depth_scale,
-                    intrinsics=intrinsics,
-                    cam_to_robot_t=CAM_TO_ROBOT_T,
-                    expected_height_m=expected_h,
-                    method=TOP_SURFACE_METHOD,
-                )
-
-                if refined["valid"]:
-                    detection["x"]               = round(refined["x"] + GRASP_OFFSETS.get(cls_name, {"x": 0.0})["x"], 4)
-                    detection["y"]               = round(refined["y"] + GRASP_OFFSETS.get(cls_name, {"y": 0.0})["y"], 4)
-                    # z intentionally NOT replaced here — preserve legacy z until
-                    # the downstream Z contract (nogripperref.py hover tests) is confirmed.
-                    detection["position_source"] = refined["method_used"]
-                    detection.update(refined["metadata"])
-                    logger.info(
-                        f"[TSR] {cls_name} refined XY: "
-                        f"x={detection['x']:.4f} y={detection['y']:.4f} "
-                        f"(was x={coords['x']:.4f} y={coords['y']:.4f}) "
-                        f"tilt={refined['metadata']['plane_tilt_deg']:.1f}deg "
-                        f"pts={refined['metadata']['top_point_count']}"
+                try:
+                    refined = tsr.refine_top_surface_center(
+                        class_name=cls_name,
+                        obb_corners=corners_float,
+                        image_shape=color_image.shape,
+                        depth_image=depth_image_arr,
+                        depth_scale=camera.current_depth_scale,
+                        intrinsics=intrinsics,
+                        cam_to_robot_t=CAM_TO_ROBOT_T,
+                        expected_height_m=expected_h,
+                        method=TOP_SURFACE_METHOD,
                     )
-                else:
-                    failure_reason = refined.get("reason", "unknown")
-                    if TOP_SURFACE_FAILURE_POLICY == "reject":
-                        logger.warning(
-                            f"[TSR] {cls_name} refinement failed ({failure_reason}) "
-                            f"and TOP_SURFACE_FAILURE_POLICY=reject — discarding detection."
+
+                    if refined["valid"]:
+                        raw_robot_x = refined["x"]
+                        raw_robot_y = refined["y"]
+                        # z intentionally NOT replaced here — preserve legacy z until tests confirm.
+                        position_source = refined["method_used"]
+                        tsr_metadata = refined.get("metadata", {})
+                        logger.info(
+                            f"[TSR] {cls_name} refined XY: "
+                            f"raw_x={raw_robot_x:.4f} raw_y={raw_robot_y:.4f} "
+                            f"(was legacy raw_x={coords['x']:.4f} raw_y={coords['y']:.4f}) "
+                            f"tilt={tsr_metadata.get('plane_tilt_deg', 0):.1f}deg "
+                            f"pts={tsr_metadata.get('top_point_count', 0)}"
                         )
-                        continue  # skip appending this detection
                     else:
-                        # legacy_center: keep existing coords, log the failure
-                        logger.warning(
-                            f"[TSR] {cls_name} refinement failed ({failure_reason}) "
-                            f"— falling back to legacy OBB-centre coordinates."
-                        )
-                        detection["surface_valid"]  = False
-                        detection["tsr_fail_reason"] = failure_reason
+                        failure_reason = refined.get("reason", "unknown")
+                        if TOP_SURFACE_FAILURE_POLICY == "reject":
+                            logger.warning(
+                                f"[TSR] {cls_name} refinement failed ({failure_reason}) "
+                                f"and TOP_SURFACE_FAILURE_POLICY=reject — discarding detection."
+                            )
+                            continue  # skip appending this detection
+                        else:
+                            # legacy_center: keep existing coords, log the failure
+                            logger.warning(
+                                f"[TSR] {cls_name} refinement failed ({failure_reason}) "
+                                f"— falling back to legacy OBB-centre coordinates."
+                            )
+                            tsr_metadata["surface_valid"]  = False
+                            tsr_metadata["tsr_fail_reason"] = failure_reason
+                except Exception as exc:
+                    logger.error(f"[TSR] Refinement error for {cls_name}: {exc}")
+                    tsr_metadata["surface_valid"] = False
+                    tsr_metadata["tsr_fail_reason"] = "exception_raised"
+            
+            # ── Apply grasp and permanent offsets exactly once ────────
+            offsets = GRASP_OFFSETS.get(cls_name, {"x": 0.0, "y": 0.0, "z": 0.0})
+            final_x = round(raw_robot_x + offsets["x"] - PERMA_OFFSET_X, 4)
+            final_y = round(raw_robot_y + offsets["y"] - PERMA_OFFSET_Y, 4)
+            final_z = raw_robot_z + offsets["z"]
+
+            if not isinside(final_x * 1000, final_y * 1000):
+                continue
+            
+            detection = {
+                "source":      "OBB",
+                "object_name": cls_name,
+                "x":           final_x,
+                "y":           final_y,
+                "z":           final_z,
+                "angle_deg":   coords["angle_deg"],
+                "confidence":  round(conf, 3),
+                "cx_px":       cx_px,
+                "cy_px":       cy_px,
+                "w_px":        w_px,
+                "h_px":        h_px,
+                "w_m":         w_m,
+                "h_m":         h_m,
+                "position_source": position_source,
+            }
+            detection.update(tsr_metadata)
 
             detections.append(detection)
 
@@ -612,13 +632,16 @@ def get_current_detections():
 
     Returns list of detection dicts, empty list on failure.
     """
-    color_image = camera.current_rgb_frame
+    with camera.frame_lock:
+        color_image = camera.current_rgb_frame.copy() if camera.current_rgb_frame is not None else None
+        depth_frame = camera.current_depth_frame
+        intrinsics = camera.camera_intrinsics
+        
     if color_image is None:
         logger.warning("No RGB frame from camera yet.")
         return []
 
-    depth_frame, intrinsics = get_realsense_depth_and_intrinsics()
-    if depth_frame is None:
+    if depth_frame is None or intrinsics is None:
         logger.warning("No depth frame available.")
         return []
 

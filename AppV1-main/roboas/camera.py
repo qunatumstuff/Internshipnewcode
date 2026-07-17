@@ -20,6 +20,7 @@ current_depth_frame = None
 camera_intrinsics = None
 current_depth_scale = 0.001  # metres per raw depth unit; updated on pipeline start
 inference_lock = threading.Lock()
+frame_lock = threading.Lock()
 
 # Tweak this value to add a global Z offset (in meters) to all detected objects.
 # E.g., setting it to 0.02 will raise the target pick point by 2 cm.
@@ -185,8 +186,9 @@ def _vision_loop_inner():
 
             # Convert images to numpy arrays
             color_image = np.asanyarray(color_frame.get_data())
-            current_rgb_frame = color_image.copy() # Update global state for MCP snapshot
-            current_depth_frame = depth_frame
+            with frame_lock:
+                current_rgb_frame = color_image.copy() # Update global state for MCP snapshot
+                current_depth_frame = depth_frame
 
             # Run inference every 4th frame to conserve GPU/VRAM resources for Qwen/Ollama
             if frame_counter % 4 == 0:
