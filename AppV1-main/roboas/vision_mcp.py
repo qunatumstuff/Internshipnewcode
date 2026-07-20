@@ -5,6 +5,7 @@ import json
 import urllib.request
 import os
 import math
+from object_catalogue import OBJECT_CATALOGUE, GRASP_OFFSETS
 import threading
 import base64
 import re
@@ -201,13 +202,12 @@ def isinside(point_x, point_y):
     # Y: -370 to 0  (tolerance: -380 to 10)
     return 240 <= point_x <= 595 and -380 <= point_y <= 10
 
-def get_median_depth(depth_frame, cx, cy, radius=4):
+def get_median_depth(depth_frame, cx, cy, depth_scale, radius=4):
     valid_depths = []
-    width = depth_frame.get_width()
-    height = depth_frame.get_height()
+    height, width = depth_frame.shape
     for y in range(max(0, int(cy) - radius), min(height, int(cy) + radius + 1)):
         for x in range(max(0, int(cx) - radius), min(width, int(cx) + radius + 1)):
-            depth = depth_frame.get_distance(x, y)
+            depth = depth_frame[y, x] * depth_scale
             if np.isfinite(depth) and depth > 0.0:
                 valid_depths.append(depth)
     if not valid_depths:
@@ -232,14 +232,14 @@ def _rotation_matrix_to_euler(R):
     return roll, pitch, yaw
 
 
-def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name: str = ""):
+def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, depth_scale, cls_name: str = ""):
     """
     Convert a pixel centre + OBB angle into robot-frame XYZ and yaw.
     The depth camera reads the TOP SURFACE of an object.
     We correct Z to the object's true centre by adding catalogue_height / 2.
     Returns dict {x, y, z, angle_deg} or None if depth is invalid.
     """
-    distance = get_median_depth(depth_frame, cx_px, cy_px)
+    distance = get_median_depth(depth_frame, cx_px, cy_px, depth_scale)
     if distance is None or distance <= 0.0:
         return None
 
@@ -267,7 +267,7 @@ def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name: 
     }
 
 
-def run_yolo_detection(color_image, depth_frame, intrinsics):
+def run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale):
     """
     Run detection on all catalogue objects using a two-pass approach:
 
@@ -334,14 +334,14 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                     h_px = float(y2 - y1)
                     angle_rad = 0.0 # fallback has no angle
 
-                    coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
+                    coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, depth_scale, cls_name=cls_name)
                     if coords is None:
                         continue
                         
                     if not isinside(coords["x"] * 1000, coords["y"] * 1000):
                         continue
 
-                    distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
+                    distance = get_median_depth(depth_frame, cx_px, cy_px, depth_scale) or 0.0
                     w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
                     h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
@@ -384,25 +384,28 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             w_px  = float(obb.xywhr[0][2])
             h_px  = float(obb.xywhr[0][3])
 
-            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
+            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, depth_scale, cls_name=cls_name)
             if coords is None:
                 continue
 
             # TSR Integration
             try:
                 from top_surface_refinement import refine_top_surface_center, FLAT_TOP_CLASSES
+                # Extract corners float from result.obb.xyxyxyxy[i] if not done yet
+                corners_float = box.cpu().numpy().tolist()
+                
                 if cls_name in FLAT_TOP_CLASSES:
                     cat_entry = OBJECT_CATALOGUE.get(cls_name, {})
                     refined = refine_top_surface_center(
                         class_name=cls_name,
                         obb_corners=corners_float,
                         image_shape=color_image.shape,
-                        depth_image=np.asanyarray(depth_frame.get_data()),
-                        depth_scale=camera.current_depth_scale,
+                        depth_image=np.asanyarray(depth_frame), # depth_frame is now a numpy array from atomic snapshot
+                        depth_scale=depth_scale,
                         intrinsics=intrinsics,
                         cam_to_robot_t=CAM_TO_ROBOT_T,
                         expected_height_m=cat_entry.get("height_m", 0.0),
-                        method="iterative"
+                        method="hybrid"
                     )
                     if refined["valid"]:
                         coords["raw_x"] = refined["x"]
@@ -424,7 +427,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                 continue
 
             # Calculate physical dimensions
-            distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
+            distance = get_median_depth(depth_frame, cx_px, cy_px, depth_scale) or 0.0
             w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
             h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
@@ -494,25 +497,28 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                 logger.info(f"[{cls_name}] OBB angle not available, using minAreaRect: {rect[2]:.1f}deg")
 
             w_px, h_px = rect[1]
-            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
+            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, depth_scale, cls_name=cls_name)
             if coords is None:
                 continue
 
             # TSR Integration
             try:
                 from top_surface_refinement import refine_top_surface_center, FLAT_TOP_CLASSES
+                # Extract corners float from result.obb.xyxyxyxy[i] if not done yet
+                corners_float = box.cpu().numpy().tolist()
+                
                 if cls_name in FLAT_TOP_CLASSES:
                     cat_entry = OBJECT_CATALOGUE.get(cls_name, {})
                     refined = refine_top_surface_center(
                         class_name=cls_name,
                         obb_corners=corners_float,
                         image_shape=color_image.shape,
-                        depth_image=np.asanyarray(depth_frame.get_data()),
-                        depth_scale=camera.current_depth_scale,
+                        depth_image=np.asanyarray(depth_frame), # depth_frame is now a numpy array from atomic snapshot
+                        depth_scale=depth_scale,
                         intrinsics=intrinsics,
                         cam_to_robot_t=CAM_TO_ROBOT_T,
                         expected_height_m=cat_entry.get("height_m", 0.0),
-                        method="iterative"
+                        method="hybrid"
                     )
                     if refined["valid"]:
                         coords["raw_x"] = refined["x"]
@@ -533,7 +539,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             if not isinside(coords["x"] * 1000, coords["y"] * 1000):
                 continue
 
-            distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
+            distance = get_median_depth(depth_frame, cx_px, cy_px, depth_scale) or 0.0
             w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
             h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 

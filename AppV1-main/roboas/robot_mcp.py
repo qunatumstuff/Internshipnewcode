@@ -6,7 +6,9 @@ import urllib.request as _urllib_req
 import os
 import asyncio
 
-SAFETY_TOKEN = os.environ.get("SAFETY_TOKEN", "default-secure-token-xyz")
+SAFETY_CLEAR_TOKEN = os.environ.get("SAFETY_CLEAR_TOKEN")
+if not SAFETY_CLEAR_TOKEN:
+    raise ValueError("CRITICAL: SAFETY_CLEAR_TOKEN is missing from the environment.")
 SAFETY_TRANSITION_LOCK = asyncio.Lock()
 
 import logging
@@ -405,7 +407,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         async with SAFETY_TRANSITION_LOCK:
             if not args.get("manual_confirmed"):
                 return [TextContent(type="text", text="Error: manual_confirmed must be true to clear startup lock.")]
-            if args.get("token") != SAFETY_TOKEN:
+            if args.get("token") != SAFETY_CLEAR_TOKEN:
                 return [TextContent(type="text", text="Error: Invalid capability token.")]
             robot_control.STARTUP_LOCKED = False
         return [TextContent(type="text", text="Startup lock cleared.")]

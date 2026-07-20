@@ -1,4 +1,5 @@
-﻿"""
+from object_catalogue import OBJECT_CATALOGUE
+"""
 pick_place_real.py  â€”â€”  LARA 5 REAL ROBOT VERSION
 ============================================================
 Real-robot counterpart of pick_place_sim.py.
@@ -139,27 +140,27 @@ try:
     _orig_execute = Robot.execute_external_device_function
 
     def _safe_move_linear(self, *args, **kwargs):
-        # check_safety() already exists somewhere
+        check_safety()
         return _orig_move_linear(self, *args, **kwargs)
 
     def _safe_move_joint(self, *args, **kwargs):
-        # check_safety() already exists somewhere
+        check_safety()
         return _orig_move_joint(self, *args, **kwargs)
 
     def _safe_move_pose(self, *args, **kwargs):
-        # check_safety() already exists somewhere
+        check_safety()
         return _orig_move_pose(self, *args, **kwargs)
 
     def _safe_power_on(self, *args, **kwargs):
-        # check_safety() already exists somewhere
+        check_safety()
         return _orig_power_on(self, *args, **kwargs)
 
     def _safe_reset_errors(self, *args, **kwargs):
-        # check_safety() already exists somewhere
+        check_safety()
         return _orig_reset_errors(self, *args, **kwargs)
 
     def _safe_execute(self, *args, **kwargs):
-        # check_safety() already exists somewhere
+        check_safety()
         return _orig_execute(self, *args, **kwargs)
 
     Robot.move_linear = _safe_move_linear
