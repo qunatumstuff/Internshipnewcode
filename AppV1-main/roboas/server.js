@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const cors = require('cors');
@@ -53,11 +53,12 @@ http.createServer = function(app) {
 
 // Start it immediately
 server = http.createServer(app);
-server.listen(port, () => console.log(`🚀 Mock Server running on ${port}`));
+server.listen(port, () => console.log(`ðŸš€ Mock Server running on ${port}`));
 
 require('dotenv').config();
 
 const WAKEWORD_WS_URL = process.env.WAKEWORD_WS_URL || 'ws://localhost:8003';
+const SAFETY_TOKEN = process.env.SAFETY_TOKEN || 'default-secure-token-xyz';
 
 // ==========================================
 // CONFIGURATION
@@ -70,7 +71,7 @@ const TOOL_LOG_FILE = path.join(__dirname, 'gpt_tool_log.json');
 try {
   if (fs.existsSync(TOOL_LOG_FILE)) {
     toolCallLog = JSON.parse(fs.readFileSync(TOOL_LOG_FILE, 'utf-8'));
-    console.log(`📜 Loaded ${toolCallLog.length} tool logs from disk.`);
+    console.log(`ðŸ“œ Loaded ${toolCallLog.length} tool logs from disk.`);
   }
 } catch (e) {
   console.error('Failed to load tool log from disk:', e.message);
@@ -88,6 +89,27 @@ let isSafetyStopLatched = false;
 let isStartupLocked = true;
 let isSafetyStopInProgress = false;
 let lastSafetyStopError = null;
+let activeRobotWaiter = null;
+let robotCompletionQueue = []; // Tracks promises for robot tasks
+
+// Abort Waiters
+function abortRobotWaiters(reason) {
+  const pending = robotCompletionQueue.splice(0);
+  for (const callback of pending) {
+    callback({ event: "error", error: reason });
+  }
+}
+
+// Watchdog for Heartbeat
+setInterval(() => {
+  if (isSafetyModeActive) {
+    const isCameraAlive = (Date.now() - lastCameraHeartbeat) < 3000;
+    if (!isCameraAlive && !isSafetyStopLatched && !isSafetyStopInProgress) {
+      console.log("âš ï¸ WATCHDOG: Camera heartbeat lost while armed! Tripping protective stop.");
+      requestEmergencyStop("Watchdog", "Camera heartbeat lost");
+    }
+  }
+}, 1000);
 
 async function requestEmergencyStop(source, reason) {
   if (isSafetyStopLatched || isSafetyStopInProgress) return;
@@ -103,18 +125,18 @@ async function requestEmergencyStop(source, reason) {
       const text = (stopRes.content && stopRes.content[0]) ? stopRes.content[0].text : "";
       if (!text || text.toLowerCase().startsWith("error")) {
         lastSafetyStopError = text || "No response content from Robot MCP";
-        console.error(`🛑 Safety Stop Failed (${source}): ${lastSafetyStopError}`);
+        console.error(`ðŸ›‘ Safety Stop Failed (${source}): ${lastSafetyStopError}`);
       } else {
         lastSafetyStopError = null;
-        console.log(`🛑 Safety Stop Success (${source})`);
+        console.log(`ðŸ›‘ Safety Stop Success (${source})`);
       }
     } catch (e) {
       lastSafetyStopError = e.message;
-      console.error(`🛑 Safety Stop Network Error (${source}):`, e);
+      console.error(`ðŸ›‘ Safety Stop Network Error (${source}):`, e);
     }
   } else {
     lastSafetyStopError = "Robot MCP Disconnected";
-    console.error(`🛑 Safety Stop Failed (${source}): ${lastSafetyStopError}`);
+    console.error(`ðŸ›‘ Safety Stop Failed (${source}): ${lastSafetyStopError}`);
   }
   isSafetyStopInProgress = false;
 }
@@ -173,17 +195,17 @@ function logToolCall(userQuestion, toolName, args, result) {
   const reset = "\x1b[0m";
 
   rawConsoleLog("\n" + "=".repeat(50));
-  rawConsoleLog(`🤖 ${cyan}[MCP TOOL TRIGGERED]: ${toolName.toUpperCase()}${reset}`);
-  rawConsoleLog(`❓ User Asked: "${userQuestion}"`);
-  rawConsoleLog(`📦 Arguments:  ${yellow}${JSON.stringify(args)}${reset}`);
-  rawConsoleLog(`✅ Result:     ${green}${result}${reset}`);
+  rawConsoleLog(`ðŸ¤– ${cyan}[MCP TOOL TRIGGERED]: ${toolName.toUpperCase()}${reset}`);
+  rawConsoleLog(`â“ User Asked: "${userQuestion}"`);
+  rawConsoleLog(`ðŸ“¦ Arguments:  ${yellow}${JSON.stringify(args)}${reset}`);
+  rawConsoleLog(`âœ… Result:     ${green}${result}${reset}`);
   rawConsoleLog("=".repeat(50) + "\n");
 
   // Write to disk so Claude Desktop MCP server can read it
   try {
     fs.writeFileSync(TOOL_LOG_FILE, JSON.stringify(toolCallLog, null, 2));
   } catch (e) {
-    console.error('❌ \x1b[31mFailed to write tool log to disk:\x1b[0m', e.message);
+    console.error('âŒ \x1b[31mFailed to write tool log to disk:\x1b[0m', e.message);
   }
 }
 
@@ -205,9 +227,9 @@ async function startMcpClient() {
       await client.connect(transport);
       mcpEmojiClient = client;
       isEmojiConnected = true;
-      console.log("✅ \x1b[32mMCP Emoji Server (Python) connected via Stdio\x1b[0m");
+      console.log("âœ… \x1b[32mMCP Emoji Server (Python) connected via Stdio\x1b[0m");
     } catch (err) {
-      console.error("❌ \x1b[31mFailed to bind MCP Client:\x1b[0m", err.message);
+      console.error("âŒ \x1b[31mFailed to bind MCP Client:\x1b[0m", err.message);
       isEmojiConnected = false;
       mcpEmojiClient = null;
     } finally {
@@ -232,9 +254,9 @@ function startWakeWordServer() {
       console.error(`[WAKEWORD ERROR]: ${data.toString().trim()}`);
     });
     
-    console.log("✅ Python Wake Word Server spawned automatically.");
+    console.log("âœ… Python Wake Word Server spawned automatically.");
   } catch (err) {
-    console.error("❌ Failed to start Wake Word Server:", err.message);
+    console.error("âŒ Failed to start Wake Word Server:", err.message);
   }
 }
 // startWakeWordServer(); // TEMPORARILY DISABLED FOR MANUAL MIC TESTING
@@ -254,15 +276,15 @@ async function startVisionMcpClient() {
       await client.connect(transport);
       visionMcpClient = client;
       isVisionConnected = true;
-      console.log(`✅ \x1b[32mVision MCP Server connected via SSE at ${LAPTOP_B_IP}:8001\x1b[0m`);
+      console.log(`âœ… \x1b[32mVision MCP Server connected via SSE at ${LAPTOP_B_IP}:8001\x1b[0m`);
       // Detect silent SSE connection drops
       client.onclose = () => {
-        console.error("⚠️ Vision MCP SSE connection dropped! Will auto-reconnect...");
+        console.error("âš ï¸ Vision MCP SSE connection dropped! Will auto-reconnect...");
         isVisionConnected = false;
         visionMcpClient = null;
       };
     } catch (err) {
-      console.error(`❌ \x1b[31mFailed to bind Vision MCP Client at ${LAPTOP_B_IP}:\x1b[0m`, err.message);
+      console.error(`âŒ \x1b[31mFailed to bind Vision MCP Client at ${LAPTOP_B_IP}:\x1b[0m`, err.message);
       isVisionConnected = false;
       visionMcpClient = null;
     } finally {
@@ -288,15 +310,15 @@ async function startRobotMcpClient() {
       await client.connect(transport);
       robotMcpClient = client;
       isRobotConnected = true;
-      console.log(`✅ \x1b[32mRobot MCP Server connected via SSE at ${LAPTOP_B_IP}:8002\x1b[0m`);
+      console.log(`âœ… \x1b[32mRobot MCP Server connected via SSE at ${LAPTOP_B_IP}:8002\x1b[0m`);
       // Detect silent SSE connection drops
       client.onclose = () => {
-        console.error("⚠️ Robot MCP SSE connection dropped! Will auto-reconnect...");
+        console.error("âš ï¸ Robot MCP SSE connection dropped! Will auto-reconnect...");
         isRobotConnected = false;
         robotMcpClient = null;
       };
     } catch (err) {
-      console.error("❌ \x1b[31mFailed to bind Robot MCP Client:\x1b[0m", err.message);
+      console.error("âŒ \x1b[31mFailed to bind Robot MCP Client:\x1b[0m", err.message);
       isRobotConnected = false;
       robotMcpClient = null;
     } finally {
@@ -310,21 +332,21 @@ startRobotMcpClient();
 // Periodic Reconnection Check Loop
 setInterval(() => {
   if (!isEmojiConnected) {
-    console.log("🔌 Attempting to reconnect to Emoji MCP Server...");
+    console.log("ðŸ”Œ Attempting to reconnect to Emoji MCP Server...");
     startMcpClient();
   }
   if (!isVisionConnected) {
-    console.log("🔌 Attempting to reconnect to Vision MCP Server...");
+    console.log("ðŸ”Œ Attempting to reconnect to Vision MCP Server...");
     startVisionMcpClient();
   }
   if (!isRobotConnected) {
-    console.log("🔌 Attempting to reconnect to Robot MCP Server...");
+    console.log("ðŸ”Œ Attempting to reconnect to Robot MCP Server...");
     startRobotMcpClient();
   }
 }, 5000);
 
 async function getStatusEmoji(state) {
-  if (!mcpEmojiClient) return state === "answering" ? "🤖" : "🤗";
+  if (!mcpEmojiClient) return state === "answering" ? "ðŸ¤–" : "ðŸ¤—";
   try {
     const result = await mcpEmojiClient.callTool({
       name: "get_status_emoji",
@@ -334,10 +356,10 @@ async function getStatusEmoji(state) {
     logToolCall("System Status", "get_status_emoji", { state }, `updated to ${emoji}`);
     return emoji;
   } catch (e) {
-    console.error("❌ \x1b[31mMCP Tool error:\x1b[0m", e.message);
+    console.error("âŒ \x1b[31mMCP Tool error:\x1b[0m", e.message);
     isEmojiConnected = false;
     mcpEmojiClient = null;
-    return state === "answering" ? "🤖" : "🤗";
+    return state === "answering" ? "ðŸ¤–" : "ðŸ¤—";
   }
 }
 
@@ -384,7 +406,7 @@ async function switchAvatar(persona) {
     
     return result.content[0].text;
   } catch (e) {
-    console.error("❌ \x1b[31mMCP Tool error:\x1b[0m", e.message);
+    console.error("âŒ \x1b[31mMCP Tool error:\x1b[0m", e.message);
     isEmojiConnected = false;
     mcpEmojiClient = null;
     currentPersona = persona;
@@ -404,7 +426,7 @@ app.use(express.json());
 
 app.post('/client-log', (req, res) => {
   if (req.body && req.body.message) {
-    console.log(`📱 [FLUTTER]: ${req.body.message}`);
+    console.log(`ðŸ“± [FLUTTER]: ${req.body.message}`);
   }
   res.json({ success: true });
 });
@@ -464,7 +486,7 @@ const PDF_TRACKER_FILE = path.join(__dirname, 'current_pdf.json');
 
 async function processPdf(filePath, filename) {
   try {
-    console.log(`📄 Processing PDF: ${filename}`);
+    console.log(`ðŸ“„ Processing PDF: ${filename}`);
     const buffer = fs.readFileSync(filePath);
     const data = await pdfParse(buffer);
 
@@ -484,10 +506,10 @@ async function processPdf(filePath, filename) {
       filename, path: filePath, uploadedAt: new Date().toISOString()
     }));
 
-    console.log(`✅ PDF processed: ${chunks.length} chunks`);
+    console.log(`âœ… PDF processed: ${chunks.length} chunks`);
     return { success: true, chunks: chunks.length, pages: data.numpages || 'unknown' };
   } catch (error) {
-    console.error('❌ PDF Processing Error:', error);
+    console.error('âŒ PDF Processing Error:', error);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     throw error;
   }
@@ -499,7 +521,7 @@ async function loadLatestPdf() {
       const tracker = JSON.parse(fs.readFileSync(PDF_TRACKER_FILE));
       if (fs.existsSync(tracker.path)) {
         await processPdf(tracker.path, tracker.filename);
-        console.log(`📁 Loaded from tracker: ${tracker.filename}`);
+        console.log(`ðŸ“ Loaded from tracker: ${tracker.filename}`);
         return;
       }
     }
@@ -509,12 +531,12 @@ async function loadLatestPdf() {
     if (pdfs.length > 0) {
       const pdfPath = path.join(uploadsDir, pdfs[0]);
       await processPdf(pdfPath, pdfs[0]);
-      console.log(`📁 Loaded fallback PDF: ${pdfs[0]}`);
+      console.log(`ðŸ“ Loaded fallback PDF: ${pdfs[0]}`);
     } else {
-      console.log('⚠️ No PDFs available to load.');
+      console.log('âš ï¸ No PDFs available to load.');
     }
   } catch (err) {
-    console.error('❌ Error loading latest PDF:', err.message);
+    console.error('âŒ Error loading latest PDF:', err.message);
   }
 }
 
@@ -535,9 +557,9 @@ function clearPdfOnStartup() {
     currentPdfName = '';
     currentPdfPath = '';
     vectorStore = null;
-    console.log('🧹 PDF session cleared on startup.');
+    console.log('ðŸ§¹ PDF session cleared on startup.');
   } catch (err) {
-    console.error('❌ Error clearing PDF on startup:', err.message);
+    console.error('âŒ Error clearing PDF on startup:', err.message);
   }
 }
 
@@ -567,20 +589,20 @@ function getReasoningLevel(question) {
   ];
 
   if (highPatterns.some(p => p.test(q))) {
-    console.log(`🧠 Reasoning: HIGH for "${q.substring(0, 40)}"`);
+    console.log(`ðŸ§  Reasoning: HIGH for "${q.substring(0, 40)}"`);
     return "high";
   }
   if (lowPatterns.some(p => p.test(q))) {
-    console.log(`⚡ Reasoning: LOW for "${q.substring(0, 40)}"`);
+    console.log(`âš¡ Reasoning: LOW for "${q.substring(0, 40)}"`);
     return "low";
   }
-  console.log(`🔄 Reasoning: MEDIUM for "${q.substring(0, 40)}"`);
+  console.log(`ðŸ”„ Reasoning: MEDIUM for "${q.substring(0, 40)}"`);
   return "medium";
 }
 
 // Map to keep track of active operations and their completion promises/resolvers
 let activeOperations = new Map();
-let robotCompletionQueue = [];
+
 
 function waitForRobotEvent(timeoutMs = 300000) {
   return new Promise((resolve, reject) => {
@@ -613,7 +635,7 @@ function waitForRobotEvent(timeoutMs = 300000) {
 // Robot completion event receiver
 app.post('/robot-event', (req, res) => {
   const { event, error } = req.body;
-  console.log(`🤖 [Robot Event Received]: "${event}" ${error ? `(Error: ${error})` : ''}`);
+  console.log(`ðŸ¤– [Robot Event Received]: "${event}" ${error ? `(Error: ${error})` : ''}`);
   logToolCall("System Event", "robot_event_received", { event, error }, "Received robot event from python MCP.");
 
   if (event === 'relocate_placed') {
@@ -667,7 +689,7 @@ async function processRobotQueue() {
       if (!visionMcpClient) await startVisionMcpClient();
       
       if (robotMcpClient) {
-        console.log("🏠 Sending arm home before camera snapshot...");
+        console.log("ðŸ  Sending arm home before camera snapshot...");
         sendProgress("Moving arm to home position for a clear camera view...", true);
         const homeRes = await robotMcpClient.callTool({ name: "return_home", arguments: {} });
         if (global._taskAborted) throw new Error("Task cancelled by user.");
@@ -741,10 +763,7 @@ async function processRobotQueue() {
       sendProgress("Stopping robot and returning home...");
       if (robotMcpClient) {
         // E-stop instantly
-        await robotMcpClient.callTool({ name: "emergency_stop", arguments: {} });
-        await new Promise(r => setTimeout(r, 500));
-        // Clear latch
-        await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: {} });
+        
         // Go home
         await robotMcpClient.callTool({ name: "return_home", arguments: {} });
         
@@ -756,7 +775,7 @@ async function processRobotQueue() {
       }
     }
   } catch (err) {
-    console.error(`❌ Task Queue Failed: ${err.message}`);
+    console.error(`âŒ Task Queue Failed: ${err.message}`);
     
     if (err.message !== "Task cancelled by user.") {
       // John speaks a friendly verbal reply about the failure
@@ -832,7 +851,7 @@ app.post('/queue-delete', express.json(), (req, res) => {
   const wasFirst = robotTaskQueue.length > 0 && robotTaskQueue[0].id === id;
   robotTaskQueue = robotTaskQueue.filter(t => t.id !== id);
   if (wasFirst) {
-    // The currently running task was deleted — signal abort
+    // The currently running task was deleted â€” signal abort
     global._taskAborted = true;
   }
   broadcastQueueUpdate();
@@ -866,7 +885,7 @@ function sendServerLogToClients(msg) {
     try {
       client.write(`data: ${JSON.stringify({ server_log: msg })}\n\n`);
     } catch (e) {
-      originalConsoleError.call(console, '❌ SSE server_log write error:', e.message);
+      originalConsoleError.call(console, 'âŒ SSE server_log write error:', e.message);
     }
   });
 }
@@ -926,25 +945,25 @@ function isExpectedStopError(errMsg) {
 }
 
 function sendProgress(status, isRobotMoving = false, ttsMessage = null) {
-  console.log(`📡 [SSE Progress Broadcast]: "${status}" (isRobotMoving: ${isRobotMoving}, ttsMessage: ${ttsMessage !== null})`);
+  console.log(`ðŸ“¡ [SSE Progress Broadcast]: "${status}" (isRobotMoving: ${isRobotMoving}, ttsMessage: ${ttsMessage !== null})`);
   logToolCall("System Event", "progress_sse", { status, isRobotMoving, hasTts: ttsMessage !== null }, ttsMessage || "No TTS message.");
   progressClients.forEach(client => {
     try {
       client.write(`data: ${JSON.stringify({ status, isRobotMoving, tts_message: ttsMessage })}\n\n`);
     } catch (e) {
-      console.error('❌ SSE write error:', e.message);
+      console.error('âŒ SSE write error:', e.message);
     }
   });
 }
 
 function sendSnapshot(snapshotB64, targetName) {
   if (!snapshotB64) return;
-  console.log(`📸 [SSE Snapshot] Sending zoomed snapshot for "${targetName}" (${snapshotB64.length} b64 chars)`);
+  console.log(`ðŸ“¸ [SSE Snapshot] Sending zoomed snapshot for "${targetName}" (${snapshotB64.length} b64 chars)`);
   progressClients.forEach(client => {
     try {
       client.write(`data: ${JSON.stringify({ snapshot_image: snapshotB64, snapshot_target: targetName })}\n\n`);
     } catch (e) {
-      console.error('❌ SSE snapshot write error:', e.message);
+      console.error('âŒ SSE snapshot write error:', e.message);
     }
   });
 }
@@ -978,10 +997,10 @@ app.post('/clear-pdf', async (req, res) => {
     currentPdfName = '';
     currentPdfPath = '';
     vectorStore = null;
-    console.log('🗑️ PDF cleared by user.');
+    console.log('ðŸ—‘ï¸ PDF cleared by user.');
     res.json({ success: true, message: 'PDF removed.' });
   } catch (err) {
-    console.error('❌ Error clearing PDF:', err.message);
+    console.error('âŒ Error clearing PDF:', err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -992,15 +1011,15 @@ app.get('/pdf-status', (req, res) => {
 
 // Transcribe Audio (Whisper STT - Optimized for Option B: Prompt + Regex + LLM)
 app.post('/transcribe', upload.single('audio'), async (req, res) => {
-  console.log(`\n\n=== 🎙️ [POST /transcribe] Endpoint Hit! ===`);
+  console.log(`\n\n=== ðŸŽ™ï¸ [POST /transcribe] Endpoint Hit! ===`);
   if (!req.file) {
-    console.log(`❌ [POST /transcribe] Error: No audio file uploaded.`);
+    console.log(`âŒ [POST /transcribe] Error: No audio file uploaded.`);
     logToolCall("System Event", "transcribe_error", {}, "No audio file uploaded.");
     return res.status(400).json({ success: false, message: 'No audio file uploaded.' });
   }
   
-  console.log(`✅ [POST /transcribe] Uploaded file size: ${req.file.size} bytes`);
-  console.log(`✅ [POST /transcribe] Uploaded MIME type: ${req.file.mimetype}`);
+  console.log(`âœ… [POST /transcribe] Uploaded file size: ${req.file.size} bytes`);
+  console.log(`âœ… [POST /transcribe] Uploaded MIME type: ${req.file.mimetype}`);
   logToolCall("System Event", "transcribe_request", { size: req.file.size, mimetype: req.file.mimetype }, "Transcription request received.");
 
   try {
@@ -1075,7 +1094,7 @@ Terms to protect:
           console.log(`[Whisper - LLM Proofread]: "${recognizedText}"`);
         }
       } catch (llmError) {
-        console.error('⚠️ LLM Correction Pass Failed (falling back to regex output):', llmError.message);
+        console.error('âš ï¸ LLM Correction Pass Failed (falling back to regex output):', llmError.message);
       }
     }
 
@@ -1086,7 +1105,7 @@ Terms to protect:
     res.json({ success: true, text: recognizedText });
   } catch (error) {
     const errorDetails = error.response ? JSON.stringify(error.response.data) : error.message;
-    console.error('❌ Transcription Error:', errorDetails);
+    console.error('âŒ Transcription Error:', errorDetails);
     if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     logToolCall("System Event", "transcribe_error", {}, `Transcription failed: ${errorDetails}`);
     res.status(500).json({ success: false, message: 'Transcription failed.', error: errorDetails });
@@ -1099,7 +1118,7 @@ app.post('/ask-question', async (req, res) => {
   if (!question) return res.status(400).json({ success: false, message: 'No question provided.' });
 
   if (!vectorStore) {
-    console.log('🧠 Vector store missing. Reloading...');
+    console.log('ðŸ§  Vector store missing. Reloading...');
     await loadLatestPdf();
     if (!vectorStore) {
       return res.status(400).json({ success: false, message: 'No PDF content available.' });
@@ -1144,7 +1163,7 @@ app.post('/ask-question', async (req, res) => {
   } catch (err) {
     await sendWakewordCommand('unmute');
     const errorDetails = err.response ? JSON.stringify(err.response.data) : err.message;
-    console.error('❌ Error in /ask-question:', errorDetails);
+    console.error('âŒ Error in /ask-question:', errorDetails);
     res.status(500).json({ success: false, message: 'AI failed to respond.', error: errorDetails });
   }
 });
@@ -1263,7 +1282,7 @@ function cleanChatbotResponse(text) {
   cleaned = cleaned.replace(/```(json)?\s*[\s\S]*?```/gi, '');
 
   // Strip token-level Chinese/gibberish hallucinations caused by broken stop tokens
-  cleaned = cleaned.replace(/天天中彩票有人\s*(json)?/gi, '');
+  cleaned = cleaned.replace(/å¤©å¤©ä¸­å½©ç¥¨æœ‰äºº\s*(json)?/gi, '');
   cleaned = cleaned.replace(/wuregjson/gi, '');
 
   // Trim extra spaces and duplicates
@@ -1379,7 +1398,7 @@ CRITICAL OBJECT INFERENCE RULE:
 CRITICAL OUTPUT CLEANLINESS:
 - Do NOT output raw coordinates (e.g. x, y, z values), technical tool arguments, or structured JSON/dictionary info. Keep your responses purely conversational, natural, and concise. Speak about actions in plain English, not data info.
 
-ROBOTIC ARM — PICK AND PLACE RULES:
+ROBOTIC ARM â€” PICK AND PLACE RULES:
 - When the user asks you to pick up a specific, unambiguous object, you MUST call the 'locate_object' tool.
 - MULTIPLE OBJECTS: If the user asks to pick up multiple objects in one request (e.g. "pick up A, then B"), you MUST call the 'locate_object' tool exactly ONCE and pass ALL requested objects as a single array to 'target_names'.
 - CRITICAL SEQUENCE RULE: You must absolutely NEVER change the order of the items. The array MUST be ordered in the EXACT chronological sequence the user listed them (e.g. "pick up red, blue, green" -> ["red cube", "blue cube", "green cube"]).
@@ -1530,14 +1549,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             }
           }
         },
-        {
-          type: "function",
-          function: {
-            name: "clear_emergency_stop",
-            description: "Clear a latched emergency stop on the robot. Required before the robot can move again after an emergency stop.",
-            parameters: { type: "object", properties: {} }
-          }
-        },
+        
         {
           type: "function",
           function: {
@@ -1642,10 +1654,6 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             logToolCall(question, toolCall.name, args, "Pushed task to Robot Queue");
             robotTaskQueue.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name: toolCall.name, args: args, question: question, status: "pending" });
             answerText = `I am moving the ${args.obstacle_name} out of the way for you.`;
-          } else if (toolCall.name === "clear_emergency_stop") {
-            logToolCall(question, toolCall.name, args, "Pushed task to Robot Queue");
-            robotTaskQueue.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name: toolCall.name, args: args, question: question, status: "pending" });
-            answerText = "Cleared e-stop.";
           } else if (toolCall.name === "clear_return_home") {
             logToolCall(question, toolCall.name, args, "Pushed task to Robot Queue");
             robotTaskQueue.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name: toolCall.name, args: args, question: question, status: "pending" });
@@ -1761,7 +1769,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
       await sendWakewordCommand('unmute');
     }
     const errorDetails = err.response ? JSON.stringify(err.response.data) : err.message;
-    console.error('❌ AI Chat Error:', errorDetails);
+    console.error('âŒ AI Chat Error:', errorDetails);
     logToolCall(question, "ask-gpt_error", {}, errorDetails);
     res.status(500).json({ success: false, message: 'AI failed to respond.', error: errorDetails });
   }
@@ -1772,7 +1780,7 @@ app.post('/tts', async (req, res) => {
   const { text } = req.body;
   if (!text) return res.status(400).json({ success: false, message: 'No text provided.' });
 
-  console.log(`🎙️ Generating TTS for: "${text.substring(0, 30)}..."`);
+  console.log(`ðŸŽ™ï¸ Generating TTS for: "${text.substring(0, 30)}..."`);
   logToolCall("System Event", "tts_request", { text }, "Generating TTS...");
 
   // 1. Try OpenAI TTS (Premium)
@@ -1813,7 +1821,7 @@ app.post('/tts', async (req, res) => {
       if (attemptFinished) return;
       if (openaiRes.statusCode === 200) {
         attemptFinished = true;
-        console.log('✅ OpenAI TTS Success');
+        console.log('âœ… OpenAI TTS Success');
         logToolCall("System Event", "tts_success", { text, attempt }, "OpenAI TTS generated successfully.");
         res.setHeader('Content-Type', 'audio/aac');
         openaiRes.pipe(res);
@@ -1823,11 +1831,11 @@ app.post('/tts', async (req, res) => {
         openaiRes.on('end', () => {
           if (attemptFinished) return;
           attemptFinished = true;
-          console.error(`⚠️ OpenAI TTS Status: ${openaiRes.statusCode} - ${errData}`);
+          console.error(`âš ï¸ OpenAI TTS Status: ${openaiRes.statusCode} - ${errData}`);
           if (attempt < 3) {
             setTimeout(() => attemptOpenAITTS(attempt + 1), attempt * 1000);
           } else {
-            console.error('❌ OpenAI TTS failed after 3 attempts. Falling back to espeak...');
+            console.error('âŒ OpenAI TTS failed after 3 attempts. Falling back to espeak...');
             safeFallback();
           }
         });
@@ -1837,7 +1845,7 @@ app.post('/tts', async (req, res) => {
     openaiReq.on('error', (e) => {
       if (attemptFinished) return;
       attemptFinished = true;
-      console.error(`❌ OpenAI Request Error (Attempt ${attempt}): ${e.message}`);
+      console.error(`âŒ OpenAI Request Error (Attempt ${attempt}): ${e.message}`);
       if (attempt < 3) {
         setTimeout(() => attemptOpenAITTS(attempt + 1), attempt * 1000);
       } else {
@@ -1848,7 +1856,7 @@ app.post('/tts', async (req, res) => {
     openaiReq.setTimeout(10000, () => {
       if (attemptFinished) return;
       attemptFinished = true;
-      console.error(`❌ OpenAI TTS Request Timeout (Attempt ${attempt}).`);
+      console.error(`âŒ OpenAI TTS Request Timeout (Attempt ${attempt}).`);
       openaiReq.destroy();
       if (attempt < 3) {
         setTimeout(() => attemptOpenAITTS(attempt + 1), attempt * 1000);
@@ -1865,15 +1873,15 @@ app.post('/tts', async (req, res) => {
 });
 
 function runEspeakFallback(text, res) {
-  console.log('🗣️ Running local espeak fallback...');
+  console.log('ðŸ—£ï¸ Running local espeak fallback...');
   const tempFile = path.join(__dirname, `temp_voice_${Date.now()}.wav`);
   // -w saves to wav, -s 150 for speed, -p 40 for lower pitch
   const command = `espeak-ng -w "${tempFile}" -s 150 -p 40 "${text.replace(/"/g, '')}"`;
 
   exec(command, (error, stdout, stderr) => {
     if (error) {
-      console.error('❌ Espeak failed execution:', error.message);
-      console.error('❌ Espeak stderr:', stderr);
+      console.error('âŒ Espeak failed execution:', error.message);
+      console.error('âŒ Espeak stderr:', stderr);
       return res.status(500).json({ success: false, message: 'TTS Espeak Failed', error: error.message });
     }
 
@@ -1927,7 +1935,7 @@ app.post('/debug/trigger-mock-tool', (req, res) => {
     const yr = 0.6785283256 * rawX - 0.6388791698 * rawY + 0.3625365054 * rawZ - 0.4903506740;
     const zr = 0.0345041846 * rawX - 0.4652684744 * rawY - 0.8844968672 * rawZ + 0.7880605490;
     
-    console.log(`📍 \x1b[35m[MOCK COORDINATES TRANSFORMED]:\x1b[0m`);
+    console.log(`ðŸ“ \x1b[35m[MOCK COORDINATES TRANSFORMED]:\x1b[0m`);
     console.log(`   Raw Camera:  X: ${rawX.toFixed(4)}, Y: ${rawY.toFixed(4)}, Z: ${rawZ.toFixed(4)}`);
     console.log(`   Robot Base:  \x1b[32mX: ${xr.toFixed(4)}, Y: ${yr.toFixed(4)}, Z: ${zr.toFixed(4)}\x1b[0m`);
     
@@ -1995,7 +2003,7 @@ app.post('/camera-heartbeat', (req, res) => {
 
 app.post('/trigger-safety-stop', async (req, res) => {
   if (isSafetyModeActive && !isSafetyStopLatched && !isSafetyStopInProgress) {
-    console.log("🛑 SAFETY MODE TRIGGERED: HUMAN DETECTED!");
+    console.log("ðŸ›‘ SAFETY MODE TRIGGERED: HUMAN DETECTED!");
     await requestEmergencyStop("Vision", "Human detected");
     sendProgress("Safety Mode Activated! Human detected.", false);
   } else if (isSafetyStopLatched || isSafetyStopInProgress) {
@@ -2055,7 +2063,7 @@ function cleanupOldFiles() {
     const stats = fs.statSync(filePath);
     if (now - stats.mtimeMs > maxAge) {
       fs.unlinkSync(filePath);
-      console.log(`🧹 Deleted old file: ${file}`);
+      console.log(`ðŸ§¹ Deleted old file: ${file}`);
     }
   });
 }
@@ -2088,12 +2096,12 @@ app.post('/ask-claude', async (req, res) => {
     });
 
     const answer = message.content[0].text;
-    console.log(`🧠 Claude response: ${answer.substring(0, 80)}...`);
+    console.log(`ðŸ§  Claude response: ${answer.substring(0, 80)}...`);
     await sendWakewordCommand('unmute');
     res.json({ success: true, answer, toolLog: recentTools });
   } catch (err) {
     await sendWakewordCommand('unmute');
-    console.error('❌ Claude error:', err.message);
+    console.error('âŒ Claude error:', err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -2111,13 +2119,13 @@ app.post('/switch-persona', (req, res) => {
     logToolCall("System Sync", "switch_avatar", { persona }, `switched to ${persona} via Remote Control`);
   }
 
-  console.log(`🔄 Persona switched to: ${persona} (Brain Synced ${silent ? ' - SILENT' : ''})`);
+  console.log(`ðŸ”„ Persona switched to: ${persona} (Brain Synced ${silent ? ' - SILENT' : ''})`);
   res.json({ success: true, persona });
 });
 
 // Cancel Task Endpoint
 app.post('/cancel-task', (req, res) => {
-  console.log('\n🚫 \x1b[41m\x1b[37m[CANCEL BUTTON]: Received UI signal! Cancelling current task...\x1b[0m\n');
+  console.log('\nðŸš« \x1b[41m\x1b[37m[CANCEL BUTTON]: Received UI signal! Cancelling current task...\x1b[0m\n');
   
   global._taskAborted = true;
   robotTaskQueue = [];
@@ -2130,28 +2138,16 @@ app.post('/cancel-task', (req, res) => {
 
 // Emergency Stop Endpoint (from Chatbot UI)
 app.post('/emergency-stop', async (req, res) => {
-  console.log("🛑 EMERGENCY STOP TRIGGERED VIA UI");
-  global._taskAborted = true;
-  robotTaskQueue = []; // Clear queue for safety
-  isRobotBusy = false;
-  broadcastQueueUpdate();
-  
-  if (robotMcpClient) {
-    try {
-      const result = await robotMcpClient.callTool({ name: "emergency_stop", arguments: {} });
-      sendProgress("Emergency Stop Activated!", false);
-      res.json({ success: true, message: result.content[0].text });
-    } catch (err) {
-      res.json({ success: false, message: err.message });
-    }
-  } else {
-    res.json({ success: false, message: "Robot MCP not connected." });
-  }
+  await requestEmergencyStop("UI", "Manual UI trigger");
+  res.json({ success: true, message: "Emergency Stop Requested." });
 });
 
 // Return Home Endpoint (from Chatbot UI)
 app.all('/return-home', async (req, res) => {
-  console.log('\n🏠 \x1b[46m\x1b[30m[HOME BUTTON]: Received UI signal! Returning Robot Arm to Home...\x1b[0m\n');
+  if (isSafetyStopLatched || isSafetyStopInProgress || isStartupLocked) {
+    return res.status(403).json({ success: false, error: 'Safety Stop or Startup Lock Active. Cannot return home.' });
+  }
+  console.log('\nðŸ  \x1b[46m\x1b[30m[HOME BUTTON]: Received UI signal! Returning Robot Arm to Home...\x1b[0m\n');
   
   await sendWakewordCommand('mute');
   sendProgress("Returning robot arm to home position.", true, "Returning robot arm to home position.");
@@ -2171,14 +2167,14 @@ app.all('/return-home', async (req, res) => {
         throw new Error(responseText);
       }
       robotSuccess = true;
-      console.log('🏠 Robot MCP Return Home Success:', responseText);
+      console.log('ðŸ  Robot MCP Return Home Success:', responseText);
     } catch (err) {
       robotError = err.message;
-      console.error('❌ Failed to call Robot MCP return_home:', err.message);
+      console.error('âŒ Failed to call Robot MCP return_home:', err.message);
     }
   } else {
     robotError = "Robot MCP is not connected.";
-    console.error('❌ Robot MCP is not connected.');
+    console.error('âŒ Robot MCP is not connected.');
   }
 
   // Log the return home event
@@ -2207,12 +2203,12 @@ app.all('/return-home', async (req, res) => {
 
 // Clear Emergency Stop Latch
 app.post('/clear-emergency-stop', async (req, res) => {
-  console.log("🟢 CLEARING EMERGENCY STOP VIA UI");
+  console.log("ðŸŸ¢ CLEARING EMERGENCY STOP VIA UI");
   isSafetyModeActive = false; // Auto-disable safety mode when e-stop is cleared
   if (robotMcpClient) {
     try {
       const result = await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: {} });
-      console.log('✅ Robot MCP clear acknowledged:', result.content[0].text);
+      console.log('âœ… Robot MCP clear acknowledged:', result.content[0].text);
       sendProgress(null, false, "Emergency stop has been cleared.");
       progressClients.forEach(client => {
         try {
@@ -2233,7 +2229,7 @@ app.post('/clear-return-home', async (req, res) => {
   if (robotMcpClient) {
     try {
       const result = await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
-      console.log('✅ Return Home Latch Cleared:', result.content[0].text);
+      console.log('âœ… Return Home Latch Cleared:', result.content[0].text);
       sendProgress(null, false, "Return home latch cleared.");
       res.json({ success: true, message: result.content[0].text });
     } catch (err) {
@@ -2286,18 +2282,18 @@ server.headersTimeout = 300000; // 5 minutes
 server.keepAliveTimeout = 300000; // 5 minutes
 
 /*
-  console.log(`🚀 Server running at http://localhost:${port}`);
-  console.log(`🔊 Client-side openWakeWord engine active (Vosk WS proxy disabled)`);
-  clearPdfOnStartup(); // Always start fresh — no PDF memory between sessions
+  console.log(`ðŸš€ Server running at http://localhost:${port}`);
+  console.log(`ðŸ”Š Client-side openWakeWord engine active (Vosk WS proxy disabled)`);
+  clearPdfOnStartup(); // Always start fresh â€” no PDF memory between sessions
   
   // Auto-load the LARA datasheet from resources so the robot has product knowledge
   const laraPath = path.join(__dirname, 'resources', 'LARA_NEURA_Robotics_Datasheet_Web.pdf');
   if (fs.existsSync(laraPath)) {
     try {
       await processPdf(laraPath, 'LARA_NEURA_Robotics_Datasheet_Web.pdf');
-      console.log('📄 Auto-loaded LARA datasheet from resources/');
+      console.log('ðŸ“„ Auto-loaded LARA datasheet from resources/');
     } catch (e) {
-      console.error('⚠️ Failed to auto-load LARA datasheet:', e.message);
+      console.error('âš ï¸ Failed to auto-load LARA datasheet:', e.message);
     }
   }
   
@@ -2305,13 +2301,17 @@ server.keepAliveTimeout = 300000; // 5 minutes
   */
 
 app.post('/clear-startup-lock', async (req, res) => {
+  if (!req.body.manual_confirmed) {
+    return res.status(400).json({ success: false, error: "manual_confirmed=true required." });
+  }
   if (robotMcpClient) {
       try {
-          const result = await robotMcpClient.callTool({ name: "clear_startup_lock", arguments: {} });
-          // Only clear Node lock after successful MCP clearance
+          const result = await robotMcpClient.callTool({ name: "clear_startup_lock", arguments: { manual_confirmed: true, token: SAFETY_TOKEN } });
+          const text = result.content[0].text;
+          if (text.toLowerCase().includes("error")) throw new Error(text);
           isStartupLocked = false;
           if (!isRobotBusy && !isSafetyStopLatched) setTimeout(processRobotQueue, 500);
-          res.json({ success: true, message: result.content[0].text });
+          res.json({ success: true, message: text });
       } catch (err) {
           res.status(500).json({ success: false, error: err.message || "Unknown error" });
       }

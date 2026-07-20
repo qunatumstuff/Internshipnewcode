@@ -14,15 +14,7 @@ import os
 SAFETY_SERVER_URL = os.environ.get("SAFETY_SERVER_URL", "http://localhost:3000/trigger-safety-stop")
 HEARTBEAT_URL = SAFETY_SERVER_URL.replace("/trigger-safety-stop", "/camera-heartbeat")
 
-def _heartbeat_loop():
-    while True:
-        try:
-            requests.post(HEARTBEAT_URL, timeout=1)
-        except:
-            pass
-        time.sleep(2.0)
 
-threading.Thread(target=_heartbeat_loop, daemon=True).start()
 import base64
 import time
 import requests
@@ -190,6 +182,9 @@ def _vision_loop_inner():
     clicked=""
 
     frame_counter = 0
+    last_heartbeat_time = 0
+    import requests
+    SAFETY_TOKEN = os.environ.get('SAFETY_TOKEN', 'default-secure-token-xyz')
     results = []
     sponge_detection = []
 
@@ -208,6 +203,14 @@ def _vision_loop_inner():
             color_image = np.asanyarray(color_frame.get_data())
             current_rgb_frame = color_image.copy() # Update global state for MCP snapshot
             current_depth_frame = depth_frame
+            depth_image = np.asanyarray(depth_frame.get_data())
+            
+            global latest_color_image, latest_depth_image, latest_depth_intrinsics, current_depth_scale
+            with frame_lock:
+                latest_color_image = color_image.copy()
+                latest_depth_image = depth_image.copy()
+                latest_depth_intrinsics = intrinsics
+                current_depth_scale = depth_scale
 
             # Run inference every 4th frame to conserve GPU/VRAM resources for Qwen/Ollama
             if frame_counter % 4 == 0:
@@ -227,7 +230,7 @@ def _vision_loop_inner():
                         
                         can_request = False
                         with safety_request_lock:
-                            now = time.time()
+                            now = time.monotonic()
                             if not safety_is_requesting and (now - safety_last_request_time > 2.0):
                                 safety_is_requesting = True
                                 can_request = True
