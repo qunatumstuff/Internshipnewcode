@@ -3,7 +3,12 @@ import threading
 import urllib.request as _urllib_req
 
 # ROBOT MCP SERVER — compatible with Week_10_day_5Humanedited_MCP_COMPAT.py
+import os
 import asyncio
+
+SAFETY_TOKEN = os.environ.get("SAFETY_TOKEN", "default-secure-token-xyz")
+SAFETY_TRANSITION_LOCK = asyncio.Lock()
+
 import logging
 import os
 import importlib.util
@@ -222,7 +227,7 @@ async def handle_list_tools() -> list[Tool]:
         Tool(
             name="clear_startup_lock",
             description="Clear the startup lock.",
-            inputSchema={"type": "object", "properties": {}}
+            inputSchema={"type": "object", "properties": {"manual_confirmed": {"type": "boolean", "description": "Must be true to proceed."}, "token": {"type": "string"}}, "required": ["manual_confirmed", "token"]}
         ),
         Tool(
             name="return_home",
@@ -232,7 +237,7 @@ async def handle_list_tools() -> list[Tool]:
         Tool(
             name="clear_emergency_stop",
             description="Explicitly acknowledge and clear a latched emergency stop. Required before the robot can move again after emergency_stop was triggered.",
-            inputSchema={"type": "object", "properties": {"manual_confirmed": {"type": "boolean", "description": "Must be true to proceed."}}, "required": ["manual_confirmed"]}
+            inputSchema={"type": "object", "properties": {"manual_confirmed": {"type": "boolean", "description": "Must be true to proceed."}, "token": {"type": "string"}}, "required": ["manual_confirmed", "token"]}
         ),
         Tool(
             name="clear_return_home",
@@ -245,6 +250,13 @@ async def handle_list_tools() -> list[Tool]:
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict | None) -> list[TextContent]:
     args = arguments or {}
+
+    if name in ["pick_and_place_object", "move_to_coordinates", "relocate_object", "return_home"]:
+        if robot_control.STARTUP_LOCKED:
+            return [TextContent(type="text", text="Error: STARTUP_LOCKED is active. Manual clear required.")]
+        if robot_control.EMERGENCY_STOP_ACTIVE:
+            return [TextContent(type="text", text="Error: EMERGENCY_STOP_ACTIVE flag is set. Hardware is locked.")]
+
 
     # 1. Check Latches before allowing movement commands
     if name in ["pick_and_place_object", "move_to_coordinates", "relocate_object", "return_home"]:
@@ -370,6 +382,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
     if name == "emergency_stop":
         async with SAFETY_TRANSITION_LOCK:
+            if robot_control.EMERGENCY_STOP_ACTIVE:
+                return [TextContent(type="text", text="Emergency Stop Successful: Already Latched.")]
             logger.warning("⚠️ EMERGENCY STOP TRIGGERED!")
             robot_control.EMERGENCY_STOP_ACTIVE = True
             if hasattr(robot_control, 'STOP_EVENT'):
@@ -388,7 +402,12 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 return [TextContent(type="text", text=f"Error executing emergency stop: {str(e)}")]
 
     if name == "clear_startup_lock":
-        robot_control.STARTUP_LOCKED = False
+        async with SAFETY_TRANSITION_LOCK:
+            if not args.get("manual_confirmed"):
+                return [TextContent(type="text", text="Error: manual_confirmed must be true to clear startup lock.")]
+            if args.get("token") != SAFETY_TOKEN:
+                return [TextContent(type="text", text="Error: Invalid capability token.")]
+            robot_control.STARTUP_LOCKED = False
         return [TextContent(type="text", text="Startup lock cleared.")]
 
     if name == "return_home":
