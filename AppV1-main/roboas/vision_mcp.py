@@ -259,17 +259,9 @@ def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name: 
     height_m  = cat_entry.get("height_m", 0.0)
     z_centre  = round(float(robot_pt[2]) + Z_OFFSET_M + (height_m / 2), 4)
 
-    x_val = float(robot_pt[0])
-    y_val = float(robot_pt[1])
-    
-    offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
-    x_val += offsets["x"] - PERMA_OFFSET_X 
-    y_val += offsets["y"] - PERMA_OFFSET_Y
-    z_centre += offsets["z"]
-
     return {
-        "x":         round(x_val, 4),
-        "y":         round(y_val, 4),
+        "raw_x":     float(robot_pt[0]),
+        "raw_y":     float(robot_pt[1]),
         "z":         z_centre,
         "angle_deg": round(math.degrees(yaw),  2),
     }
@@ -395,6 +387,38 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
             if coords is None:
                 continue
+
+            # TSR Integration
+            try:
+                from top_surface_refinement import refine_top_surface_center, FLAT_TOP_CLASSES
+                if cls_name in FLAT_TOP_CLASSES:
+                    cat_entry = OBJECT_CATALOGUE.get(cls_name, {})
+                    refined = refine_top_surface_center(
+                        class_name=cls_name,
+                        obb_corners=corners_float,
+                        image_shape=color_image.shape,
+                        depth_image=np.asanyarray(depth_frame.get_data()),
+                        depth_scale=camera.current_depth_scale,
+                        intrinsics=intrinsics,
+                        cam_to_robot_t=CAM_TO_ROBOT_T,
+                        expected_height_m=cat_entry.get("height_m", 0.0),
+                        method="iterative"
+                    )
+                    if refined["valid"]:
+                        coords["raw_x"] = refined["x"]
+                        coords["raw_y"] = refined["y"]
+            except Exception as e:
+                logger.error(f"TSR error: {e}")
+
+            # Apply permanent and grasp offsets exactly once
+            offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
+            final_x = coords["raw_x"] + offsets["x"] - PERMA_OFFSET_X
+            final_y = coords["raw_y"] + offsets["y"] - PERMA_OFFSET_Y
+            final_z = coords["z"] + offsets["z"]
+
+            coords["x"] = round(final_x, 4)
+            coords["y"] = round(final_y, 4)
+            coords["z"] = round(final_z, 4)
                 
             if not isinside(coords["x"] * 1000, coords["y"] * 1000):
                 continue
@@ -473,6 +497,38 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
             if coords is None:
                 continue
+
+            # TSR Integration
+            try:
+                from top_surface_refinement import refine_top_surface_center, FLAT_TOP_CLASSES
+                if cls_name in FLAT_TOP_CLASSES:
+                    cat_entry = OBJECT_CATALOGUE.get(cls_name, {})
+                    refined = refine_top_surface_center(
+                        class_name=cls_name,
+                        obb_corners=corners_float,
+                        image_shape=color_image.shape,
+                        depth_image=np.asanyarray(depth_frame.get_data()),
+                        depth_scale=camera.current_depth_scale,
+                        intrinsics=intrinsics,
+                        cam_to_robot_t=CAM_TO_ROBOT_T,
+                        expected_height_m=cat_entry.get("height_m", 0.0),
+                        method="iterative"
+                    )
+                    if refined["valid"]:
+                        coords["raw_x"] = refined["x"]
+                        coords["raw_y"] = refined["y"]
+            except Exception as e:
+                logger.error(f"TSR error: {e}")
+
+            # Apply permanent and grasp offsets exactly once
+            offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
+            final_x = coords["raw_x"] + offsets["x"] - PERMA_OFFSET_X
+            final_y = coords["raw_y"] + offsets["y"] - PERMA_OFFSET_Y
+            final_z = coords["z"] + offsets["z"]
+
+            coords["x"] = round(final_x, 4)
+            coords["y"] = round(final_y, 4)
+            coords["z"] = round(final_z, 4)
                 
             if not isinside(coords["x"] * 1000, coords["y"] * 1000):
                 continue

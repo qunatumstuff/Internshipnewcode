@@ -1,5 +1,5 @@
-"""
-pick_place_real.py  ——  LARA 5 REAL ROBOT VERSION
+﻿"""
+pick_place_real.py  â€”â€”  LARA 5 REAL ROBOT VERSION
 ============================================================
 Real-robot counterpart of pick_place_sim.py.
 
@@ -15,12 +15,12 @@ BEFORE RUNNING:
   3. Confirm the safety fence is closed and e-stop is released.
   4. Verify gripper digital output pin assignments below.
 
-═══════════════════════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 GRIPPER GEOMETRY
-═══════════════════════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 GRIPPER_LENGTH = 0.16 m  (160 mm from TCP flange to fingertip)
-GRIPPER_RADIUS = 0.045 m (45 mm — widest extent from centreline)
+GRIPPER_RADIUS = 0.045 m (45 mm â€” widest extent from centreline)
 
 The gripper is modelled as a vertical capsule: a cylinder of
 radius GRIPPER_RADIUS running from the TCP down to the fingertip
@@ -39,11 +39,11 @@ PICK / DROP Z HEIGHT:
   This places the fingertip exactly at 0.10 m above the floor
   when gripping, matching the object height.
 
-═══════════════════════════════════════════════════════════
-BOUNDARY & OBSTACLE ENFORCEMENT — HOW IT WORKS
-═══════════════════════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+BOUNDARY & OBSTACLE ENFORCEMENT â€” HOW IT WORKS
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-LAYER 1 — Input validation (before any robot motion):
+LAYER 1 â€” Input validation (before any robot motion):
   Every coordinate is checked against the workspace box before
   being accepted. If outside, the operator sees all four corner
   coordinates and is asked to try again. The robot never starts.
@@ -51,30 +51,30 @@ LAYER 1 — Input validation (before any robot motion):
   no-go zone. If either lands inside, the operator is rejected
   and must re-enter.
 
-LAYER 2 — Pre-flight trajectory validation:
+LAYER 2 â€” Pre-flight trajectory validation:
   All three phases are computed before any motion starts.
-  Every waypoint is checked — for the full gripper volume —
+  Every waypoint is checked â€” for the full gripper volume â€”
   against the workspace, camera stand, and extra obstacle.
   If any waypoint fails, execution is refused entirely.
   No motion has been sent to the robot at this point.
 
-LAYER 3 — Global optimal path planning:
+LAYER 3 â€” Global optimal path planning:
   For each segment, ALL valid via-point candidates are collected
   from every obstacle face upfront.  Three route types are then
   evaluated and ranked by total arc length (shortest wins):
-    • Direct path           start → end
-    • One via-point         start → V → end  (all candidates)
-    • Two via-points        start → V1 → V2 → end  (all pairs)
+    â€¢ Direct path           start â†’ end
+    â€¢ One via-point         start â†’ V â†’ end  (all candidates)
+    â€¢ Two via-points        start â†’ V1 â†’ V2 â†’ end  (all pairs)
   Every sub-leg of every route is validated with the full
   gripper-volume obstacle check before it can be accepted.
 
-LAYER 4 — Stand hard-abort in main():
+LAYER 4 â€” Stand hard-abort in main():
   main() re-checks both pick and drop even when coordinates come
   from the camera feed (bypassing the input loop).
 
 TRANSIT MOTION:
-  Transit legs (home↔lift_pick, lift_pick↔lift_drop,
-  lift_drop↔home) use move_linear for smooth organic motion.
+  Transit legs (homeâ†”lift_pick, lift_pickâ†”lift_drop,
+  lift_dropâ†”home) use move_linear for smooth organic motion.
   Pick/drop approach legs use move_linear for precise vertical
   control.
 
@@ -100,7 +100,7 @@ CONVEYOR BELT NO-GO ZONE (physical + 50 mm safety margin):
   + 50 mm margin     : X -0.850->0.850   Y 0.150->0.850
   Blocked at ALL Z heights (same treatment as camera stand).
   Gripper-body checks expand these further by GRIPPER_RADIUS.
-═══════════════════════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 """
 
 import sys
@@ -122,7 +122,7 @@ STOP_EVENT = threading.Event()
 class EmergencyStopException(Exception):
     pass
 
-def # check_safety() already exists somewhere:
+def check_safety():
     if STARTUP_LOCKED:
         raise EmergencyStopException("System is locked pending startup confirmation. Please clear startup lock.")
     if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
@@ -212,7 +212,7 @@ GRIPPER_SAFETY_LENGTH = 0.000
 # THREE-SEGMENT STACK, measured downward from TCP (Z=0 = TCP origin)
 # -----------------------------------------------------------------
 # 1) FLANGE -- topmost, the Quick Changer itself (datasheet-confirmed
-#    Ø71mm), sitting directly below the robot's TCP/flange face.
+#    Ã˜71mm), sitting directly below the robot's TCP/flange face.
 # 2) NECK   -- middle section, modelled as a box (not a cylinder --
 #    corrected from the old model, since the real cross-section here
 #    is not round).
@@ -548,7 +548,7 @@ HYBRID_GRIP_MIN_PERCENT             = 0
 HYBRID_GRIP_TORQUE_SAMPLES          = 3
 
 # =================================================================
-# CAMERA STAND — PERMANENT NO-GO ZONE
+# CAMERA STAND â€” PERMANENT NO-GO ZONE
 # =================================================================
 STAND_X_MIN  = 0.67
 STAND_X_MAX  = 0.83
@@ -567,7 +567,7 @@ _STAND_GRP_Y_MIN = _STAND_EFF_Y_MIN - GRIPPER_RADIUS
 _STAND_GRP_Y_MAX = _STAND_EFF_Y_MAX + GRIPPER_RADIUS
 
 # =================================================================
-# CONVEYOR BELT — PERMANENT NO-GO ZONE
+# CONVEYOR BELT â€” PERMANENT NO-GO ZONE
 # =================================================================
 CONV_X_MIN    = -0.800
 CONV_X_MAX    =  0.800
@@ -842,7 +842,7 @@ def select_object_profile():
     print("\n=== Object selection ===")
     for key, obj in OBJECT_CATALOGUE.items():
         print(
-            f"  {key}. {obj.get('name', key)} — {obj.get('description', '')} "
+            f"  {key}. {obj.get('name', key)} â€” {obj.get('description', '')} "
             f"(L={obj.get('length_m', 0)*1000:.1f} mm, "
             f"W={obj.get('width_m', 0)*1000:.1f} mm, "
             f"B={obj.get('breadth_m', obj.get('width_m', 0))*1000:.1f} mm, "
@@ -1427,7 +1427,7 @@ PICK_TARGET_Y = 0.0
 
 
 # -----------------------------------------------------------------
-# SECTION 1 — BASIC HELPERS
+# SECTION 1 â€” BASIC HELPERS
 # -----------------------------------------------------------------
 
 def clamp(val, lo, hi):
@@ -1459,7 +1459,7 @@ def _normalise_angle_deg(angle):
 
 
 # -----------------------------------------------------------------
-# SECTION 1b — COMPATIBILITY ALIASES
+# SECTION 1b â€” COMPATIBILITY ALIASES
 # -----------------------------------------------------------------
 # Some earlier versions used different helper names. These wrappers keep
 # the code stable if a call site uses an older name.
@@ -1616,7 +1616,7 @@ def segmented_gripper_in_extra_obs(tcp_x, tcp_y, tcp_z):
     """Segmented end-effector collision check against the optional obstacle.
 
     Checks:
-      1) flange as a circle (Ø71mm, the real Quick Changer diameter),
+      1) flange as a circle (Ã˜71mm, the real Quick Changer diameter),
       2) neck as a yaw-rotated rectangle (90mm x 60mm box, NOT a cylinder
          -- corrected from the old model),
       3) jaws as a yaw-rotated rectangle (27mm fixed x dynamic opening+14mm).
@@ -1669,7 +1669,7 @@ def carried_object_hits_extra_obs(tcp_x, tcp_y, tcp_z):
 
     return in_x and in_y and in_z
 # -----------------------------------------------------------------
-# SECTION 2 — GRIPPER-VOLUME OBSTACLE & WORKSPACE CHECKS
+# SECTION 2 â€” GRIPPER-VOLUME OBSTACLE & WORKSPACE CHECKS
 # -----------------------------------------------------------------
 
 def _gripper_shaft_z_samples(tcp_z):
@@ -1801,7 +1801,7 @@ def point_in_obstacle(px, py, pz):
         or mcp_point_in_dynamic_obstacle(px, py, pz)
     )
 
-# Only Z is checked here intentionally — via-point candidates may be generated
+# Only Z is checked here intentionally â€” via-point candidates may be generated
 # outside the pick workspace XY box (e.g. lateral detours around the conveyor).
 # To also enforce XY bounds, use gripper_in_workspace() instead.
 def point_in_workspace(px, py, pz):
@@ -1826,7 +1826,7 @@ def is_in_workspace(pose):
     return point_in_workspace(pose[0], pose[1], pose[2])
 
 # -----------------------------------------------------------------
-# SECTION 2b — PRE-FLIGHT TRAJECTORY VALIDATION
+# SECTION 2b â€” PRE-FLIGHT TRAJECTORY VALIDATION
 # -----------------------------------------------------------------
 
 def validate_kinematics(waypoints, label="trajectory"):
@@ -1935,7 +1935,7 @@ def validate_trajectory(waypoints, label="trajectory", bypass_extra_obs=False):
                 f"    TCP   X={tcp_x:.3f}  Y={tcp_y:.3f}  Z={tcp_z:.3f}\n"
                 f"    Fingertip Z={tip_z:.3f}\n"
                 f"    Obstacle centre ({OBS_X:.3f}, {OBS_Y:.3f})  H={OBS_H:.3f}m\n"
-                f"    Segmented tool model: flange Ø{FLANGE_DIAMETER_M*1000:.1f}mm, neck {NECK_LENGTH_DIM_M*1000:.0f}x{NECK_THICKNESS_M*1000:.0f}mm box, jaw {JAW_FIXED_WIDTH_M*1000:.1f}mm x {get_current_jaw_width_m()*1000:.1f}mm\n"
+                f"    Segmented tool model: flange Ã˜{FLANGE_DIAMETER_M*1000:.1f}mm, neck {NECK_LENGTH_DIM_M*1000:.0f}x{NECK_THICKNESS_M*1000:.0f}mm box, jaw {JAW_FIXED_WIDTH_M*1000:.1f}mm x {get_current_jaw_width_m()*1000:.1f}mm\n"
                 f"  {'='*62}\n"
                 f"  No motion has been sent to the robot.\n"
             )
@@ -1945,7 +1945,7 @@ def validate_trajectory(waypoints, label="trajectory", bypass_extra_obs=False):
     return True
 
 # -----------------------------------------------------------------
-# SECTION 2c — INPUT VALIDATION
+# SECTION 2c â€” INPUT VALIDATION
 # -----------------------------------------------------------------
 
 def _in_workspace_xy(x, y):
@@ -1958,7 +1958,7 @@ def _in_conveyor(x, y):
     return _conveyor_zone_contains_xy(x, y, expanded_for_gripper=False)
 
 # -----------------------------------------------------------------
-# SECTION 2d — FIXED PLACEMENT BOX HELPERS
+# SECTION 2d â€” FIXED PLACEMENT BOX HELPERS
 # -----------------------------------------------------------------
 
 
@@ -2547,7 +2547,7 @@ def allocate_drop_slot_for_object(selected_object):
 
 
 # -----------------------------------------------------------------
-# SECTION 2e — PRE-PLANNED PLACEMENT SUMMARY / DIAGRAM
+# SECTION 2e â€” PRE-PLANNED PLACEMENT SUMMARY / DIAGRAM
 # -----------------------------------------------------------------
 
 def reserve_drop_slot_for_object(selected_object):
@@ -2659,7 +2659,7 @@ def clear_temporary_future_object_obstacle(was_manual_obstacle):
 
 
 # -----------------------------------------------------------------
-# SECTION 6 — ROBOT STARTUP + HOME
+# SECTION 6 â€” ROBOT STARTUP + HOME
 # -----------------------------------------------------------------
 
 def power_off_robot():
@@ -2708,7 +2708,7 @@ def ensure_robot_ready(r):
     # power_on/init_program may not yet reflect the arm's true settled
     # position.
     time.sleep(1.0)
-    _ = r.get_tcp_pose()   # discard — may be stale immediately after init
+    _ = r.get_tcp_pose()   # discard â€” may be stale immediately after init
     time.sleep(0.3)
     print(f"[Startup] Settled pose confirmed: {r.get_tcp_pose()}")
 
@@ -2772,7 +2772,7 @@ def move_to_home_emergency(r):
 
     traj = build_full_trajectory([current, home])
     execute_trajectory(r, traj, label="Emergency return home")
-    # No try/except — let exceptions propagate so on_h knows if it failed
+    # No try/except â€” let exceptions propagate so on_h knows if it failed
 
 MCP_INTENTIONAL_STOP = False
 
@@ -2781,7 +2781,7 @@ def mcp_return_home():
     global MCP_INTENTIONAL_STOP, EMERGENCY_STOP_ACTIVE
 
     if EMERGENCY_STOP_ACTIVE:
-        print("[SAFETY] Emergency stop is still latched — refusing to auto-recover or move. "
+        print("[SAFETY] Emergency stop is still latched â€” refusing to auto-recover or move. "
               "Call clear_emergency_stop explicitly before attempting return_home.")
         raise RuntimeError("Robot is in Emergency Stop state. Clear it before commanding.")
     
@@ -2868,7 +2868,7 @@ def mcp_return_home():
         
 
 # -----------------------------------------------------------------
-# SECTION 7 — KEYBOARD LISTENER
+# SECTION 7 â€” KEYBOARD LISTENER
 # -----------------------------------------------------------------
 
 def keyboard_listener(r):
@@ -2920,7 +2920,7 @@ def keyboard_listener(r):
             if STARTUP_LOCKED:
                 raise EmergencyStopException("System is locked pending startup confirmation.") from e
             pass
-         # Step 2: try to recover to home — best effort, do NOT power off mid-move if this fails
+         # Step 2: try to recover to home â€” best effort, do NOT power off mid-move if this fails
         
         try:
             r.reset_errors()
@@ -2936,7 +2936,7 @@ def keyboard_listener(r):
                 raise EmergencyStopException("Motion interrupted by protective stop") from e
             if STARTUP_LOCKED:
                 raise EmergencyStopException("System is locked pending startup confirmation.") from e
-            pass  # could not reach home — power off in current position
+            pass  # could not reach home â€” power off in current position
         
         # Step 3: always power off and exit
         power_off_robot()
@@ -2947,7 +2947,7 @@ def keyboard_listener(r):
     keyboard.wait()
 
 # -----------------------------------------------------------------
-# SECTION 8 — MAIN
+# SECTION 8 â€” MAIN
 # -----------------------------------------------------------------
 
 
@@ -2975,7 +2975,7 @@ def is_valid_path(path):
 
 def find_best_linear_detour_route(start, end):
     """
-    Alternative to the Bézier arc planner:
+    Alternative to the BÃ©zier arc planner:
     - For low obstacles (< 0.4 m): try linear UP -> ACROSS -> DOWN routes
     - For taller obstacles: try linear side-detour routes
     Returns a node list (not dense waypoints).
@@ -3079,7 +3079,7 @@ def plan_best_route(start_pose, end_pose):
 
 
 # -----------------------------------------------------------------
-# SECTION 3 — GLOBAL OPTIMAL PATH PLANNER
+# SECTION 3 â€” GLOBAL OPTIMAL PATH PLANNER
 # -----------------------------------------------------------------
 
 WP_SPACING = 0.04   # metres between interpolated waypoints (25 mm)
@@ -3257,7 +3257,7 @@ def find_optimal_route(start, end):
     return best_nodes
 
 # -----------------------------------------------------------------
-# SECTION 4 — TRAJECTORY BUILDER  (density-scaled, linear only)
+# SECTION 4 â€” TRAJECTORY BUILDER  (density-scaled, linear only)
 # -----------------------------------------------------------------
 
 def build_full_trajectory(checkpoints):
@@ -3287,7 +3287,7 @@ def build_full_trajectory(checkpoints):
     return full_path
 
 # -----------------------------------------------------------------
-# SECTION 5 — EXECUTION
+# SECTION 5 â€” EXECUTION
 # -----------------------------------------------------------------
 SHORTERSIDE_SIDE = min(OBS_W, OBS_D) if HAS_EXTRA_OBS else 0.05
 BLEND_RADIUS = SHORTERSIDE_SIDE * 0.1
@@ -3349,7 +3349,7 @@ def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_sp
 
 
 # -----------------------------------------------------------------
-# SECTION 7 — KEYBOARD LISTENER
+# SECTION 7 â€” KEYBOARD LISTENER
 # -----------------------------------------------------------------
 
 def keyboard_listener(r):
@@ -3422,7 +3422,7 @@ def keyboard_listener(r):
     keyboard.wait()
 
 # -----------------------------------------------------------------
-# SECTION 8 — MAIN
+# SECTION 8 â€” MAIN
 # -----------------------------------------------------------------
 
 
@@ -3720,41 +3720,41 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
         move_to_home_emergency(r)
     home = get_home_pose(r.get_tcp_pose())   # always fresh, using the REAL current position
     
-    execute_joint_transit(r, home, lift_pick_forward, label="Phase 1 transit — Home -> lift_pick_forward")
+    execute_joint_transit(r, home, lift_pick_forward, label="Phase 1 transit â€” Home -> lift_pick_forward")
     
-    execute_trajectory(r, phase1_rotate, label="Phase 1 wrist rotate — forward -> grip angle", custom_speed=0.5, is_blending=False)
+    execute_trajectory(r, phase1_rotate, label="Phase 1 wrist rotate â€” forward -> grip angle", custom_speed=0.5, is_blending=False)
     time.sleep(0.3)
 
     # Open 30% larger than the object before descending.
     gripper_open_for_object(OBJECT_GRIP_WIDTH_M)
 
-    execute_trajectory(r, phase1_approach, label="Phase 1 approach — lift_pick -> pick_pose")
+    execute_trajectory(r, phase1_approach, label="Phase 1 approach â€” lift_pick -> pick_pose")
     gripper_grip_object(OBJECT_GRIP_WIDTH_M)
 
     CARRIED_OBJECT_ENABLED = True
 
-    execute_trajectory(r, phase2_depart, label="Phase 2 depart — pick_pose -> lift_pick")
+    execute_trajectory(r, phase2_depart, label="Phase 2 depart â€” pick_pose -> lift_pick")
     
-    execute_trajectory(r, phase2_reorient, label="Phase 2 reorient — pick angle -> forward", custom_speed=0.5, is_blending=False)
-    execute_joint_transit(r, lift_pick_forward_after, lift_drop, label="Phase 2 transit — pick_forward -> drop_forward")
-    execute_trajectory(r, [lift_drop, lift_drop_grip], label="Phase 2 reorient — forward -> drop angle", custom_speed=0.5, is_blending=False)
+    execute_trajectory(r, phase2_reorient, label="Phase 2 reorient â€” pick angle -> forward", custom_speed=0.5, is_blending=False)
+    execute_joint_transit(r, lift_pick_forward_after, lift_drop, label="Phase 2 transit â€” pick_forward -> drop_forward")
+    execute_trajectory(r, [lift_drop, lift_drop_grip], label="Phase 2 reorient â€” forward -> drop angle", custom_speed=0.5, is_blending=False)
     
-    execute_trajectory(r, phase2_approach, label="Phase 2 approach — lift_drop -> drop_pose")
+    execute_trajectory(r, phase2_approach, label="Phase 2 approach â€” lift_drop -> drop_pose")
     gripper_release_object(OBJECT_GRIP_WIDTH_M)
 
     CARRIED_OBJECT_ENABLED = False
 
-    execute_trajectory(r, phase3_depart, label="Phase 3 depart — drop_pose -> lift_drop")
+    execute_trajectory(r, phase3_depart, label="Phase 3 depart â€” drop_pose -> lift_drop")
     
-    execute_trajectory(r,[lift_drop_grip, lift_drop],label="Phase 3 reorient — grip angle -> forward", custom_speed=0.5, is_blending=False)
+    execute_trajectory(r,[lift_drop_grip, lift_drop],label="Phase 3 reorient â€” grip angle -> forward", custom_speed=0.5, is_blending=False)
 
     if MCP_IS_RELOCATING:
-        execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
+        execute_joint_transit(r, lift_drop, home, label="Phase 3 transit â€” lift_drop -> Home")
         if ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("relocate_placed")
         return
 
-    execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
+    execute_joint_transit(r, lift_drop, home, label="Phase 3 transit â€” lift_drop -> Home")
 
     if not MCP_IS_RELOCATING:
         if ROBOT_EVENT_CALLBACK:
@@ -4022,7 +4022,7 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
     MCP angle is the object yaw in robot base frame from YOLOv11 OBB RPY decomposition.
     If angle is None, the catalogue preferred_grasp_angle_deg is used instead.
 
-    grasp_label — for the pipe: which end the segmentation model selected
+    grasp_label â€” for the pipe: which end the segmentation model selected
     (grasp_A or grasp_B). When provided, x/y/z already point to that exact
     end and catalogue offsets are confirmed zero so nothing shifts the position.
     """
@@ -4204,7 +4204,7 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
     MCP angle is the object yaw in degrees in robot base frame, from YOLOv11 OBB RPY
     decomposition. If None, the catalogue preferred_grasp_angle_deg is used instead.
 
-    grasp_label — for the pipe: which end vision segmentation selected
+    grasp_label â€” for the pipe: which end vision segmentation selected
     (grasp_A or grasp_B). Stored for diagnostics. x/y/z already point to
     the correct end when this is provided.
     """
@@ -4237,7 +4237,9 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
             execute_one_pick_cycle(seq_item, 1, 1)
     except EmergencyStopException:
         raise
-    except EmergencyStopException:
+    except EmergencyStopException as exc:
+        if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
+            ROBOT_EVENT_CALLBACK("error", f"Protective stop: {exc}")
         raise
     except Exception as e:
         if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
@@ -4443,13 +4445,15 @@ def run_mcp_relocate_object(
         selected_object["_planned_drop_slot"] = reloc_slot
 
         # Step 4: execute the pick-and-drop.
-        # preplan_all_drop_slots is NOT called here — the slot is already set above
+        # preplan_all_drop_slots is NOT called here â€” the slot is already set above
         # and we do not want to allocate placement-box space for a workspace relocation.
         set_active_pick_item(sequence[0], 1, 1)
         execute_one_pick_cycle(sequence[0], 1, 1)
     except EmergencyStopException:
         raise
-    except EmergencyStopException:
+    except EmergencyStopException as exc:
+        if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
+            ROBOT_EVENT_CALLBACK("error", f"Protective stop: {exc}")
         raise
     except Exception as e:
         if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
