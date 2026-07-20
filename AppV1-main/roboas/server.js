@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const cors = require('cors');
@@ -34,7 +34,7 @@ if (!SAFETY_CLEAR_TOKEN || !CAMERA_HEARTBEAT_TOKEN) {
 // CONFIGURATION
 // ==========================================
 // Laptop B (Robot/Vision Laptop) IP Address
-const LAPTOP_B_IP = "192.168.2.99"; // Ethernet IP for Laptop B
+const LAPTOP_B_IP = process.env.LAPTOP_B_IP || "192.168.2.99"; // Ethernet IP for Laptop B
 // === Tool Call Activity Log ===
 let toolCallLog = [];
 const TOOL_LOG_FILE = path.join(__dirname, 'gpt_tool_log.json');

@@ -97,10 +97,36 @@ def send_robot_event(event_type, error_msg=None):
         logger.error(f"Failed to send event to server: {e}")
 
 # Register the callback in the robot control module
-robot_control.ROBOT_EVENT_CALLBACK = send_robot_event
+robot_control.ROBOT_EVENT_TOKEN = os.environ.get("ROBOT_EVENT_TOKEN")
+if not ROBOT_EVENT_TOKEN:
+    logger.warning("Warning: ROBOT_EVENT_TOKEN is not set.")
+
+def send_robot_event_secure(event_type, error_msg=None):
+    global CLIENT_IP
+    import urllib.request
+    import json
+    
+    server_host = os.environ.get("SERVER_HOST", CLIENT_IP)
+    url = f"http://{server_host}:3000/robot-event"
+    payload = {"event": event_type}
+    if error_msg:
+        payload["error"] = str(error_msg)
+        
+    logger.info(f"Sending event '{event_type}' to server at {url}...")
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if ROBOT_EVENT_TOKEN:
+            headers["Authorization"] = f"Bearer {ROBOT_EVENT_TOKEN}"
+        req = urllib.request.Request(url, data=data, headers=headers)
+        with urllib.request.urlopen(req, timeout=3) as response:
+            logger.info(f"Event sent successfully, response status: {response.status}")
+    except Exception as e:
+        logger.error(f"Failed to send event to server: {e}")
+
+robot_control.ROBOT_EVENT_CALLBACK = send_robot_event_secure
 
 # 1. Initialize the MCP Server
-SAFETY_TRANSITION_LOCK = asyncio.Lock()
 server = Server("robot-arm-mcp-server")
 
 # 2. Define tools that the AI/server.js can call
@@ -410,7 +436,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             if args.get("token") != SAFETY_CLEAR_TOKEN:
                 return [TextContent(type="text", text="Error: Invalid capability token.")]
             robot_control.STARTUP_LOCKED = False
-        return [TextContent(type="text", text="Startup lock cleared.")]
+        return [TextContent(type="text", text='{"success":true,"state":"CLEARED"}')]
 
     if name == "return_home":
         print("\n🏠 [VS CODE CONSOLE] RETURN HOME SIGNAL RECEIVED! Interrupting motion and returning home.\n")
@@ -419,6 +445,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         try:
             if hasattr(robot_control, 'mcp_return_home'):
                 await asyncio.to_thread(robot_control.mcp_return_home)
+            else:
+                raise RuntimeError('mcp_return_home is not implemented in robot control.')
             # Latch remains active until explicitly cleared
             return [TextContent(type="text", text="Return Home Successful: Robot interrupted and moved to home position.")]
         except Exception as e:
@@ -430,11 +458,13 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         if not args.get("manual_confirmed"):
             return [TextContent(type="text", text="Error: manual_confirmed=True is required to clear latch.")]
         async with SAFETY_TRANSITION_LOCK:
+            if args.get("token") != SAFETY_CLEAR_TOKEN:
+                return [TextContent(type="text", text="Error: Invalid capability token.")]
             logger.warning("✅ Emergency stop manually cleared by user.")
             robot_control.EMERGENCY_STOP_ACTIVE = False
             if hasattr(robot_control, 'STOP_EVENT'):
                 robot_control.STOP_EVENT.clear()
-            return [TextContent(type="text", text="Emergency stop cleared. Robot may now be commanded again.")]
+            return [TextContent(type="text", text='{"success":true,"state":"CLEARED"}')]
 
     if name == "clear_return_home":
         logger.warning("✅ Return home latch manually cleared by user/system.")
