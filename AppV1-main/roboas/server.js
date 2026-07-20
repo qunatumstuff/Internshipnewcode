@@ -46,6 +46,40 @@ let isRobotBusy = false;
 let globalQueueUpdateTrigger = null; // Callback for SSE updates
 const activeDebugConnections = [];
 let isSafetyModeActive = false;
+let isSafetyStopLatched = true; // Movement blocked on startup until manually cleared
+let isSafetyStopInProgress = false;
+let lastSafetyStopError = null;
+
+async function requestEmergencyStop(source, reason) {
+  if (isSafetyStopLatched || isSafetyStopInProgress) return;
+  isSafetyStopInProgress = true;
+  isSafetyStopLatched = true;
+  global._taskAborted = true;
+  robotTaskQueue = [];
+  broadcastQueueUpdate();
+  
+  if (robotMcpClient) {
+    try {
+      const stopRes = await robotMcpClient.callTool({ name: "emergency_stop", arguments: {} });
+      const text = (stopRes.content && stopRes.content[0]) ? stopRes.content[0].text : "";
+      if (!text || text.toLowerCase().startsWith("error")) {
+        lastSafetyStopError = text || "No response content from Robot MCP";
+        console.error(`🛑 Safety Stop Failed (${source}): ${lastSafetyStopError}`);
+      } else {
+        lastSafetyStopError = null;
+        console.log(`🛑 Safety Stop Success (${source})`);
+      }
+    } catch (e) {
+      lastSafetyStopError = e.message;
+      console.error(`🛑 Safety Stop Network Error (${source}):`, e);
+    }
+  } else {
+    lastSafetyStopError = "Robot MCP Disconnected";
+    console.error(`🛑 Safety Stop Failed (${source}): ${lastSafetyStopError}`);
+  }
+  isSafetyStopInProgress = false;
+}
+
 
 function broadcastDebugEvent(type, data) {
   const payload = JSON.stringify({ type, data }) + '\n\n';
@@ -578,7 +612,7 @@ app.post('/python-log', (req, res) => {
 
 // === Robot Task Queue Processor ===
 async function processRobotQueue() {
-  if (isRobotBusy || robotTaskQueue.length === 0) return;
+  if (isRobotBusy || robotTaskQueue.length === 0 || isSafetyStopLatched || isSafetyStopInProgress) return;
   isRobotBusy = true;
   broadcastQueueUpdate();
 
@@ -768,6 +802,7 @@ app.post('/queue-delete', express.json(), (req, res) => {
 
 
 app.post('/queue-add', express.json(), (req, res) => {
+  if (isSafetyStopLatched || isSafetyStopInProgress) return res.status(403).json({ success: false, error: 'Safety Stop Latched. Cannot queue tasks.' });
   const task = req.body.task;
   task.id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
   task.status = "pending";
@@ -1220,15 +1255,21 @@ app.post('/ask-gpt', async (req, res) => {
     const lowerQuestion = question.toLowerCase();
     
     // === SAFETY MODE VOICE INTERCEPTS ===
-    if (lowerQuestion.includes("turn on safety mode") || lowerQuestion.includes("activate safety mode") || lowerQuestion.includes("enable safety mode")) {
+    if (lowerQuestion === "turn on safety mode" || lowerQuestion === "activate safety mode" || lowerQuestion === "enable safety mode") {
+      if (!robotMcpClient || !visionMcpClient) {
+         return res.json({ success: true, answer: "Cannot activate safety mode. A required system is disconnected." });
+      }
+      if (isSafetyStopLatched) {
+         return res.json({ success: true, answer: "Safety system is already latched. Please clear it first." });
+      }
       isSafetyModeActive = true;
       sendProgress("Safety Mode Activated.", false);
       return res.json({ success: true, answer: "Safety mode has been turned on. I am now watching for humans." });
     }
-    if (lowerQuestion.includes("turn off safety mode") || lowerQuestion.includes("disable safety mode") || lowerQuestion.includes("deactivate safety mode")) {
+    if (lowerQuestion === "turn off safety mode" || lowerQuestion === "disable safety mode" || lowerQuestion === "deactivate safety mode") {
       isSafetyModeActive = false;
       sendProgress("Safety Mode Deactivated.", false);
-      return res.json({ success: true, answer: "Safety mode has been turned off." });
+      return res.json({ success: true, answer: "Safety mode has been turned off. Monitoring disabled." });
     }
 
     const isVisualQuery = lowerQuestion.includes("what") || lowerQuestion.includes("how");
@@ -1307,7 +1348,7 @@ ROBOTIC ARM — PICK AND PLACE RULES:
 - Once you call 'locate_object', the system will automatically find the coordinates and trigger the robot arm for you.
 - You do NOT need to call 'pick_and_place_object' yourself.
 - Approved objects the robot can pick: soy milk, umbrella, wrench, hat, cube, yellow cube, blue cube, green cube, red cube, nut, black marker, medicine, sponge, screwdriver.
-- CRITICAL: ONLY call 'clear_emergency_stop' if the user explicitly asks you to clear the emergency stop. NEVER call it when the user asks you to pick up an object.
+
 
 IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualContext + queueState
       },
@@ -1532,7 +1573,7 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
           logToolCall(question, toolCall.name, args, `switched to ${args.persona}`);
           toolResultText = `Switched to ${currentPersona}. Now greeting the user warmly as ${currentPersona === 'linda' ? 'Linda' : 'John'}.`;
         } 
-        else if (["locate_object", "relocate_object", "clear_emergency_stop", "clear_return_home", "return_home"].includes(toolCall.name)) {
+        else if (["locate_object", "relocate_object", "clear_return_home", "return_home"].includes(toolCall.name)) {
           
           if (toolCall.name === "locate_object") {
             let targets = args.target_names || [];
@@ -1909,23 +1950,34 @@ app.get('/current-pdf', (req, res) => {
 
 // Safety Mode Endpoint (Triggered by vision system when human detected)
 app.post('/trigger-safety-stop', async (req, res) => {
-  if (isSafetyModeActive) {
+  if (isSafetyModeActive && !isSafetyStopLatched && !isSafetyStopInProgress) {
     console.log("🛑 SAFETY MODE TRIGGERED: HUMAN DETECTED!");
-    try {
-      if (robotMcpClient) {
-        await robotMcpClient.callTool({ name: "emergency_stop", arguments: {} });
-        sendProgress("Safety Mode Activated! Human detected.", false);
-        // Do not auto-disable safety mode here; it will be disabled when e-stop is cleared
-      }
-    } catch (err) {
-      console.error("Error triggering safety stop:", err.message);
-    }
+    await requestEmergencyStop("Vision", "Human detected");
+    sendProgress("Safety Mode Activated! Human detected.", false);
+  } else if (isSafetyStopLatched || isSafetyStopInProgress) {
+    return res.status(409).json({ error: "Already latched or in progress" });
   }
   res.sendStatus(200);
 });
 
 app.get('/get-safety-mode', (req, res) => {
-  res.json({ isSafetyModeActive });
+  let state = "DISARMED";
+  if (isSafetyStopLatched) {
+      state = lastSafetyStopError ? "FAULT_LATCHED" : "LATCHED";
+  } else if (isSafetyStopInProgress) {
+      state = "TRIPPING";
+  } else if (isSafetyModeActive) {
+      state = "ARMED";
+  }
+  res.json({ 
+    state,
+    isSafetyModeActive, 
+    isSafetyStopLatched, 
+    isSafetyStopInProgress, 
+    lastSafetyStopError,
+    robotConnected: !!robotMcpClient,
+    visionConnected: !!visionMcpClient
+  });
 });
 
 // Settings Endpoints
@@ -2205,30 +2257,4 @@ server.listen(port, async () => {
   
   cleanupOldFiles();
   setInterval(cleanupOldFiles, 24 * 60 * 60 * 1000);
-});app.post('/return-home', async (req, res) => {
-  console.log("🏠 System UI Return Home Requested");
-  robotTaskQueue = []; // Clear queue on manual return home for safety
-  broadcastQueueUpdate();
-  
-  if (robotMcpClient) {
-    try {
-      sendProgress("Stopping robot and returning home.", true);
-      
-      // E-stop instantly
-      await robotMcpClient.callTool({ name: "emergency_stop", arguments: {} });
-      await new Promise(r => setTimeout(r, 500));
-      // Clear latch
-      await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: {} });
-      // Go home
-      await robotMcpClient.callTool({ name: "return_home", arguments: {} });
-      
-      res.json({ success: true, message: "Returned home successfully." });
-    } catch (err) {
-      res.json({ success: false, message: `Failed to return home: ${err.message}` });
-    }
-  } else {
-    res.json({ success: false, message: "Robot MCP is not connected." });
-  }
 });
-
-

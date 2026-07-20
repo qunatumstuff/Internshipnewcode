@@ -200,7 +200,7 @@ PERMA_OFFSET_Y = -0.001782065
 TOP_SURFACE_METHOD = "hybrid"
 
 # Policy when top-surface refinement fails for a flat-top class:
-#   "legacy_center" — keep the existing OBB-centre coordinates (safe default)
+#   "legacy_center" — keep the existing OBB-centre coordinates (compatibility fallback)
 #   "reject"        — discard this detection entirely (enable after physical tests)
 TOP_SURFACE_FAILURE_POLICY = "legacy_center"
 

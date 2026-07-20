@@ -20,6 +20,10 @@ latest_3d_coords = {"x": 0.0, "y": 0.0, "z": 0.0}
 current_depth_frame = None
 camera_intrinsics = None
 inference_lock = threading.Lock()
+safety_request_lock = threading.Lock()
+safety_is_requesting = False
+safety_last_request_time = 0
+SAFETY_SERVER_URL = os.environ.get("SAFETY_SERVER_URL", "http://localhost:3000/trigger-safety-stop")
 
 # Tweak this value to add a global Z offset (in meters) to all detected objects.
 # E.g., setting it to 0.02 will raise the target pick point by 2 cm.
@@ -200,15 +204,37 @@ def _vision_loop_inner():
                     safety_results = safety_model(color_image, verbose=False, classes=[0], conf=0.6)
                 for r in safety_results:
                     if len(r.boxes) > 0:
-                        # Person detected! Send async trigger.
-                        def trigger_safety():
-                            try:
-                                requests.post("http://localhost:3000/trigger-safety-stop", timeout=1)
-                            except:
-                                pass
-                        threading.Thread(target=trigger_safety).start()
+                        # Person detected!
+                        conf = float(r.boxes.conf[0])
+                        global safety_is_requesting, safety_last_request_time
+                        
+                        can_request = False
+                        with safety_request_lock:
+                            now = time.time()
+                            if not safety_is_requesting and (now - safety_last_request_time > 2.0):
+                                safety_is_requesting = True
+                                can_request = True
+                                
+                        if can_request:
+                            def trigger_safety(confidence):
+                                global safety_is_requesting, safety_last_request_time
+                                try:
+                                    print(f"🛑 [SAFETY] Triggering safety stop. Human confidence: {confidence:.2f}")
+                                    res = requests.post(SAFETY_SERVER_URL, json={"confidence": confidence}, timeout=2)
+                                    if res.status_code != 200:
+                                        print(f"⚠️ [SAFETY] Failed to trigger safety stop. Server returned HTTP {res.status_code}")
+                                except Exception as e:
+                                    print(f"⚠️ [SAFETY] Network error triggering safety stop: {e}")
+                                finally:
+                                    with safety_request_lock:
+                                        safety_is_requesting = False
+                                        safety_last_request_time = time.time()
+                            
+                            t = threading.Thread(target=trigger_safety, args=(conf,), daemon=True)
+                            t.start()
+                            
                         # Draw warning on frame
-                        cv2.putText(color_image, "HUMAN DETECTED - SAFETY TRIPPED", (50, 50), 
+                        cv2.putText(color_image, f"HUMAN DETECTED ({conf:.2f}) - SAFETY TRIPPED", (50, 50), 
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
                         break
 

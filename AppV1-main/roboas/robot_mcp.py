@@ -93,6 +93,7 @@ def send_robot_event(event_type, error_msg=None):
 robot_control.ROBOT_EVENT_CALLBACK = send_robot_event
 
 # 1. Initialize the MCP Server
+SAFETY_TRANSITION_LOCK = asyncio.Lock()
 server = Server("robot-arm-mcp-server")
 
 # 2. Define tools that the AI/server.js can call
@@ -226,7 +227,7 @@ async def handle_list_tools() -> list[Tool]:
         Tool(
             name="clear_emergency_stop",
             description="Explicitly acknowledge and clear a latched emergency stop. Required before the robot can move again after emergency_stop was triggered.",
-            inputSchema={"type": "object", "properties": {}}
+            inputSchema={"type": "object", "properties": {"manual_confirmed": {"type": "boolean", "description": "Must be true to proceed."}}, "required": ["manual_confirmed"]}
         ),
         Tool(
             name="clear_return_home",
@@ -241,8 +242,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     args = arguments or {}
 
     # 1. Check Latches before allowing movement commands
-    if name in ["pick_and_place_object", "move_to_coordinates", "relocate_object"]:
-        if getattr(robot_control, 'EMERGENCY_STOP_ACTIVE', False):
+    if name in ["pick_and_place_object", "move_to_coordinates", "relocate_object", "return_home"]:
+        if getattr(robot_control, 'EMERGENCY_STOP_ACTIVE', False) or getattr(robot_control.STOP_EVENT, 'is_set', lambda: False)():
             logger.warning(f"Blocked {name}: Emergency Stop is active.")
             return [TextContent(type="text", text="Error: Robot is in Emergency Stop state. Clear it before commanding.")]
         if getattr(robot_control, 'RETURN_HOME_ACTIVE', False):
@@ -363,17 +364,23 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         return [TextContent(type="text", text=f"Completed: {result}")]
 
     if name == "emergency_stop":
-        logger.warning("⚠️ EMERGENCY STOP TRIGGERED!")
-        robot_control.EMERGENCY_STOP_ACTIVE = True #seperate emergency since current system unning on resets to work needs this to fully stop 
-        try:
-            if hasattr(robot_control, 'power_off_robot'):
-                await asyncio.to_thread(robot_control.power_off_robot)
-            elif hasattr(robot_control, 'r') and robot_control.r is not None:
-                await asyncio.to_thread(robot_control.r.stop)
-            return [TextContent(type="text", text="Emergency Stop Successful: Robot powered off.")]
-        except Exception as e:
-            logger.error(f"Error during emergency stop: {e}")
-            return [TextContent(type="text", text=f"Error executing emergency stop: {str(e)}")]
+        async with SAFETY_TRANSITION_LOCK:
+            logger.warning("⚠️ EMERGENCY STOP TRIGGERED!")
+            robot_control.EMERGENCY_STOP_ACTIVE = True
+            if hasattr(robot_control, 'STOP_EVENT'):
+                robot_control.STOP_EVENT.set()
+            try:
+                if hasattr(robot_control, 'power_off_robot'):
+                    await asyncio.to_thread(robot_control.power_off_robot)
+                    return [TextContent(type="text", text="Emergency Stop Successful: Robot powered off.")]
+                elif hasattr(robot_control, 'r') and robot_control.r is not None:
+                    await asyncio.to_thread(robot_control.r.stop)
+                    return [TextContent(type="text", text="Emergency Stop Successful: Robot stopped (power off unavailable).")]
+                else:
+                    return [TextContent(type="text", text="Error: No hardware stop function available! Software latch engaged.")]
+            except Exception as e:
+                logger.error(f"Error during emergency stop: {e}")
+                return [TextContent(type="text", text=f"Error executing emergency stop: {str(e)}")]
 
     if name == "return_home":
         print("\n🏠 [VS CODE CONSOLE] RETURN HOME SIGNAL RECEIVED! Interrupting motion and returning home.\n")
@@ -390,9 +397,14 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             return [TextContent(type="text", text=f"Error executing return home: {str(e)}")]
     
     if name == "clear_emergency_stop":
-        logger.warning("✅ Emergency stop manually cleared by user.")
-        robot_control.EMERGENCY_STOP_ACTIVE = False
-        return [TextContent(type="text", text="Emergency stop cleared. Robot may now be commanded again.")]
+        if not args.get("manual_confirmed"):
+            return [TextContent(type="text", text="Error: manual_confirmed=True is required to clear latch.")]
+        async with SAFETY_TRANSITION_LOCK:
+            logger.warning("✅ Emergency stop manually cleared by user.")
+            robot_control.EMERGENCY_STOP_ACTIVE = False
+            if hasattr(robot_control, 'STOP_EVENT'):
+                robot_control.STOP_EVENT.clear()
+            return [TextContent(type="text", text="Emergency stop cleared. Robot may now be commanded again.")]
 
     if name == "clear_return_home":
         logger.warning("✅ Return home latch manually cleared by user/system.")

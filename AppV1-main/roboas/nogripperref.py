@@ -112,8 +112,67 @@ import threading
 # pymodbus/pyserial no longer used -- gripper now goes through
 # r.execute_external_device_function(), same as the LoRA collector script.
 
+
+# --- PROTECTIVE STOP SAFETY OVERRIDES ---
+import threading
+EMERGENCY_STOP_ACTIVE = False
+STOP_EVENT = threading.Event()
+
+class EmergencyStopException(Exception):
+    pass
+
+def check_safety():
+    if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+        raise EmergencyStopException("Emergency Stop Active! Halting execution.")
+
+# Monkey-patch neurapy.Robot to enforce safety checks on all physical commands
+try:
+    from neurapy.robot import Robot
+    _orig_move_linear = Robot.move_linear
+    _orig_move_joint = Robot.move_joint
+    _orig_move_pose = Robot.move_pose
+    _orig_power_on = Robot.power_on
+    _orig_reset_errors = Robot.reset_errors
+    _orig_execute = Robot.execute_external_device_function
+
+    def _safe_move_linear(self, *args, **kwargs):
+        check_safety()
+        return _orig_move_linear(self, *args, **kwargs)
+
+    def _safe_move_joint(self, *args, **kwargs):
+        check_safety()
+        return _orig_move_joint(self, *args, **kwargs)
+
+    def _safe_move_pose(self, *args, **kwargs):
+        check_safety()
+        return _orig_move_pose(self, *args, **kwargs)
+
+    def _safe_power_on(self, *args, **kwargs):
+        check_safety()
+        return _orig_power_on(self, *args, **kwargs)
+
+    def _safe_reset_errors(self, *args, **kwargs):
+        check_safety()
+        return _orig_reset_errors(self, *args, **kwargs)
+
+    def _safe_execute(self, *args, **kwargs):
+        check_safety()
+        return _orig_execute(self, *args, **kwargs)
+
+    Robot.move_linear = _safe_move_linear
+    Robot.move_joint = _safe_move_joint
+    Robot.move_pose = _safe_move_pose
+    Robot.power_on = _safe_power_on
+    Robot.reset_errors = _safe_reset_errors
+    Robot.execute_external_device_function = _safe_execute
+except ImportError:
+    pass
+# ----------------------------------------
+
 try:
     import keyboard
+
+
     HAS_KEYBOARD = True
 except ImportError:
     HAS_KEYBOARD = False
@@ -731,6 +790,8 @@ def get_object_grip_label(selected_object=None):
     try:
         obj = selected_object if selected_object is not None else globals().get("SELECTED_OBJECT", {})
         return str(obj.get("label", obj.get("name", ""))).strip().lower()
+    except EmergencyStopException:
+        raise
     except Exception:
         return ""
 
@@ -822,6 +883,8 @@ def _call_gripper_function(function_name, params=None):
     """Thin wrapper around execute_external_device_function with consistent error printing."""
     try:
         return r.execute_external_device_function(PROCESS_FILE, function_name, params or {})
+    except EmergencyStopException:
+        raise
     except Exception as e:
         print(f"[Gripper ERROR] '{function_name}' failed: {e}")
         raise
@@ -864,6 +927,8 @@ def wait_gripper_done(timeout=10, target_percent=None, tolerance=3):
             status = str(result.get("getStatus", "")).strip().lower()
             if status in ("grip detected", "idle", "completed"):
                 return True
+        except EmergencyStopException:
+            raise
         except Exception as e:
             print(f"[Gripper WARN] Status read failed: {e}")
 
@@ -885,6 +950,8 @@ def gripper_startup():
     print("[Gripper] Attempting device Init...")
     try:
         _call_gripper_function("Init")
+    except EmergencyStopException:
+        raise
     except Exception as e:
         print(f"[Gripper] Init call failed or unsupported, continuing anyway: {e}")
     time.sleep(0.3)
@@ -1022,6 +1089,8 @@ def gripper_grip_object_plain(object_width_m):
         status = str(result.get("getStatus", "")).strip().lower()
         print(f"[Grip] GraspWorkpiece result status: {status!r}")
         return status == "grip detected"
+    except EmergencyStopException:
+        raise
     except Exception as e:
         print(f"[Grip WARNING] GraspWorkpiece did not confirm contact: {e}")
         try:
@@ -1031,6 +1100,8 @@ def gripper_grip_object_plain(object_width_m):
             device_reset = r.reset_external_device_error(PROCESS_FILE, ignore_no_connection=True)
             print(f"[Grip Recovery] Step 2/2: reset_external_device_error() -> {device_reset}")
 
+        except EmergencyStopException:
+            raise
         except Exception as reset_e:
             print(f"[Grip WARNING] Full recovery failed partway through: {reset_e}")
         return False
@@ -1382,6 +1453,8 @@ def get_current_jaw_width_m():
     """
     try:
         internal_opening = percent_to_opening_m(CURRENT_GRIPPER_PERCENT)
+    except EmergencyStopException:
+        raise
     except Exception:
         internal_opening = percent_to_opening_m(PICK_CLOSE_PERCENT) if 'PICK_CLOSE_PERCENT' in globals() else 0.020
 
@@ -1732,6 +1805,8 @@ def validate_kinematics(waypoints, label="trajectory"):
             if isinstance(res, tuple) and len(res) > 1 and isinstance(res[1], bool):
                 if not res[1]:
                     raise RuntimeError("IK Returned Unreachable Status")
+        except EmergencyStopException:
+            raise
         except Exception as e:
             raise RuntimeError(
                 f"\n  {'='*62}\n"
@@ -2544,6 +2619,8 @@ def power_off_robot():
         r.power_off()
         gripper_shutdown()
         _MCP_ROBOT_READY = False
+    except EmergencyStopException:
+        raise
     except Exception as e:
         _MCP_ROBOT_READY = False
         return
@@ -2583,6 +2660,8 @@ def ensure_robot_ready(r):
         if r.get_override() < ROBOT_SPEED_OVERRIDE:
             r.set_override(ROBOT_SPEED_OVERRIDE)
             time.sleep(0.2)
+    except EmergencyStopException:
+        raise
     except Exception:
         pass
 
@@ -2600,6 +2679,8 @@ def is_at_home(r, tol=0.01):
         return (abs(c[0] - HOME_X) < tol and
                 abs(c[1] - HOME_Y) < tol and
                 abs(c[2] - HOME_Z) < tol)
+    except EmergencyStopException:
+        raise
     except Exception as e:
         return False
 
@@ -2667,6 +2748,8 @@ def mcp_return_home():
             time.sleep(0.5)
             reconnected = r.connect_external_device(PROCESS_FILE)
             print(f"[Gripper] Reconnected to external device: {reconnected}")
+        except EmergencyStopException:
+            raise
         except Exception as e:
             print(f"[Gripper WARN] disconnect/reconnect cycle failed: {e}")
 
@@ -2680,11 +2763,15 @@ def mcp_return_home():
         # working gripper.
         try:
             gripper_open()
+        except EmergencyStopException:
+            raise
         except Exception as e:
             print(f"[Gripper WARN] gripper_open() failed during return-home, "
                   f"continuing to move the arm home anyway: {e}")
 
         move_to_home_emergency(r)     # always attempt this, regardless of gripper state
+    except EmergencyStopException:
+        raise
     except Exception as e:
         print(f"Error returning home: {e}")
     finally:
@@ -2715,6 +2802,8 @@ def keyboard_listener(r):
             time.sleep(1)
             gripper_open()                # now safe to open gripper
             move_to_home_emergency(r)     # then go home
+        except EmergencyStopException:
+            raise
         except Exception:
             pass
         
@@ -2728,6 +2817,8 @@ def keyboard_listener(r):
             time.sleep(0.5)
             time.sleep(1)
             move_to_home_emergency(r)
+        except EmergencyStopException:
+            raise
         except Exception:
             pass
          # Step 2: try to recover to home — best effort, do NOT power off mid-move if this fails
@@ -2737,6 +2828,8 @@ def keyboard_listener(r):
             r.switch_to_automatic_mode()
             time.sleep(1)
             move_to_home_emergency(r)
+        except EmergencyStopException:
+            raise
         except Exception:
             pass  # could not reach home — power off in current position
         
@@ -3135,6 +3228,8 @@ def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_sp
             controller_parameters={"control_mode": "position"},
             target_pose=trajectory,
             )
+    except EmergencyStopException:
+        raise
     except Exception as e:
         r.stop()
         raise
@@ -3160,6 +3255,8 @@ def keyboard_listener(r):
         try:
             r.stop()
             gripper_open()
+        except EmergencyStopException:
+            raise
         except Exception as e:
             return
         time.sleep(0.5)
@@ -3167,6 +3264,8 @@ def keyboard_listener(r):
             r.reset_errors()
             r.switch_to_automatic_mode()
             time.sleep(1)
+        except EmergencyStopException:
+            raise
         except Exception as e:
             return
         move_to_home_emergency(r)
@@ -3181,6 +3280,8 @@ def keyboard_listener(r):
             r.switch_to_automatic_mode()
             time.sleep(1)
             move_to_home_emergency(r)
+        except EmergencyStopException:
+            raise
         except Exception as e:
            return
         finally:
@@ -3675,6 +3776,8 @@ def _mcp_detection_inside_placement_box(det):
             PLACEMENT_BOX_X_MIN - INBOX_TOLERANCE_M <= x <= PLACEMENT_BOX_X_MAX + INBOX_TOLERANCE_M and
             PLACEMENT_BOX_Y_MIN - INBOX_TOLERANCE_M <= y <= PLACEMENT_BOX_Y_MAX + INBOX_TOLERANCE_M
         )
+    except EmergencyStopException:
+        raise
     except Exception:
         return False
 
@@ -3997,6 +4100,8 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
         for seq_item in sequence:
             set_active_pick_item(seq_item, 1, 1)
             execute_one_pick_cycle(seq_item, 1, 1)
+    except EmergencyStopException:
+        raise
     except Exception as e:
         if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("error", str(e))
@@ -4201,6 +4306,8 @@ def run_mcp_relocate_object(
         # and we do not want to allocate placement-box space for a workspace relocation.
         set_active_pick_item(sequence[0], 1, 1)
         execute_one_pick_cycle(sequence[0], 1, 1)
+    except EmergencyStopException:
+        raise
     except Exception as e:
         if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("error", str(e))
