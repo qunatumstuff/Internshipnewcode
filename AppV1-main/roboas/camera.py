@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 import threading
 import base64
 import time
+import requests
 # Unused leftover imports (inference, vision) removed
 
 # -----------------------------------------------------------------------------
@@ -48,6 +49,7 @@ mcp = FastMCP("TIEFA_Module_B_Vision")
 model=YOLO("best (12).pt")
 segment=YOLO("best (11).pt")
 obb_discontinuity=YOLO("best (14).pt")
+safety_model=YOLO("yolov8n.pt") # Standard COCO model for person detection
 
 # -----------------------------------------------------------------------------
 # 2. MCP Tools Definition (Exposed to System 2 / ZBook)
@@ -191,6 +193,24 @@ def _vision_loop_inner():
                 with inference_lock:
                     results = model(color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35)
                     segmentation_results = segment(color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35)
+
+            # Safety Mode: Check for humans periodically (every 10th frame)
+            if frame_counter % 10 == 0:
+                with inference_lock:
+                    safety_results = safety_model(color_image, verbose=False, classes=[0], conf=0.6)
+                for r in safety_results:
+                    if len(r.boxes) > 0:
+                        # Person detected! Send async trigger.
+                        def trigger_safety():
+                            try:
+                                requests.post("http://localhost:3000/trigger-safety-stop", timeout=1)
+                            except:
+                                pass
+                        threading.Thread(target=trigger_safety).start()
+                        # Draw warning on frame
+                        cv2.putText(color_image, "HUMAN DETECTED - SAFETY TRIPPED", (50, 50), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+                        break
 
             current_boxes = []
 

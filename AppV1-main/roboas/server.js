@@ -45,6 +45,7 @@ let robotTaskQueue = [];
 let isRobotBusy = false;
 let globalQueueUpdateTrigger = null; // Callback for SSE updates
 const activeDebugConnections = [];
+let isSafetyModeActive = false;
 
 function broadcastDebugEvent(type, data) {
   const payload = JSON.stringify({ type, data }) + '\n\n';
@@ -646,6 +647,7 @@ async function processRobotQueue() {
       }
     }
     else if (name === "clear_emergency_stop") {
+      isSafetyModeActive = false; // Auto-disable
       sendProgress("Clearing emergency stop...");
       if (robotMcpClient) await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: args });
       sendProgress("Emergency stop cleared successfully.");
@@ -1216,6 +1218,19 @@ app.post('/ask-gpt', async (req, res) => {
   try {
     let visualContext = "";
     const lowerQuestion = question.toLowerCase();
+    
+    // === SAFETY MODE VOICE INTERCEPTS ===
+    if (lowerQuestion.includes("turn on safety mode") || lowerQuestion.includes("activate safety mode") || lowerQuestion.includes("enable safety mode")) {
+      isSafetyModeActive = true;
+      sendProgress("Safety Mode Activated.", false);
+      return res.json({ success: true, answer: "Safety mode has been turned on. I am now watching for humans." });
+    }
+    if (lowerQuestion.includes("turn off safety mode") || lowerQuestion.includes("disable safety mode") || lowerQuestion.includes("deactivate safety mode")) {
+      isSafetyModeActive = false;
+      sendProgress("Safety Mode Deactivated.", false);
+      return res.json({ success: true, answer: "Safety mode has been turned off." });
+    }
+
     const isVisualQuery = lowerQuestion.includes("what") || lowerQuestion.includes("how");
 
     if (visionMcpClient && isVisualQuery) {
@@ -1892,6 +1907,37 @@ app.get('/current-pdf', (req, res) => {
   });
 });
 
+// Safety Mode Endpoint (Triggered by vision system when human detected)
+app.post('/trigger-safety-stop', async (req, res) => {
+  if (isSafetyModeActive) {
+    console.log("🛑 SAFETY MODE TRIGGERED: HUMAN DETECTED!");
+    try {
+      if (robotMcpClient) {
+        await robotMcpClient.callTool({ name: "emergency_stop", arguments: {} });
+        sendProgress("Safety Mode Activated! Human detected.", false);
+        // Do not auto-disable safety mode here; it will be disabled when e-stop is cleared
+      }
+    } catch (err) {
+      console.error("Error triggering safety stop:", err.message);
+    }
+  }
+  res.sendStatus(200);
+});
+
+app.get('/get-safety-mode', (req, res) => {
+  res.json({ isSafetyModeActive });
+});
+
+// Settings Endpoints
+app.get('/settings', (req, res) => {
+  if (!currentPdfPath || !fs.existsSync(currentPdfPath)) {
+    return res.status(404).json({ success: false, message: 'No PDF available.' });
+  }
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${currentPdfName}"`);
+  res.sendFile(currentPdfPath);
+});
+
 // Get raw PDF file
 app.get('/get-pdf', (req, res) => {
   if (!currentPdfPath || !fs.existsSync(currentPdfPath)) {
@@ -2063,6 +2109,8 @@ app.all('/return-home', async (req, res) => {
 
 // Clear Emergency Stop Latch
 app.post('/clear-emergency-stop', async (req, res) => {
+  console.log("🟢 CLEARING EMERGENCY STOP VIA UI");
+  isSafetyModeActive = false; // Auto-disable safety mode when e-stop is cleared
   if (robotMcpClient) {
     try {
       const result = await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: {} });
