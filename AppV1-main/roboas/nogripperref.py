@@ -115,6 +115,7 @@ import threading
 
 # --- PROTECTIVE STOP SAFETY OVERRIDES ---
 import threading
+STARTUP_LOCKED = True
 EMERGENCY_STOP_ACTIVE = False
 STOP_EVENT = threading.Event()
 
@@ -122,6 +123,8 @@ class EmergencyStopException(Exception):
     pass
 
 def check_safety():
+    if STARTUP_LOCKED:
+        raise EmergencyStopException("System is locked pending startup confirmation. Please clear startup lock.")
     if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
         raise EmergencyStopException("Emergency Stop Active! Halting execution.")
 
@@ -792,7 +795,13 @@ def get_object_grip_label(selected_object=None):
         return str(obj.get("label", obj.get("name", ""))).strip().lower()
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         return ""
 
 
@@ -885,7 +894,13 @@ def _call_gripper_function(function_name, params=None):
         return r.execute_external_device_function(PROCESS_FILE, function_name, params or {})
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception as e:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         print(f"[Gripper ERROR] '{function_name}' failed: {e}")
         raise
 
@@ -929,7 +944,13 @@ def wait_gripper_done(timeout=10, target_percent=None, tolerance=3):
                 return True
         except EmergencyStopException:
             raise
+        except EmergencyStopException:
+            raise
         except Exception as e:
+            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+                raise EmergencyStopException("Motion interrupted by Emergency Stop")
+            if STARTUP_LOCKED:
+                raise EmergencyStopException("System is locked pending startup confirmation.")
             print(f"[Gripper WARN] Status read failed: {e}")
 
         time.sleep(0.2)
@@ -952,7 +973,13 @@ def gripper_startup():
         _call_gripper_function("Init")
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception as e:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         print(f"[Gripper] Init call failed or unsupported, continuing anyway: {e}")
     time.sleep(0.3)
 
@@ -1091,7 +1118,13 @@ def gripper_grip_object_plain(object_width_m):
         return status == "grip detected"
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception as e:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         print(f"[Grip WARNING] GraspWorkpiece did not confirm contact: {e}")
         try:
             r.reset_errors()
@@ -1102,7 +1135,13 @@ def gripper_grip_object_plain(object_width_m):
 
         except EmergencyStopException:
             raise
+        except EmergencyStopException:
+            raise
         except Exception as reset_e:
+            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+                raise EmergencyStopException("Motion interrupted by Emergency Stop")
+            if STARTUP_LOCKED:
+                raise EmergencyStopException("System is locked pending startup confirmation.")
             print(f"[Grip WARNING] Full recovery failed partway through: {reset_e}")
         return False
 
@@ -1455,7 +1494,13 @@ def get_current_jaw_width_m():
         internal_opening = percent_to_opening_m(CURRENT_GRIPPER_PERCENT)
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         internal_opening = percent_to_opening_m(PICK_CLOSE_PERCENT) if 'PICK_CLOSE_PERCENT' in globals() else 0.020
 
     internal_opening = max(JAW_MIN_OPENING_M, min(JAW_MAX_OPENING_M, internal_opening))
@@ -1807,7 +1852,13 @@ def validate_kinematics(waypoints, label="trajectory"):
                     raise RuntimeError("IK Returned Unreachable Status")
         except EmergencyStopException:
             raise
+        except EmergencyStopException:
+            raise
         except Exception as e:
+            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+                raise EmergencyStopException("Motion interrupted by Emergency Stop")
+            if STARTUP_LOCKED:
+                raise EmergencyStopException("System is locked pending startup confirmation.")
             raise RuntimeError(
                 f"\n  {'='*62}\n"
                 f"  PRE-FLIGHT IK ABORT\n"
@@ -2621,7 +2672,13 @@ def power_off_robot():
         _MCP_ROBOT_READY = False
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception as e:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         _MCP_ROBOT_READY = False
         return
 
@@ -2662,7 +2719,13 @@ def ensure_robot_ready(r):
             time.sleep(0.2)
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         pass
 
 
@@ -2681,7 +2744,13 @@ def is_at_home(r, tol=0.01):
                 abs(c[2] - HOME_Z) < tol)
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception as e:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         return False
 
 def get_home_pose(current):
@@ -2750,7 +2819,13 @@ def mcp_return_home():
             print(f"[Gripper] Reconnected to external device: {reconnected}")
         except EmergencyStopException:
             raise
+        except EmergencyStopException:
+            raise
         except Exception as e:
+            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+                raise EmergencyStopException("Motion interrupted by Emergency Stop")
+            if STARTUP_LOCKED:
+                raise EmergencyStopException("System is locked pending startup confirmation.")
             print(f"[Gripper WARN] disconnect/reconnect cycle failed: {e}")
 
         # CRITICAL SAFETY FIX: gripper_open() is now its own try/except,
@@ -2765,14 +2840,26 @@ def mcp_return_home():
             gripper_open()
         except EmergencyStopException:
             raise
+        except EmergencyStopException:
+            raise
         except Exception as e:
+            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+                raise EmergencyStopException("Motion interrupted by Emergency Stop")
+            if STARTUP_LOCKED:
+                raise EmergencyStopException("System is locked pending startup confirmation.")
             print(f"[Gripper WARN] gripper_open() failed during return-home, "
                   f"continuing to move the arm home anyway: {e}")
 
         move_to_home_emergency(r)     # always attempt this, regardless of gripper state
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception as e:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         print(f"Error returning home: {e}")
     finally:
         MCP_INTENTIONAL_STOP = False
@@ -2804,7 +2891,13 @@ def keyboard_listener(r):
             move_to_home_emergency(r)     # then go home
         except EmergencyStopException:
             raise
+        except EmergencyStopException:
+            raise
         except Exception:
+            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+                raise EmergencyStopException("Motion interrupted by Emergency Stop")
+            if STARTUP_LOCKED:
+                raise EmergencyStopException("System is locked pending startup confirmation.")
             pass
         
         finally:
@@ -2819,7 +2912,13 @@ def keyboard_listener(r):
             move_to_home_emergency(r)
         except EmergencyStopException:
             raise
+        except EmergencyStopException:
+            raise
         except Exception:
+            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+                raise EmergencyStopException("Motion interrupted by Emergency Stop")
+            if STARTUP_LOCKED:
+                raise EmergencyStopException("System is locked pending startup confirmation.")
             pass
          # Step 2: try to recover to home — best effort, do NOT power off mid-move if this fails
         
@@ -2830,7 +2929,13 @@ def keyboard_listener(r):
             move_to_home_emergency(r)
         except EmergencyStopException:
             raise
+        except EmergencyStopException:
+            raise
         except Exception:
+            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+                raise EmergencyStopException("Motion interrupted by Emergency Stop")
+            if STARTUP_LOCKED:
+                raise EmergencyStopException("System is locked pending startup confirmation.")
             pass  # could not reach home — power off in current position
         
         # Step 3: always power off and exit
@@ -3230,7 +3335,13 @@ def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_sp
             )
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception as e:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         r.stop()
         raise
 
@@ -3257,7 +3368,13 @@ def keyboard_listener(r):
             gripper_open()
         except EmergencyStopException:
             raise
+        except EmergencyStopException:
+            raise
         except Exception as e:
+            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+                raise EmergencyStopException("Motion interrupted by Emergency Stop")
+            if STARTUP_LOCKED:
+                raise EmergencyStopException("System is locked pending startup confirmation.")
             return
         time.sleep(0.5)
         try:
@@ -3266,7 +3383,13 @@ def keyboard_listener(r):
             time.sleep(1)
         except EmergencyStopException:
             raise
+        except EmergencyStopException:
+            raise
         except Exception as e:
+            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+                raise EmergencyStopException("Motion interrupted by Emergency Stop")
+            if STARTUP_LOCKED:
+                raise EmergencyStopException("System is locked pending startup confirmation.")
             return
         move_to_home_emergency(r)
         home_busy = False
@@ -3282,8 +3405,14 @@ def keyboard_listener(r):
             move_to_home_emergency(r)
         except EmergencyStopException:
             raise
+        except EmergencyStopException:
+            raise
         except Exception as e:
-           return
+            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+                raise EmergencyStopException("Motion interrupted by Emergency Stop")
+            if STARTUP_LOCKED:
+                raise EmergencyStopException("System is locked pending startup confirmation.")
+            return
         finally:
             power_off_robot()
             sys.exit(0)
@@ -3778,7 +3907,13 @@ def _mcp_detection_inside_placement_box(det):
         )
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         return False
 
 
@@ -4102,7 +4237,13 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
             execute_one_pick_cycle(seq_item, 1, 1)
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception as e:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("error", str(e))
         if not MCP_INTENTIONAL_STOP:
@@ -4308,7 +4449,13 @@ def run_mcp_relocate_object(
         execute_one_pick_cycle(sequence[0], 1, 1)
     except EmergencyStopException:
         raise
+    except EmergencyStopException:
+        raise
     except Exception as e:
+        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
+            raise EmergencyStopException("Motion interrupted by Emergency Stop")
+        if STARTUP_LOCKED:
+            raise EmergencyStopException("System is locked pending startup confirmation.")
         if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("error", str(e))
         if not MCP_INTENTIONAL_STOP:

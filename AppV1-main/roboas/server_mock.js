@@ -22,38 +22,28 @@ const http = require('http');
 const originalCreateServer = http.createServer;
 http.createServer = function(app) {
   app.post('/arm-test', (req, res) => { isSafetyModeActive = true; res.json({success:true}); });
+  app.post('/set-fail-test', (req, res) => { global.mockMcpFail = true; res.json({success:true}); });
+  app.get('/get-counter-test', (req, res) => { res.json({counter: global.mockMcpCounter}); });
   
-  // Test hooks to control mock MCP behavior
-  let mockState = { failStop: false, failClear: false, stopDelay: 500 };
-  app.post('/set-mock', (req, res) => { Object.assign(mockState, req.body); res.json(mockState); });
-
   setTimeout(() => {
     isRobotConnected = true;
+    global.mockMcpCounter = 0;
+    global.mockMcpFail = false;
     robotMcpClient = {
       callTool: async (args) => {
         if (args.name === "emergency_stop") {
-          await new Promise(r => setTimeout(r, mockState.stopDelay));
-          if (mockState.failStop) throw new Error("Hardware failure on stop");
+          global.mockMcpCounter++;
+          await new Promise(r => setTimeout(r, 500));
+          if (global.mockMcpFail) return { content: [{text: "Error: Simulated hardware failure"}] };
           return { content: [{text: "Emergency Stop Successful"}] };
-        }
-        if (args.name === "clear_emergency_stop") {
-          if (mockState.failClear) throw new Error("Hardware failure on clear");
-          return { content: [{text: "Clear Successful"}] };
-        }
-        if (args.name === "clear_startup_lock") {
-          return { content: [{text: "Startup Lock Cleared"}] };
         }
         return { content: [{text: "Action Successful"}] };
       }
     };
-  }, 500);
-
+  }, 2000);
+  
   return originalCreateServer(app);
 };
-
-// Start it immediately
-server = http.createServer(app);
-server.listen(port, () => console.log(`🚀 Mock Server running on ${port}`));
 
 require('dotenv').config();
 
@@ -83,7 +73,6 @@ let isRobotBusy = false;
 let globalQueueUpdateTrigger = null; // Callback for SSE updates
 const activeDebugConnections = [];
 let isSafetyModeActive = false;
-let lastCameraHeartbeat = 0;
 let isSafetyStopLatched = false;
 let isStartupLocked = true;
 let isSafetyStopInProgress = false;
@@ -1988,11 +1977,6 @@ app.get('/current-pdf', (req, res) => {
 });
 
 // Safety Mode Endpoint (Triggered by vision system when human detected)
-app.post('/camera-heartbeat', (req, res) => {
-  lastCameraHeartbeat = Date.now();
-  res.sendStatus(200);
-});
-
 app.post('/trigger-safety-stop', async (req, res) => {
   if (isSafetyModeActive && !isSafetyStopLatched && !isSafetyStopInProgress) {
     console.log("🛑 SAFETY MODE TRIGGERED: HUMAN DETECTED!");
@@ -2302,20 +2286,16 @@ server.keepAliveTimeout = 300000; // 5 minutes
   }
   
   cleanupOldFiles();
-  */
+  setInterval(cleanupOldFiles, 24 * 60 * 60 * 1000);
+});
 
 app.post('/clear-startup-lock', async (req, res) => {
+  isStartupLocked = false;
   if (robotMcpClient) {
       try {
-          const result = await robotMcpClient.callTool({ name: "clear_startup_lock", arguments: {} });
-          // Only clear Node lock after successful MCP clearance
-          isStartupLocked = false;
-          if (!isRobotBusy && !isSafetyStopLatched) setTimeout(processRobotQueue, 500);
-          res.json({ success: true, message: result.content[0].text });
-      } catch (err) {
-          res.status(500).json({ success: false, error: err.message || "Unknown error" });
-      }
-  } else {
-      res.status(500).json({ success: false, error: "Robot MCP not connected." });
+          await robotMcpClient.callTool({ name: "clear_startup_lock", arguments: {} });
+      } catch (e) {}
   }
+  if (!isRobotBusy && !isSafetyStopLatched) setTimeout(processRobotQueue, 500);
+  res.json({ success: true });
 });

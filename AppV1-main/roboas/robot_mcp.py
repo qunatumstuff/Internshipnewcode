@@ -220,6 +220,11 @@ async def handle_list_tools() -> list[Tool]:
             inputSchema={"type": "object", "properties": {}}
         ),
         Tool(
+            name="clear_startup_lock",
+            description="Clear the startup lock.",
+            inputSchema={"type": "object", "properties": {}}
+        ),
+        Tool(
             name="return_home",
             description="Return home. Clears errors, ensures robot is ready, and moves to the home position safely.",
             inputSchema={"type": "object", "properties": {}}
@@ -381,6 +386,10 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             except Exception as e:
                 logger.error(f"Error during emergency stop: {e}")
                 return [TextContent(type="text", text=f"Error executing emergency stop: {str(e)}")]
+
+    if name == "clear_startup_lock":
+        robot_control.STARTUP_LOCKED = False
+        return [TextContent(type="text", text="Startup lock cleared.")]
 
     if name == "return_home":
         print("\n🏠 [VS CODE CONSOLE] RETURN HOME SIGNAL RECEIVED! Interrupting motion and returning home.\n")

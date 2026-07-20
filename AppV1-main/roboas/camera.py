@@ -5,7 +5,24 @@ import numpy as np
 import pyrealsense2 as rs
 from ultralytics import YOLO
 from mcp.server.fastmcp import FastMCP
+
 import threading
+import requests
+import time
+import os
+
+SAFETY_SERVER_URL = os.environ.get("SAFETY_SERVER_URL", "http://localhost:3000/trigger-safety-stop")
+HEARTBEAT_URL = SAFETY_SERVER_URL.replace("/trigger-safety-stop", "/camera-heartbeat")
+
+def _heartbeat_loop():
+    while True:
+        try:
+            requests.post(HEARTBEAT_URL, timeout=1)
+        except:
+            pass
+        time.sleep(2.0)
+
+threading.Thread(target=_heartbeat_loop, daemon=True).start()
 import base64
 import time
 import requests
@@ -22,7 +39,7 @@ camera_intrinsics = None
 inference_lock = threading.Lock()
 safety_request_lock = threading.Lock()
 safety_is_requesting = False
-safety_last_request_time = 0
+safety_last_request_time = 0.0
 SAFETY_SERVER_URL = os.environ.get("SAFETY_SERVER_URL", "http://localhost:3000/trigger-safety-stop")
 
 # Tweak this value to add a global Z offset (in meters) to all detected objects.
@@ -228,7 +245,8 @@ def _vision_loop_inner():
                                 finally:
                                     with safety_request_lock:
                                         safety_is_requesting = False
-                                        safety_last_request_time = time.time()
+                                        import time
+                                        safety_last_request_time = time.monotonic()
                             
                             t = threading.Thread(target=trigger_safety, args=(conf,), daemon=True)
                             t.start()

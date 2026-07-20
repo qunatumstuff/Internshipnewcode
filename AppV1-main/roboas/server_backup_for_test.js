@@ -18,43 +18,6 @@ const { SSEClientTransport } = require("@modelcontextprotocol/sdk/client/sse.js"
 const { search } = require('duck-duck-scrape');
 const WebSocket = require('ws');
 const http = require('http');
-
-const originalCreateServer = http.createServer;
-http.createServer = function(app) {
-  app.post('/arm-test', (req, res) => { isSafetyModeActive = true; res.json({success:true}); });
-  
-  // Test hooks to control mock MCP behavior
-  let mockState = { failStop: false, failClear: false, stopDelay: 500 };
-  app.post('/set-mock', (req, res) => { Object.assign(mockState, req.body); res.json(mockState); });
-
-  setTimeout(() => {
-    isRobotConnected = true;
-    robotMcpClient = {
-      callTool: async (args) => {
-        if (args.name === "emergency_stop") {
-          await new Promise(r => setTimeout(r, mockState.stopDelay));
-          if (mockState.failStop) throw new Error("Hardware failure on stop");
-          return { content: [{text: "Emergency Stop Successful"}] };
-        }
-        if (args.name === "clear_emergency_stop") {
-          if (mockState.failClear) throw new Error("Hardware failure on clear");
-          return { content: [{text: "Clear Successful"}] };
-        }
-        if (args.name === "clear_startup_lock") {
-          return { content: [{text: "Startup Lock Cleared"}] };
-        }
-        return { content: [{text: "Action Successful"}] };
-      }
-    };
-  }, 500);
-
-  return originalCreateServer(app);
-};
-
-// Start it immediately
-server = http.createServer(app);
-server.listen(port, () => console.log(`🚀 Mock Server running on ${port}`));
-
 require('dotenv').config();
 
 const WAKEWORD_WS_URL = process.env.WAKEWORD_WS_URL || 'ws://localhost:8003';
@@ -2285,7 +2248,7 @@ server.timeout = 300000; // 5 minutes
 server.headersTimeout = 300000; // 5 minutes
 server.keepAliveTimeout = 300000; // 5 minutes
 
-/*
+server.listen(port, async () => {
   console.log(`🚀 Server running at http://localhost:${port}`);
   console.log(`🔊 Client-side openWakeWord engine active (Vosk WS proxy disabled)`);
   clearPdfOnStartup(); // Always start fresh — no PDF memory between sessions
@@ -2302,7 +2265,8 @@ server.keepAliveTimeout = 300000; // 5 minutes
   }
   
   cleanupOldFiles();
-  */
+  setInterval(cleanupOldFiles, 24 * 60 * 60 * 1000);
+});
 
 app.post('/clear-startup-lock', async (req, res) => {
   if (robotMcpClient) {
