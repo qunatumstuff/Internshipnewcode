@@ -30,6 +30,7 @@ current_depth_frame = None
 camera_intrinsics = None
 inference_lock = threading.Lock()
 safety_request_lock = threading.Lock()
+frame_lock = threading.Lock()
 safety_is_requesting = False
 safety_last_request_time = 0.0
 SAFETY_SERVER_URL = os.environ.get("SAFETY_SERVER_URL", "http://localhost:3000/trigger-safety-stop")
@@ -69,6 +70,21 @@ safety_model=YOLO("yolov8n.pt") # Standard COCO model for person detection
 # -----------------------------------------------------------------------------
 
 tracked=False
+
+def get_atomic_snapshot():
+    with frame_lock:
+        try:
+            if latest_color_image is None or latest_depth_image is None:
+                return None, None, None, None
+            return (
+                latest_color_image.copy(),
+                latest_depth_image.copy(),
+                latest_depth_intrinsics,
+                current_depth_scale
+            )
+        except NameError:
+            # If variables haven't been initialized yet
+            return None, None, None, None
 
 @mcp.tool()
 def get_camera_snapshot() -> str:
@@ -222,42 +238,60 @@ def _vision_loop_inner():
             if frame_counter % 10 == 0:
                 with inference_lock:
                     safety_results = safety_model(color_image, verbose=False, classes=[0], conf=0.6)
+                
+                person_detected = False
+                max_conf = 0.0
+                
                 for r in safety_results:
                     if len(r.boxes) > 0:
-                        # Person detected!
+                        person_detected = True
                         conf = float(r.boxes.conf[0])
-                        global safety_is_requesting, safety_last_request_time
+                        max_conf = max(max_conf, conf)
                         
-                        can_request = False
-                        with safety_request_lock:
-                            now = time.monotonic()
-                            if not safety_is_requesting and (now - safety_last_request_time > 2.0):
-                                safety_is_requesting = True
-                                can_request = True
-                                
-                        if can_request:
-                            def trigger_safety(confidence):
-                                global safety_is_requesting, safety_last_request_time
-                                try:
-                                    print(f"🛑 [SAFETY] Triggering safety stop. Human confidence: {confidence:.2f}")
-                                    res = requests.post(SAFETY_SERVER_URL, json={"confidence": confidence}, timeout=2)
-                                    if res.status_code != 200:
-                                        print(f"⚠️ [SAFETY] Failed to trigger safety stop. Server returned HTTP {res.status_code}")
-                                except Exception as e:
-                                    print(f"⚠️ [SAFETY] Network error triggering safety stop: {e}")
-                                finally:
-                                    with safety_request_lock:
-                                        safety_is_requesting = False
-                                        import time
-                                        safety_last_request_time = time.monotonic()
-                            
-                            t = threading.Thread(target=trigger_safety, args=(conf,), daemon=True)
-                            t.start()
-                            
                         # Draw warning on frame
                         cv2.putText(color_image, f"HUMAN DETECTED ({conf:.2f}) - SAFETY TRIPPED", (50, 50), 
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
-                        break
+                
+                # Send Heartbeat
+                now = time.monotonic()
+                if now - last_heartbeat_time > 1.0:
+                    def send_heartbeat():
+                        try:
+                            headers = {"Authorization": f"Bearer {SAFETY_TOKEN}"}
+                            requests.post(HEARTBEAT_URL, json={"status": "alive"}, headers=headers, timeout=1.0)
+                        except Exception:
+                            pass
+                    threading.Thread(target=send_heartbeat, daemon=True).start()
+                    last_heartbeat_time = now
+
+                # Trigger safety stop if person detected
+                if person_detected:
+                    global safety_is_requesting, safety_last_request_time
+                    can_request = False
+                    with safety_request_lock:
+                        if not safety_is_requesting and (now - safety_last_request_time > 2.0):
+                            safety_is_requesting = True
+                            can_request = True
+                            
+                    if can_request:
+                        def trigger_safety(confidence):
+                            global safety_is_requesting, safety_last_request_time
+                            try:
+                                print(f"🛑 [SAFETY] Triggering safety stop. Human confidence: {confidence:.2f}")
+                                headers = {"Authorization": f"Bearer {SAFETY_TOKEN}"}
+                                res = requests.post(SAFETY_SERVER_URL, json={"confidence": confidence}, headers=headers, timeout=2)
+                                if res.status_code != 200:
+                                    print(f"⚠️ [SAFETY] Failed to trigger safety stop. Server returned HTTP {res.status_code}")
+                            except Exception as e:
+                                print(f"⚠️ [SAFETY] Network error triggering safety stop: {e}")
+                            finally:
+                                with safety_request_lock:
+                                    safety_is_requesting = False
+                                    import time
+                                    safety_last_request_time = time.monotonic()
+                        
+                        t = threading.Thread(target=trigger_safety, args=(max_conf,), daemon=True)
+                        t.start()
 
             current_boxes = []
 

@@ -119,59 +119,11 @@ MAX_PLANNING_ITERATIONS = 5
 # Qwen compares detected Z against known height
 # to determine if an object is stacked on another.
 # ==========================================
-OBJECT_CATALOGUE = {
-    "black marker": {"size": "134 x 20.53 x 20.53 mm", "height_m": 0.02053,
-                     "length_m": 0.134,   "breadth_m": 0.02053},
-    "blue cube":    {"size": "30 x 30 x 30 mm", "height_m": 0.03,
-                     "length_m": 0.03,   "breadth_m": 0.03},
-    "red cube":     {"size": "30 x 30 x 30 mm",         "height_m": 0.030,
-                     "length_m": 0.030,   "breadth_m": 0.030},
-    "green cube":   {"size": "30 x 30 x 30 mm",  "height_m": 0.03,
-                     "length_m": 0.03,   "breadth_m": 0.03},
-    "medicine":     {"size": "112 x 28 x 23 mm","height_m": 0.023,
-                     "length_m": 0.112, "breadth_m": 0.028},
-    "nut":          {"size": "34.6 x 30 x 17 mm",        "height_m": 0.017,
-                     "length_m": 0.0346,  "breadth_m": 0.030},
-    "yellow cube":  {"size": "25 x 25 x 25 mm", "height_m": 0.025,
-                     "length_m": 0.025,   "breadth_m": 0.025,},
-    "sponge":       {"size": "75 x 18 x 30 mm",    "height_m": 0.018,
-                     "length_m": 0.071, "breadth_m": 0.03,
-                     "notes": "Angled grasp configuration"},
-    "screwdriver":  {"size": "104 x 25 x 25 mm",    "height_m": 0.025,
-                     "length_m": 0.104, "breadth_m": 0.025,
-                     "notes": "Angled grasp configuration"},
-    "cube":         {"size": "30 x 30 x 30 mm", "height_m": 0.03,
-                     "length_m": 0.03,   "breadth_m": 0.03},
-    "soy milk":     {"size": "30 x 30 x 30 mm", "height_m": 0.03,
-                     "length_m": 0.03,   "breadth_m": 0.03},
-    "umbrella":     {"size": "30 x 30 x 30 mm", "height_m": 0.03,
-                     "length_m": 0.03,   "breadth_m": 0.03},
-    "wrench":       {"size": "30 x 30 x 30 mm", "height_m": 0.03,
-                     "length_m": 0.03,   "breadth_m": 0.03},
-    "hat":          {"size": "30 x 30 x 30 mm", "height_m": 0.03,
-                     "length_m": 0.03,   "breadth_m": 0.03},
-}
 
 # Grasping offsets (X, Y, Z) in meters for each object class.
 # Edit these values to fine-tune the robot's grasping position for specific objects.
 PERMA_OFFSET_X = 0.010823847
 PERMA_OFFSET_Y = -0.001782065
-GRASP_OFFSETS = {
-    "black marker": {"x": 0.0, "y": 0.0, "z": 0.0},
-    "blue cube":    {"x": 0.0, "y": 0.0, "z": 0.0},
-    "red cube":     {"x": 0.0, "y": 0.0, "z": 0.0},
-    "green cube":   {"x": 0.0, "y": 0.0, "z": 0.0},
-    "medicine":     {"x": 0.0, "y": 0.0, "z": 0.0},
-    "nut":          {"x": 0.0, "y": 0.0, "z": 0.0},
-    "yellow cube":  {"x": 0.0, "y": 0.0, "z": 0.0},
-    "sponge":       {"x": 0.0, "y": 0.0, "z": 0.0},
-    "screwdriver":  {"x": 0.0, "y": 0.0, "z": 0.0},
-    "cube":         {"x": 0.0, "y": 0.0, "z": 0.0},
-    "soy milk":     {"x": 0.0, "y": 0.0, "z": 0.0},
-    "umbrella":     {"x": 0.0, "y": 0.0, "z": 0.0},
-    "wrench":       {"x": 0.0, "y": 0.0, "z": 0.0},
-    "hat":          {"x": 0.0, "y": 0.0, "z": 0.0},
-}
 
 # Camera-to-robot base frame transformation matrix.
 # Calibrated to the physical D435i mounting position.
@@ -568,14 +520,6 @@ def run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale):
 
 
 # RealSense pipeline — shared across tool calls
-def get_realsense_depth_and_intrinsics():
-    """
-    Return the current aligned depth frame and colour intrinsics from camera.py
-    shared in-memory space.
-    """
-    return camera.current_depth_frame, camera.camera_intrinsics
-
-
 def get_current_detections():
     """
     Capture a fresh detection pass using camera.py's current RGB frame
@@ -583,17 +527,12 @@ def get_current_detections():
 
     Returns list of detection dicts, empty list on failure.
     """
-    color_image = camera.current_rgb_frame
-    if color_image is None:
-        logger.warning("No RGB frame from camera yet.")
+    color_image, depth_frame, intrinsics, depth_scale = camera.get_atomic_snapshot()
+    if color_image is None or depth_frame is None:
+        logger.warning("No valid snapshot from camera yet.")
         return []
 
-    depth_frame, intrinsics = get_realsense_depth_and_intrinsics()
-    if depth_frame is None:
-        logger.warning("No depth frame available.")
-        return []
-
-    return run_yolo_detection(color_image, depth_frame, intrinsics)
+    return run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale)
 
 
 def get_frame_as_base64():

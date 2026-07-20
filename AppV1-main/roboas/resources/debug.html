@@ -786,6 +786,7 @@
                     <option value="pick_and_place_object">🤏 Pick &amp; Place</option>
                     <option value="relocate_object">🔀 Move Out of Way</option>
                     <option value="return_home">🏠 Return Home</option>
+                    <option value="clear_startup_lock">dY"" Clear Startup Lock</option>
                     <option value="clear_emergency_stop">🔓 Clear E-Stop</option>
                 </select>
                 <select class="qt-input" id="manualTaskTarget">
@@ -1019,6 +1020,25 @@
     async function addManualTask() {
         const name   = document.getElementById('manualTaskName').value;
         const target = document.getElementById('manualTaskTarget').value.trim();
+        
+        if (name === 'clear_emergency_stop') {
+            await fetch('/clear-emergency-stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ manual_confirmed: true })
+            });
+            return;
+        }
+        
+        if (name === 'clear_startup_lock') {
+            await fetch('/clear-startup-lock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ manual_confirmed: true })
+            });
+            return;
+        }
+
         const task   = { name, args:{}, question:'Manual entry from monitor' };
         if (name === 'locate_object')         task.args.target_name   = target;
         if (name === 'pick_and_place_object') task.args.object_name   = target;
