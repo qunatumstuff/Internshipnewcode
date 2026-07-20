@@ -159,8 +159,8 @@ GRIPPER_SAFETY_LENGTH = 0.000
 #    Z-height is fixed (a parallel 2-finger gripper's fingertips do not
 #    move up/down as it opens, only side to side).
 
-PICK_OFFSET_X_M = -0.002    # +10mm in X
-PICK_OFFSET_Y_M = -0.009   # -10mm in Y
+PICK_OFFSET_X_M = 0    # 0mm in X
+PICK_OFFSET_Y_M = 0   # -0mm in Y
 
 # --- FLANGE (Quick Changer) ---
 FLANGE_DIAMETER_M = 0.071          # 71 mm, datasheet-confirmed Quick Changer diameter
@@ -349,6 +349,7 @@ OBJECT_CATALOGUE = {
         "breadth_m": 0.028,
         "height_m": 0.023,
         "object_orientation_deg": 90.0,
+        "grasp_offset_z_m": -0.005,
         "preferred_grasp_angle_deg": 0.0,
         "description": "Medicine",
     },
@@ -379,7 +380,7 @@ OBJECT_CATALOGUE = {
 
     # Grasping info
     "grasp_width_m": 0.0181,        # narrower midpoint grasp area
-    "grasp_offset_m": 0.0,          # start with centre grasp
+    "grasp_offset_z_m": 0.006,          # start with centre grasp
     "preferred_grasp_region": "middle",
     "object_orientation_deg": 90.0,
     "preferred_grasp_angle_deg": 0.0,
@@ -1289,7 +1290,7 @@ PLACED_OBJECTS = []
 # =================================================================
 HOME_X  = 0.419999
 HOME_Y  = 0.0
-HOME_Z  = 0.442998
+HOME_Z  = 0.48
 
 HOME_RX = 179.93608
 HOME_RY = 0.04243

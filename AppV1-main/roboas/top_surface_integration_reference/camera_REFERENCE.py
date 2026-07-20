@@ -18,7 +18,9 @@ current_target_class = None  # e.g., "cup", "bottle", "apple"
 latest_3d_coords = {"x": 0.0, "y": 0.0, "z": 0.0}
 current_depth_frame = None
 camera_intrinsics = None
+current_depth_scale = 0.001  # metres per raw depth unit; updated on pipeline start
 inference_lock = threading.Lock()
+frame_lock = threading.Lock()
 
 # Tweak this value to add a global Z offset (in meters) to all detected objects.
 # E.g., setting it to 0.02 will raise the target pick point by 2 cm.
@@ -138,7 +140,7 @@ def get_median_depth(depth_frame, cx, cy, radius=4):
 
 
 def _vision_loop_inner():
-    global current_rgb_frame, current_target_class, latest_3d_coords, last_click, spatial_coords, current_depth_frame, camera_intrinsics
+    global current_rgb_frame, current_target_class, latest_3d_coords, last_click, spatial_coords, current_depth_frame, camera_intrinsics, current_depth_scale
     # Configure Intel RealSense pipeline
     pipeline = rs.pipeline()
     config = rs.config()
@@ -159,6 +161,7 @@ def _vision_loop_inner():
     depth_table=advanced_mode.get_depth_table()
     depth_table.disparityShift=20
     depth_scale = depth_sensor.get_depth_scale()
+    current_depth_scale = depth_scale  # expose for vision_mcp.py
     intrinsics = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
     camera_intrinsics = intrinsics
 
@@ -183,8 +186,9 @@ def _vision_loop_inner():
 
             # Convert images to numpy arrays
             color_image = np.asanyarray(color_frame.get_data())
-            current_rgb_frame = color_image.copy() # Update global state for MCP snapshot
-            current_depth_frame = depth_frame
+            with frame_lock:
+                current_rgb_frame = color_image.copy() # Update global state for MCP snapshot
+                current_depth_frame = depth_frame
 
             # Run inference every 4th frame to conserve GPU/VRAM resources for Qwen/Ollama
             if frame_counter % 4 == 0:
@@ -295,12 +299,11 @@ def _vision_loop_inner():
                             # Only update latest_3d_coords for the selected target
                             if is_target:
                                 CAM_TO_ROBOT_T = np.array([
-                                    [0.7389493262, 0.5903177251, -0.3247751171, 0.7326856827],
-                                    [0.6725179732, -0.6755053173, 0.3023444095, -0.4961713772],
-                                    [-0.0272403049, -0.4667249144, -0.8845155980, 0.8220003503],
+                                    [0.7328061018, 0.6121545059, -0.2970893437, 0.7217746900],
+                                    [0.6799624012, -0.6424940804, 0.3533447178, -0.4958178639],
+                                    [-0.0349166256, -0.4652557478, -0.8865538354, 0.8232286668],
                                     [0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000],
-                                ], dtype=np.float64)
-
+                                    ], dtype=np.float64)
 
                                 distance = get_median_depth(depth_frame, center_x, center_y, radius=4)
                                 if distance is not None and distance > 0:
@@ -353,10 +356,31 @@ def _vision_loop_inner():
                         2
                     )
 
-                    # Red centre dot at OBB centre
                     obb_cx = int(obb.xywhr[0][0])
                     obb_cy = int(obb.xywhr[0][1])
-                    cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
+
+                    if is_target:
+                        height, width, _ = color_image.shape
+                        xmin = min(x1, x2, x3, x4)
+                        xmax = max(x1, x2, x3, x4)
+                        ymin = min(y1, y2, y3, y4)
+                        ymax = max(y1, y2, y3, y4)
+
+                        xmin = max(0, xmin)
+                        xmax = min(width, xmax)
+                        ymin = max(0, ymin)
+                        ymax = min(height, ymax)
+
+                        cropped = color_image[ymin:ymax, xmin:xmax]
+                        if cropped.size > 0:
+                            cropped_color_image = cv2.resize(cropped, (width, height))
+                            cv2.circle(cropped_color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
+                            color_image = cropped_color_image.copy()
+                        else:
+                            cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
+                    else:
+                        # Red centre dot at OBB centre for non-targets
+                        cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
 
                     cv2.putText(
                         color_image,
