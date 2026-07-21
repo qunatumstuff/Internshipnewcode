@@ -3119,6 +3119,7 @@ def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_sp
     apply_rotation_acceleration = ROTATION_ACCELERATION
     
     try:
+        print(f"[Motion] Starting execute_trajectory: '{label}' with {len(full_path)} waypoints...")
         r.move_linear(
             speed=apply_speed,
             acceleration=apply_acceleration,
@@ -3131,7 +3132,9 @@ def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_sp
             controller_parameters={"control_mode": "position"},
             target_pose=trajectory,
             )
+        print(f"[Motion] Finished execute_trajectory: '{label}'")
     except Exception as e:
+        print(f"[Motion] FAILED execute_trajectory '{label}': {e}")
         r.stop()
         raise
 
@@ -3973,6 +3976,13 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
     try:
         if AUTO_MCP_ROBOT_STARTUP:
             mcp_robot_startup_once()
+
+        # Proactively clear any lingering controller errors (e.g. [3104]) 
+        # and ensure automatic mode before starting the pick sequence.
+        import time
+        r.reset_errors()
+        time.sleep(0.1)
+        r.switch_to_automatic_mode()
 
         sequence = mcp_build_pick_sequence(
             target_object_name=object_name,

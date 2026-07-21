@@ -708,17 +708,38 @@ async function processRobotQueue() {
         console.log("🏠 Sending arm home before camera snapshot...");
         sendProgress("Moving arm to home position for a clear camera view...", true);
         try {
+          console.log("[DEBUG] Calling return_home...");
           const homeRes = await robotMcpClient.callTool({ name: "return_home", arguments: {} });
+          console.log("[DEBUG] return_home succeeded.");
           if (global._taskAborted) throw new Error("Task cancelled by user.");
           if (homeRes.content && homeRes.content[0].text.toLowerCase().startsWith("error")) throw new Error(homeRes.content[0].text);
+        } catch (err) {
+          console.error(`[DEBUG] return_home FAILED: ${err.message}`);
+          throw err;
         } finally {
-          try { await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} }); } catch(e) {}
+          try { 
+            console.log("[DEBUG] Calling clear_return_home...");
+            await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} }); 
+            console.log("[DEBUG] clear_return_home succeeded.");
+          } catch(e) {
+            console.error(`[DEBUG] clear_return_home FAILED: ${e.message}`);
+          }
         }
         await new Promise(r => setTimeout(r, 1000));
       }
       
       if (global._taskAborted) throw new Error("Task cancelled by user.");
-      const scanRes = await visionMcpClient.callTool({ name: "locate_object", arguments: { target_name: args.target_name } }, undefined, { timeout: 900000 });
+      
+      console.log(`[DEBUG] Calling locate_object with target_name: '${args.target_name}'`);
+      let scanRes;
+      try {
+        scanRes = await visionMcpClient.callTool({ name: "locate_object", arguments: { target_name: args.target_name } }, undefined, { timeout: 900000 });
+        console.log("[DEBUG] locate_object succeeded.");
+      } catch (err) {
+        console.error(`[DEBUG] locate_object FAILED: ${err.message}`);
+        throw err;
+      }
+
       if (global._taskAborted) throw new Error("Task cancelled by user.");
       const parsed = JSON.parse(scanRes.content[0].text);
       if (parsed.status === "ALREADY_PLACED") {
