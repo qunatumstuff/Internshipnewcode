@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const cors = require('cors');
@@ -56,7 +56,7 @@ const activeDebugConnections = [];
 let isSafetyModeActive = false;
 let lastCameraHeartbeat = 0;
 let isSafetyStopLatched = false;
-let isStartupLocked = true;
+let isStartupLocked = false;
 let isSafetyStopInProgress = false;
 let lastSafetyStopError = null;
 let activeRobotWaiter = null;
@@ -99,9 +99,11 @@ async function requestEmergencyStop(source, reason) {
         if (!text || text.toLowerCase().startsWith("error")) {
           lastSafetyStopError = text || "No response content from Robot MCP";
           console.error(`🛑 Safety Stop Failed (${source}): ${lastSafetyStopError}`);
+          sendProgress("Emergency Stop Failed", false, "Emergency stop failed to activate on the robot.");
         } else {
           lastSafetyStopError = null;
           console.log(`🛑 Safety Stop Success (${source})`);
+          sendProgress("Emergency Stop Activated", false, "Emergency stop activated. All operations halted.");
         }
       } catch (e) {
         lastSafetyStopError = e.message;
@@ -655,7 +657,14 @@ app.post('/python-log', (req, res) => {
 
 // === Robot Task Queue Processor ===
 async function processRobotQueue() {
-  if (isRobotBusy || robotTaskQueue.length === 0 || isSafetyStopLatched || isSafetyStopInProgress || isStartupLocked) return;
+  if (isRobotBusy || robotTaskQueue.length === 0) return;
+  if (isSafetyStopLatched || isSafetyStopInProgress || isStartupLocked) {
+    const lockType = isStartupLocked ? "startup lock" : "safety stop";
+    sendProgress("Safety System Active", false, `I cannot execute that task because the ${lockType} is currently active. Please clear the lock on your screen first.`);
+    robotTaskQueue = [];
+    broadcastQueueUpdate();
+    return;
+  }
   isRobotBusy = true;
   broadcastQueueUpdate();
 
@@ -2232,6 +2241,7 @@ app.post('/clear-emergency-stop', async (req, res) => {
   isSafetyStopLatched = false;
   lastSafetyStopError = null;
   isSafetyModeActive = false; // Disarmed
+  sendProgress("Emergency Stop Cleared", false, "Emergency stop cleared. Systems are ready.");
   res.json({ success: true, message: "Emergency stop cleared" });
 });
 
@@ -2367,5 +2377,6 @@ app.post('/clear-startup-lock', async (req, res) => {
   }
 
   isStartupLocked = false;
+  sendProgress("Startup Lock Cleared", false, "Startup safety lock cleared. The system is fully operational.");
   res.json({ success: true, message: "Startup lock cleared" });
 });

@@ -338,8 +338,7 @@ def _vision_loop_inner():
                             x, y, w, h = cv2.boundingRect(largest_contour)
                             seg_cx, seg_cy = x + w // 2, y + h // 2
 
-                        # Red centre dot from moments
-                        cv2.circle(color_image, (seg_cx, seg_cy), 5, (0, 0, 255), -1)
+                        # Hideous red dot removed!
 
                         x, y, w, h = cv2.boundingRect(largest_contour)
                         cv2.putText(
@@ -385,7 +384,7 @@ def _vision_loop_inner():
 
                             cv2.rectangle(color_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
                             # Red centre dot
-                            cv2.circle(color_image, (center_x, center_y), 5, (0, 0, 255), -1)
+                            cv2.circle(color_image, (center_x, center_y), 2, (0, 0, 255), -1)
                             cv2.putText(
                                 color_image,
                                 f"{cls_name} FALLBACK {confidence:.2f}",
@@ -460,7 +459,39 @@ def _vision_loop_inner():
                     # Red centre dot at OBB centre
                     obb_cx = int(obb.xywhr[0][0])
                     obb_cy = int(obb.xywhr[0][1])
-                    cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
+
+                    # 4-Corner Linear Interpolation Override for Visuals
+                    try:
+                        corners = obb.xyxyxyxy[0].cpu().numpy()
+                        if len(corners) == 4:
+                            corners_sorted_y = sorted(corners, key=lambda x: x[1])
+                            top = corners_sorted_y[:2]
+                            bottom = corners_sorted_y[2:]
+                            
+                            top_left = top[0] if top[0][0] < top[1][0] else top[1]
+                            top_right = top[1] if top[0][0] < top[1][0] else top[0]
+                            
+                            bottom_left = bottom[0] if bottom[0][0] < bottom[1][0] else bottom[1]
+                            bottom_right = bottom[1] if bottom[0][0] < bottom[1][0] else bottom[0]
+                            
+                            c010 = (top_left[0] + 0.77 * (bottom_left[0] - top_left[0]), top_left[1] + 0.77 * (bottom_left[1] - top_left[1]))
+                            c110 = (top_right[0] + 0.77 * (bottom_right[0] - top_right[0]), top_right[1] + 0.77 * (bottom_right[1] - top_right[1]))
+                            
+                            center_top = np.mean([c010, c110, top_right, top_left], axis=0)
+                            obb_cx = int(center_top[0])
+                            obb_cy = int(center_top[1])
+                            
+                            # Draw the 4-point polygon to match user's custom script
+                            cv2.polylines(color_image, np.array([c010, c110, top_right, top_left], dtype=np.int32).reshape((-1, 1, 2)), True, (0, 255, 0), 2)
+                            
+                            # Draw the 4 corners explicitly as small blue dots
+                            for pt in [c010, c110, top_right, top_left]:
+                                cv2.circle(color_image, (int(pt[0]), int(pt[1])), 2, (255, 0, 0), -1)
+                    except Exception as e:
+                        pass # fallback to original center
+
+                    # Draw the final calculated center (either interpolated or raw fallback) as a small red dot
+                    cv2.circle(color_image, (obb_cx, obb_cy), 2, (0, 0, 255), -1)
 
                     cv2.putText(
                         color_image,

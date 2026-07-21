@@ -116,7 +116,7 @@ import threading
 
 # --- PROTECTIVE STOP SAFETY OVERRIDES ---
 import threading
-STARTUP_LOCKED = True
+STARTUP_LOCKED = False
 EMERGENCY_STOP_ACTIVE = False
 STOP_EVENT = threading.Event()
 
@@ -623,12 +623,13 @@ def select_object_profile_by_name(object_name):
         case _:
             target_labels = {name}
 
-    for obj in OBJECT_CATALOGUE.values():
-        label = str(obj.get("label", "")).strip().lower()
-        display = str(obj.get("name", "")).strip().lower()
-
-        if label in target_labels or display in target_labels:
-            return dict(obj)
+    for key, obj in OBJECT_CATALOGUE.items():
+        key_lower = key.strip().lower()
+        if key_lower in target_labels:
+            res = dict(obj)
+            res["name"] = key
+            res["label"] = key
+            return res
 
     raise ValueError(f"Unsupported MCP object_name: {object_name!r}")
 
@@ -1018,7 +1019,7 @@ def gripper_grip_object_plain(object_width_m):
                 raise EmergencyStopException("Motion interrupted by protective stop") from e
             if STARTUP_LOCKED:
                 raise EmergencyStopException("System is locked pending startup confirmation.") from e
-            print(f"[Grip WARNING] Full recovery failed partway through: {reset_e}")
+            print(f"[Grip WARNING] Full recovery failed partway through: {e}")
         return False
 
 

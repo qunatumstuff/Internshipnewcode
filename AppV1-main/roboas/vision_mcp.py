@@ -327,9 +327,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale):
             if cls_name not in obb_angles or conf > obb_angles[cls_name]["conf"]:
                 obb_angles[cls_name] = {"angle_rad": angle_rad, "conf": conf}
 
-            # Pipe and sponge: keep angle only, position comes from segmentation
-            if cls_name in ("pipe", "sponge"):
-                continue
+            # (Removed pipe and sponge skip so they are processed by OBB)
 
             cx_px = float(obb.xywhr[0][0])
             cy_px = float(obb.xywhr[0][1])
@@ -1727,6 +1725,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                                 logger.warning(f"QWEN FAILSAFE OVERRIDE: Target '{target}' Z is anomalously high (+{excess*1000:.0f}mm) and '{best_obstacle}' has higher Z. Forcing relocate.")
                                 plan = {
                                     "next_action": "relocate",
+                                    "target_id": plan.get("target_id"),
                                     "obstacle_name": best_obstacle,
                                     "reasoning": f"Depth sensor failsafe: '{best_obstacle}' has higher Z than target '{target}', indicating it is on top.",
                                     "raw_output": plan.get("raw_output", "") + f"\n\n(OVERRIDDEN BY DEPTH SENSOR FAILSAFE: Relocating {best_obstacle})"
@@ -1764,6 +1763,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                             logger.warning(f"QWEN FAILSAFE OVERRIDE: '{overlapping_obstacle}' overlaps with target AND has higher Z. Forcing relocate.")
                             plan = {
                                 "next_action": "relocate",
+                                "target_id": plan.get("target_id"),
                                 "obstacle_name": overlapping_obstacle,
                                 "reasoning": f"XY overlap failsafe: '{overlapping_obstacle}' overlaps with target '{target}' and has higher Z — it is on top, requiring relocation.",
                                 "raw_output": plan.get("raw_output", "") + f"\n\n(OVERRIDDEN BY XY OVERLAP FAILSAFE: Relocating {overlapping_obstacle})"
