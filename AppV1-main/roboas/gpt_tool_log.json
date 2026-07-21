@@ -1,164 +1,5 @@
 [
   {
-    "timestamp": "2026-07-20T03:47:08.899Z",
-    "userQuestion": "Yeah, so you see that's the weak point right there...",
-    "toolName": "ask-gpt_response",
-    "args": {
-      "persona": "john",
-      "emoji": "🤖"
-    },
-    "result": "What would you like me to ask him?"
-  },
-  {
-    "timestamp": "2026-07-20T03:47:08.952Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "What would you like me to ask him?"
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:10.761Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "What would you like me to ask him?",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:20.204Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "Hey"
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:21.675Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "Hey",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:27.235Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_request",
-    "args": {
-      "size": 51161,
-      "mimetype": "audio/webm"
-    },
-    "result": "Transcription request received."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:28.811Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_success",
-    "args": {},
-    "result": "Transcription result: \"What is the tallest building in Singapore?\""
-  },
-  {
-    "timestamp": "2026-07-20T03:47:28.859Z",
-    "userQuestion": "What is the tallest building in Singapore?",
-    "toolName": "ask-gpt_prompt",
-    "args": {},
-    "result": "GPT request received."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:30.046Z",
-    "userQuestion": "What is the tallest building in Singapore?",
-    "toolName": "search_web",
-    "args": {
-      "query": "tallest building in Singapore"
-    },
-    "result": "Searching web..."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:30.053Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": "Searching the web for \"tallest building in Singapore\"...",
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:31.706Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-07-20T03:47:31.714Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:31.727Z",
-    "userQuestion": "What is the tallest building in Singapore?",
-    "toolName": "ask-gpt_response",
-    "args": {
-      "persona": "john",
-      "emoji": "🤖"
-    },
-    "result": "The tallest building in Singapore is Guoco Tower, which stands at 290 meters."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:31.865Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "The tallest building in Singapore is Guoco Tower, which stands at 290 meters."
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:34.081Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "The tallest building in Singapore is Guoco Tower, which stands at 290 meters.",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-07-20T03:48:04.381Z",
-    "userQuestion": "System Sync",
-    "toolName": "switch_avatar",
-    "args": {
-      "persona": "linda"
-    },
-    "result": "switched to linda via Remote Control"
-  },
-  {
-    "timestamp": "2026-07-20T03:48:04.498Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "Hi! I'm Linda, your robotic assistant. How can I help you today?"
-    },
-    "result": "Generating TTS..."
-  },
-  {
     "timestamp": "2026-07-20T03:48:07.545Z",
     "userQuestion": "System Event",
     "toolName": "tts_success",
@@ -450,5 +291,161 @@
     "toolName": "ask-gpt_prompt",
     "args": {},
     "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-07-21T02:15:01.900Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-07-21T02:15:01.914Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-07-21T02:15:01.921Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "idle"
+    },
+    "result": "updated to 🤗"
+  },
+  {
+    "timestamp": "2026-07-21T02:15:02.324Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-21T02:15:04.277Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-07-21T02:15:14.961Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "Hey"
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-21T02:15:15.900Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "Hey",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
+  },
+  {
+    "timestamp": "2026-07-21T02:15:21.707Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_request",
+    "args": {
+      "size": 51555,
+      "mimetype": "audio/webm"
+    },
+    "result": "Transcription request received."
+  },
+  {
+    "timestamp": "2026-07-21T02:15:25.266Z",
+    "userQuestion": "System Event",
+    "toolName": "transcribe_success",
+    "args": {},
+    "result": "Transcription result: \"Blue cube, John. Blue cube.\""
+  },
+  {
+    "timestamp": "2026-07-21T02:15:25.301Z",
+    "userQuestion": "Blue cube, John. Blue cube.",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-07-21T02:15:26.844Z",
+    "userQuestion": "System Command",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-07-21T02:15:26.849Z",
+    "userQuestion": "Blue cube, John. Blue cube.",
+    "toolName": "switch_avatar",
+    "args": {
+      "persona": "john"
+    },
+    "result": "switched to john"
+  },
+  {
+    "timestamp": "2026-07-21T02:15:35.453Z",
+    "userQuestion": "System Status",
+    "toolName": "get_status_emoji",
+    "args": {
+      "state": "answering"
+    },
+    "result": "updated to 🤖"
+  },
+  {
+    "timestamp": "2026-07-21T02:15:35.459Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": null,
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-07-21T02:15:35.477Z",
+    "userQuestion": "Blue cube, John. Blue cube.",
+    "toolName": "ask-gpt_response",
+    "args": {
+      "persona": "john",
+      "emoji": "🤖"
+    },
+    "result": "On it."
+  },
+  {
+    "timestamp": "2026-07-21T02:15:35.580Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_request",
+    "args": {
+      "text": "On it."
+    },
+    "result": "Generating TTS..."
+  },
+  {
+    "timestamp": "2026-07-21T02:15:36.830Z",
+    "userQuestion": "System Event",
+    "toolName": "tts_success",
+    "args": {
+      "text": "On it.",
+      "attempt": 1
+    },
+    "result": "OpenAI TTS generated successfully."
   }
 ]

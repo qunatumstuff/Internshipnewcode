@@ -1,3 +1,6 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 import threading
 import urllib.request as _urllib_req
@@ -98,7 +101,7 @@ def send_robot_event(event_type, error_msg=None):
 
 # Register the callback in the robot control module
 robot_control.ROBOT_EVENT_TOKEN = os.environ.get("ROBOT_EVENT_TOKEN")
-if not ROBOT_EVENT_TOKEN:
+if not robot_control.ROBOT_EVENT_TOKEN:
     logger.warning("Warning: ROBOT_EVENT_TOKEN is not set.")
 
 def send_robot_event_secure(event_type, error_msg=None):
@@ -116,8 +119,8 @@ def send_robot_event_secure(event_type, error_msg=None):
     try:
         data = json.dumps(payload).encode("utf-8")
         headers = {"Content-Type": "application/json"}
-        if ROBOT_EVENT_TOKEN:
-            headers["Authorization"] = f"Bearer {ROBOT_EVENT_TOKEN}"
+        if robot_control.ROBOT_EVENT_TOKEN:
+            headers["Authorization"] = f"Bearer {robot_control.ROBOT_EVENT_TOKEN}"
         req = urllib.request.Request(url, data=data, headers=headers)
         with urllib.request.urlopen(req, timeout=3) as response:
             logger.info(f"Event sent successfully, response status: {response.status}")

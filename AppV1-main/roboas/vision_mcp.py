@@ -336,33 +336,36 @@ def run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale):
             w_px  = float(obb.xywhr[0][2])
             h_px  = float(obb.xywhr[0][3])
 
+            # 4-Corner Linear Interpolation Override
+            try:
+                import numpy as np
+                corners = obb.xyxyxyxy[0].cpu().numpy()
+                if len(corners) == 4:
+                    # Sort corners by Y (to find top and bottom)
+                    corners_sorted_y = sorted(corners, key=lambda x: x[1])
+                    top = corners_sorted_y[:2]
+                    bottom = corners_sorted_y[2:]
+                    
+                    # Sort top and bottom by X to get left/right
+                    top_left = top[0] if top[0][0] < top[1][0] else top[1]
+                    top_right = top[1] if top[0][0] < top[1][0] else top[0]
+                    
+                    bottom_left = bottom[0] if bottom[0][0] < bottom[1][0] else bottom[1]
+                    bottom_right = bottom[1] if bottom[0][0] < bottom[1][0] else bottom[0]
+                    
+                    # 0.77 heuristic interpolation
+                    c010 = (top_left[0] + 0.77 * (bottom_left[0] - top_left[0]), top_left[1] + 0.77 * (bottom_left[1] - top_left[1]))
+                    c110 = (top_right[0] + 0.77 * (bottom_right[0] - top_right[0]), top_right[1] + 0.77 * (bottom_right[1] - top_right[1]))
+                    
+                    center_top = np.mean([c010, c110, top_right, top_left], axis=0)
+                    cx_px = float(center_top[0])
+                    cy_px = float(center_top[1])
+            except Exception as e:
+                pass # fallback to original cx_px, cy_px
+
             coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, depth_scale, cls_name=cls_name)
             if coords is None:
                 continue
-
-            # TSR Integration
-            try:
-                from top_surface_refinement import refine_top_surface_center, FLAT_TOP_CLASSES
-                corners_float = obb.xyxyxyxy[0].cpu().numpy().tolist()
-                
-                if cls_name in FLAT_TOP_CLASSES:
-                    cat_entry = OBJECT_CATALOGUE.get(cls_name, {})
-                    refined = refine_top_surface_center(
-                        class_name=cls_name,
-                        obb_corners=corners_float,
-                        image_shape=color_image.shape,
-                        depth_image=np.asanyarray(depth_frame), # depth_frame is now a numpy array from atomic snapshot
-                        depth_scale=depth_scale,
-                        intrinsics=intrinsics,
-                        cam_to_robot_t=CAM_TO_ROBOT_T,
-                        expected_height_m=cat_entry.get("height_m", 0.0),
-                        method="hybrid"
-                    )
-                    if refined["valid"]:
-                        coords["raw_x"] = refined["x"]
-                        coords["raw_y"] = refined["y"]
-            except Exception as e:
-                logger.error(f"TSR error: {e}")
 
             # Apply permanent and grasp offsets exactly once
             offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
