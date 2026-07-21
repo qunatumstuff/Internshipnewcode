@@ -5,7 +5,6 @@ import json
 import urllib.request
 import os
 import math
-from object_catalogue import OBJECT_CATALOGUE, GRASP_OFFSETS
 import threading
 import base64
 import re
@@ -119,11 +118,60 @@ MAX_PLANNING_ITERATIONS = 5
 # Qwen compares detected Z against known height
 # to determine if an object is stacked on another.
 # ==========================================
+OBJECT_CATALOGUE = {
+    "black marker": {"size": "134 x 20.53 x 20.53 mm", "height_m": 0.02053,
+                     "length_m": 0.134,   "breadth_m": 0.02053},
+    "blue cube":    {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+    "red cube":     {"size": "30 x 30 x 30 mm",         "height_m": 0.030,
+                     "length_m": 0.030,   "breadth_m": 0.030},
+    "green cube":   {"size": "30 x 30 x 30 mm",  "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+    "medicine":     {"size": "112 x 28 x 23 mm","height_m": 0.023,
+                     "length_m": 0.112, "breadth_m": 0.028},
+    "nut":          {"size": "34.6 x 30 x 17 mm",        "height_m": 0.017,
+                     "length_m": 0.0346,  "breadth_m": 0.030},
+    "yellow cube":  {"size": "25 x 25 x 25 mm", "height_m": 0.025,
+                     "length_m": 0.025,   "breadth_m": 0.025,},
+    "sponge":       {"size": "75 x 18 x 30 mm",    "height_m": 0.018,
+                     "length_m": 0.071, "breadth_m": 0.03,
+                     "notes": "Angled grasp configuration"},
+    "screwdriver":  {"size": "104 x 25 x 25 mm",    "height_m": 0.025,
+                     "length_m": 0.104, "breadth_m": 0.025,
+                     "notes": "Angled grasp configuration"},
+    "cube":         {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+    "soy milk":     {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+    "umbrella":     {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+    "wrench":       {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+    "hat":          {"size": "30 x 30 x 30 mm", "height_m": 0.03,
+                     "length_m": 0.03,   "breadth_m": 0.03},
+}
 
 # Grasping offsets (X, Y, Z) in meters for each object class.
 # Edit these values to fine-tune the robot's grasping position for specific objects.
-PERMA_OFFSET_X = 0.010823847
-PERMA_OFFSET_Y = -0.001782065
+
+PERMA_OFFSET_X = 0.007
+PERMA_OFFSET_Y = -0.012
+GRASP_OFFSETS = {
+    "black marker": {"x": 0.0, "y": 0.0, "z": 0.0},
+    "blue cube":    {"x": 0.0, "y": 0.0, "z": 0.0},
+    "red cube":     {"x": 0.0, "y": 0.0, "z": 0.0},
+    "green cube":   {"x": 0.0, "y": 0.0, "z": 0.0},
+    "medicine":     {"x": 0.0, "y": 0.0, "z": -0.005},
+    "nut":          {"x": 0.0, "y": 0.0, "z": 0.0},
+    "yellow cube":  {"x": 0.0, "y": 0.0, "z": 0.0},
+    "sponge":       {"x": 0.0, "y": -0.005, "z": -0.009},
+    "screwdriver":  {"x": 0.0, "y": 0.0, "z": -0.007},
+    "cube":         {"x": 0.0, "y": 0.0, "z": 0.0},
+    "soy milk":     {"x": 0.0, "y": 0.0, "z": 0.0},
+    "umbrella":     {"x": 0.0, "y": 0.0, "z": 0.0},
+    "wrench":       {"x": 0.0, "y": 0.0, "z": 0.0},
+    "hat":          {"x": 0.0, "y": 0.0, "z": 0.0},
+}
 
 # Camera-to-robot base frame transformation matrix.
 # Calibrated to the physical D435i mounting position.
@@ -154,12 +202,13 @@ def isinside(point_x, point_y):
     # Y: -370 to 0  (tolerance: -380 to 10)
     return 240 <= point_x <= 595 and -380 <= point_y <= 10
 
-def get_median_depth(depth_frame, cx, cy, depth_scale, radius=4):
+def get_median_depth(depth_frame, cx, cy, radius=4):
     valid_depths = []
-    height, width = depth_frame.shape
+    width = depth_frame.get_width()
+    height = depth_frame.get_height()
     for y in range(max(0, int(cy) - radius), min(height, int(cy) + radius + 1)):
         for x in range(max(0, int(cx) - radius), min(width, int(cx) + radius + 1)):
-            depth = depth_frame[y, x] * depth_scale
+            depth = depth_frame.get_distance(x, y)
             if np.isfinite(depth) and depth > 0.0:
                 valid_depths.append(depth)
     if not valid_depths:
@@ -184,14 +233,14 @@ def _rotation_matrix_to_euler(R):
     return roll, pitch, yaw
 
 
-def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, depth_scale, cls_name: str = ""):
+def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name: str = ""):
     """
     Convert a pixel centre + OBB angle into robot-frame XYZ and yaw.
     The depth camera reads the TOP SURFACE of an object.
     We correct Z to the object's true centre by adding catalogue_height / 2.
     Returns dict {x, y, z, angle_deg} or None if depth is invalid.
     """
-    distance = get_median_depth(depth_frame, cx_px, cy_px, depth_scale)
+    distance = get_median_depth(depth_frame, cx_px, cy_px)
     if distance is None or distance <= 0.0:
         return None
 
@@ -211,15 +260,23 @@ def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, depth_scal
     height_m  = cat_entry.get("height_m", 0.0)
     z_centre  = round(float(robot_pt[2]) + Z_OFFSET_M + (height_m / 2), 4)
 
+    x_val = float(robot_pt[0])
+    y_val = float(robot_pt[1])
+    
+    offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
+    x_val += offsets["x"] - PERMA_OFFSET_X 
+    y_val += offsets["y"] - PERMA_OFFSET_Y
+    z_centre += offsets["z"]
+
     return {
-        "raw_x":     float(robot_pt[0]),
-        "raw_y":     float(robot_pt[1]),
+        "x":         round(x_val, 4),
+        "y":         round(y_val, 4),
         "z":         z_centre,
         "angle_deg": round(math.degrees(yaw),  2),
     }
 
 
-def run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale):
+def run_yolo_detection(color_image, depth_frame, intrinsics):
     """
     Run detection on all catalogue objects using a two-pass approach:
 
@@ -286,14 +343,14 @@ def run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale):
                     h_px = float(y2 - y1)
                     angle_rad = 0.0 # fallback has no angle
 
-                    coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, depth_scale, cls_name=cls_name)
+                    coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
                     if coords is None:
                         continue
                         
                     if not isinside(coords["x"] * 1000, coords["y"] * 1000):
                         continue
 
-                    distance = get_median_depth(depth_frame, cx_px, cy_px, depth_scale) or 0.0
+                    distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
                     w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
                     h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
@@ -327,59 +384,24 @@ def run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale):
             if cls_name not in obb_angles or conf > obb_angles[cls_name]["conf"]:
                 obb_angles[cls_name] = {"angle_rad": angle_rad, "conf": conf}
 
-            # (Removed pipe and sponge skip so they are processed by OBB)
+            # Pipe and sponge: keep angle only, position comes from segmentation
+            if cls_name in ("pipe", "sponge"):
+                continue
 
             cx_px = float(obb.xywhr[0][0])
             cy_px = float(obb.xywhr[0][1])
             w_px  = float(obb.xywhr[0][2])
             h_px  = float(obb.xywhr[0][3])
 
-            # 4-Corner Linear Interpolation Override
-            try:
-                import numpy as np
-                corners = obb.xyxyxyxy[0].cpu().numpy()
-                if len(corners) == 4:
-                    # Sort corners by Y (to find top and bottom)
-                    corners_sorted_y = sorted(corners, key=lambda x: x[1])
-                    top = corners_sorted_y[:2]
-                    bottom = corners_sorted_y[2:]
-                    
-                    # Sort top and bottom by X to get left/right
-                    top_left = top[0] if top[0][0] < top[1][0] else top[1]
-                    top_right = top[1] if top[0][0] < top[1][0] else top[0]
-                    
-                    bottom_left = bottom[0] if bottom[0][0] < bottom[1][0] else bottom[1]
-                    bottom_right = bottom[1] if bottom[0][0] < bottom[1][0] else bottom[0]
-                    
-                    # 0.77 heuristic interpolation
-                    c010 = (top_left[0] + 0.77 * (bottom_left[0] - top_left[0]), top_left[1] + 0.77 * (bottom_left[1] - top_left[1]))
-                    c110 = (top_right[0] + 0.77 * (bottom_right[0] - top_right[0]), top_right[1] + 0.77 * (bottom_right[1] - top_right[1]))
-                    
-                    center_top = np.mean([c010, c110, top_right, top_left], axis=0)
-                    cx_px = float(center_top[0])
-                    cy_px = float(center_top[1])
-            except Exception as e:
-                pass # fallback to original cx_px, cy_px
-
-            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, depth_scale, cls_name=cls_name)
+            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
             if coords is None:
                 continue
-
-            # Apply permanent and grasp offsets exactly once
-            offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
-            final_x = coords["raw_x"] + offsets["x"] - PERMA_OFFSET_X
-            final_y = coords["raw_y"] + offsets["y"] - PERMA_OFFSET_Y
-            final_z = coords["z"] + offsets["z"]
-
-            coords["x"] = round(final_x, 4)
-            coords["y"] = round(final_y, 4)
-            coords["z"] = round(final_z, 4)
                 
             if not isinside(coords["x"] * 1000, coords["y"] * 1000):
                 continue
 
             # Calculate physical dimensions
-            distance = get_median_depth(depth_frame, cx_px, cy_px, depth_scale) or 0.0
+            distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
             w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
             h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
@@ -449,25 +471,14 @@ def run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale):
                 logger.info(f"[{cls_name}] OBB angle not available, using minAreaRect: {rect[2]:.1f}deg")
 
             w_px, h_px = rect[1]
-            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, depth_scale, cls_name=cls_name)
+            coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
             if coords is None:
                 continue
-
-
-            # Apply permanent and grasp offsets exactly once
-            offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
-            final_x = coords["raw_x"] + offsets["x"] - PERMA_OFFSET_X
-            final_y = coords["raw_y"] + offsets["y"] - PERMA_OFFSET_Y
-            final_z = coords["z"] + offsets["z"]
-
-            coords["x"] = round(final_x, 4)
-            coords["y"] = round(final_y, 4)
-            coords["z"] = round(final_z, 4)
                 
             if not isinside(coords["x"] * 1000, coords["y"] * 1000):
                 continue
 
-            distance = get_median_depth(depth_frame, cx_px, cy_px, depth_scale) or 0.0
+            distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
             w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
             h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
@@ -496,6 +507,14 @@ def run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale):
 
 
 # RealSense pipeline — shared across tool calls
+def get_realsense_depth_and_intrinsics():
+    """
+    Return the current aligned depth frame and colour intrinsics from camera.py
+    shared in-memory space.
+    """
+    return camera.current_depth_frame, camera.camera_intrinsics
+
+
 def get_current_detections():
     """
     Capture a fresh detection pass using camera.py's current RGB frame
@@ -503,12 +522,17 @@ def get_current_detections():
 
     Returns list of detection dicts, empty list on failure.
     """
-    color_image, depth_frame, intrinsics, depth_scale = camera.get_atomic_snapshot()
-    if color_image is None or depth_frame is None:
-        logger.warning("No valid snapshot from camera yet.")
+    color_image = camera.current_rgb_frame
+    if color_image is None:
+        logger.warning("No RGB frame from camera yet.")
         return []
 
-    return run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale)
+    depth_frame, intrinsics = get_realsense_depth_and_intrinsics()
+    if depth_frame is None:
+        logger.warning("No depth frame available.")
+        return []
+
+    return run_yolo_detection(color_image, depth_frame, intrinsics)
 
 
 def get_frame_as_base64():
@@ -793,31 +817,8 @@ def is_inside_placement_box(det: dict) -> bool:
 
 def is_target_match(target: str, object_name: str) -> bool:
     """Helper to match logical target names against YOLO object_names."""
-    target = target.strip().lower()
-    object_name = object_name.strip().lower()
-
-    # Exact match first (handles "blue cube", "red cube", "screwdriver", etc.)
-    if target == object_name:
-        return True
-
-    # Generic "cube" matches any colored cube
-    if target == "cube":
+    if target in ["soy milk", "soymilk", "umbrella", "wrench", "hat", "blue cube", "red cube", "green cube", "yellow cube"]:
         return "cube" in object_name
-
-    # Generic "marker" or "black marker" aliases
-    if target in ("marker", "black marker"):
-        return object_name in ("black marker", "marker")
-
-    # Generic aliases for non-cube items
-    ALIASES = {
-        "soy milk": ["soy milk", "soymilk"],
-        "soymilk": ["soy milk", "soymilk"],
-        "med": ["medicine", "medicine box"],
-        "medicine box": ["medicine", "medicine box"],
-    }
-    if target in ALIASES:
-        return object_name in ALIASES[target]
-
     return target in object_name
 
 def check_overlap_obb(d1: dict, d2: dict, clearance: float = 0.0) -> bool:
@@ -1089,9 +1090,7 @@ async def qwen_plan_next_action(
         if sticker in target_base or sticker in user_context.lower():
             target_base = "cube"
             break
-    # Only collapse to generic "cube" if user said literally "cube" with no color
-    # Keep "blue cube", "red cube", etc. as specific names so we match only that color
-    if target_base == "cube" or (target_base not in ["blue cube", "red cube", "green cube", "yellow cube"] and "cube" in target_base):
+    if "cube" in target_base:
         target_base = "cube"
 
     target_dets = [
@@ -1699,7 +1698,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                                 "angle_deg": det["angle_deg"],
                                 "grasp_label": det.get("grasp_label"),
                             },
-                            "detections": [d.get("object_name") for d in detections],
+                            "detections": detections,
                             "history": action_history,
                             "snapshot_b64": frame_b64,
                             "note": "Qwen API error — used YOLO fallback",
@@ -1750,7 +1749,6 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                                 logger.warning(f"QWEN FAILSAFE OVERRIDE: Target '{target}' Z is anomalously high (+{excess*1000:.0f}mm) and '{best_obstacle}' has higher Z. Forcing relocate.")
                                 plan = {
                                     "next_action": "relocate",
-                                    "target_id": plan.get("target_id"),
                                     "obstacle_name": best_obstacle,
                                     "reasoning": f"Depth sensor failsafe: '{best_obstacle}' has higher Z than target '{target}', indicating it is on top.",
                                     "raw_output": plan.get("raw_output", "") + f"\n\n(OVERRIDDEN BY DEPTH SENSOR FAILSAFE: Relocating {best_obstacle})"
@@ -1788,7 +1786,6 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                             logger.warning(f"QWEN FAILSAFE OVERRIDE: '{overlapping_obstacle}' overlaps with target AND has higher Z. Forcing relocate.")
                             plan = {
                                 "next_action": "relocate",
-                                "target_id": plan.get("target_id"),
                                 "obstacle_name": overlapping_obstacle,
                                 "reasoning": f"XY overlap failsafe: '{overlapping_obstacle}' overlaps with target '{target}' and has higher Z — it is on top, requiring relocation.",
                                 "raw_output": plan.get("raw_output", "") + f"\n\n(OVERRIDDEN BY XY OVERLAP FAILSAFE: Relocating {overlapping_obstacle})"

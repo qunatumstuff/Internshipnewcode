@@ -1,6 +1,3 @@
-import os
-from dotenv import load_dotenv
-load_dotenv()
 import math
 import os
 import cv2
@@ -8,19 +5,9 @@ import numpy as np
 import pyrealsense2 as rs
 from ultralytics import YOLO
 from mcp.server.fastmcp import FastMCP
-
 import threading
-import requests
-import time
-import os
-
-SAFETY_SERVER_URL = os.environ.get("SAFETY_SERVER_URL", "http://localhost:3000/trigger-safety-stop")
-HEARTBEAT_URL = SAFETY_SERVER_URL.replace("/trigger-safety-stop", "/camera-heartbeat")
-
-
 import base64
 import time
-import requests
 # Unused leftover imports (inference, vision) removed
 
 # -----------------------------------------------------------------------------
@@ -32,11 +19,6 @@ latest_3d_coords = {"x": 0.0, "y": 0.0, "z": 0.0}
 current_depth_frame = None
 camera_intrinsics = None
 inference_lock = threading.Lock()
-safety_request_lock = threading.Lock()
-frame_lock = threading.Lock()
-safety_is_requesting = False
-safety_last_request_time = 0.0
-SAFETY_SERVER_URL = os.environ.get("SAFETY_SERVER_URL", "http://localhost:3000/trigger-safety-stop")
 
 # Tweak this value to add a global Z offset (in meters) to all detected objects.
 # E.g., setting it to 0.02 will raise the target pick point by 2 cm.
@@ -66,28 +48,12 @@ mcp = FastMCP("TIEFA_Module_B_Vision")
 model=YOLO("best (12).pt")
 segment=YOLO("best (11).pt")
 obb_discontinuity=YOLO("best (14).pt")
-safety_model=YOLO("yolov8n.pt") # Standard COCO model for person detection
 
 # -----------------------------------------------------------------------------
 # 2. MCP Tools Definition (Exposed to System 2 / ZBook)
 # -----------------------------------------------------------------------------
 
 tracked=False
-
-def get_atomic_snapshot():
-    with frame_lock:
-        try:
-            if latest_color_image is None or latest_depth_image is None:
-                return None, None, None, None
-            return (
-                latest_color_image.copy(),
-                latest_depth_image.copy(),
-                latest_depth_intrinsics,
-                current_depth_scale
-            )
-        except NameError:
-            # If variables haven't been initialized yet
-            return None, None, None, None
 
 @mcp.tool()
 def get_camera_snapshot() -> str:
@@ -201,9 +167,6 @@ def _vision_loop_inner():
     clicked=""
 
     frame_counter = 0
-    last_heartbeat_time = 0
-    import requests
-    SAFETY_TOKEN = os.environ.get('SAFETY_TOKEN', 'default-secure-token-xyz')
     results = []
     sponge_detection = []
 
@@ -222,79 +185,12 @@ def _vision_loop_inner():
             color_image = np.asanyarray(color_frame.get_data())
             current_rgb_frame = color_image.copy() # Update global state for MCP snapshot
             current_depth_frame = depth_frame
-            depth_image = np.asanyarray(depth_frame.get_data())
-            
-            global latest_color_image, latest_depth_image, latest_depth_intrinsics, current_depth_scale
-            with frame_lock:
-                latest_color_image = color_image.copy()
-                latest_depth_image = depth_image.copy()
-                latest_depth_intrinsics = intrinsics
-                current_depth_scale = depth_scale
 
             # Run inference every 4th frame to conserve GPU/VRAM resources for Qwen/Ollama
             if frame_counter % 4 == 0:
                 with inference_lock:
                     results = model(color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35)
                     segmentation_results = segment(color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35)
-
-            # Safety Mode: Check for humans periodically (every 10th frame)
-            if frame_counter % 10 == 0:
-                with inference_lock:
-                    safety_results = safety_model(color_image, verbose=False, classes=[0], conf=0.6)
-                
-                person_detected = False
-                max_conf = 0.0
-                
-                for r in safety_results:
-                    if len(r.boxes) > 0:
-                        person_detected = True
-                        conf = float(r.boxes.conf[0])
-                        max_conf = max(max_conf, conf)
-                        
-                        # Draw warning on frame
-                        cv2.putText(color_image, f"HUMAN DETECTED ({conf:.2f}) - SAFETY TRIPPED", (50, 50), 
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
-                
-                # Send Heartbeat
-                now = time.monotonic()
-                if now - last_heartbeat_time > 1.0:
-                    def send_heartbeat():
-                        try:
-                            headers = {"Authorization": f"Bearer {SAFETY_TOKEN}"}
-                            requests.post(HEARTBEAT_URL, json={"status": "alive"}, headers=headers, timeout=1.0)
-                        except Exception:
-                            pass
-                    threading.Thread(target=send_heartbeat, daemon=True).start()
-                    last_heartbeat_time = now
-
-                # Trigger safety stop if person detected
-                if person_detected:
-                    global safety_is_requesting, safety_last_request_time
-                    can_request = False
-                    with safety_request_lock:
-                        if not safety_is_requesting and (now - safety_last_request_time > 2.0):
-                            safety_is_requesting = True
-                            can_request = True
-                            
-                    if can_request:
-                        def trigger_safety(confidence):
-                            global safety_is_requesting, safety_last_request_time
-                            try:
-                                print(f"🛑 [SAFETY] Triggering safety stop. Human confidence: {confidence:.2f}")
-                                headers = {"Authorization": f"Bearer {SAFETY_TOKEN}"}
-                                res = requests.post(SAFETY_SERVER_URL, json={"confidence": confidence}, headers=headers, timeout=2)
-                                if res.status_code != 200:
-                                    print(f"⚠️ [SAFETY] Failed to trigger safety stop. Server returned HTTP {res.status_code}")
-                            except Exception as e:
-                                print(f"⚠️ [SAFETY] Network error triggering safety stop: {e}")
-                            finally:
-                                with safety_request_lock:
-                                    safety_is_requesting = False
-                                    import time
-                                    safety_last_request_time = time.monotonic()
-                        
-                        t = threading.Thread(target=trigger_safety, args=(max_conf,), daemon=True)
-                        t.start()
 
             current_boxes = []
 
@@ -338,7 +234,8 @@ def _vision_loop_inner():
                             x, y, w, h = cv2.boundingRect(largest_contour)
                             seg_cx, seg_cy = x + w // 2, y + h // 2
 
-                        # Hideous red dot removed!
+                        # Red centre dot from moments
+                        cv2.circle(color_image, (seg_cx, seg_cy), 5, (0, 0, 255), -1)
 
                         x, y, w, h = cv2.boundingRect(largest_contour)
                         cv2.putText(
@@ -384,7 +281,7 @@ def _vision_loop_inner():
 
                             cv2.rectangle(color_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
                             # Red centre dot
-                            cv2.circle(color_image, (center_x, center_y), 2, (0, 0, 255), -1)
+                            cv2.circle(color_image, (center_x, center_y), 5, (0, 0, 255), -1)
                             cv2.putText(
                                 color_image,
                                 f"{cls_name} FALLBACK {confidence:.2f}",
@@ -459,39 +356,7 @@ def _vision_loop_inner():
                     # Red centre dot at OBB centre
                     obb_cx = int(obb.xywhr[0][0])
                     obb_cy = int(obb.xywhr[0][1])
-
-                    # 4-Corner Linear Interpolation Override for Visuals
-                    try:
-                        corners = obb.xyxyxyxy[0].cpu().numpy()
-                        if len(corners) == 4:
-                            corners_sorted_y = sorted(corners, key=lambda x: x[1])
-                            top = corners_sorted_y[:2]
-                            bottom = corners_sorted_y[2:]
-                            
-                            top_left = top[0] if top[0][0] < top[1][0] else top[1]
-                            top_right = top[1] if top[0][0] < top[1][0] else top[0]
-                            
-                            bottom_left = bottom[0] if bottom[0][0] < bottom[1][0] else bottom[1]
-                            bottom_right = bottom[1] if bottom[0][0] < bottom[1][0] else bottom[0]
-                            
-                            c010 = (top_left[0] + 0.77 * (bottom_left[0] - top_left[0]), top_left[1] + 0.77 * (bottom_left[1] - top_left[1]))
-                            c110 = (top_right[0] + 0.77 * (bottom_right[0] - top_right[0]), top_right[1] + 0.77 * (bottom_right[1] - top_right[1]))
-                            
-                            center_top = np.mean([c010, c110, top_right, top_left], axis=0)
-                            obb_cx = int(center_top[0])
-                            obb_cy = int(center_top[1])
-                            
-                            # Draw the 4-point polygon to match user's custom script
-                            cv2.polylines(color_image, np.array([c010, c110, top_right, top_left], dtype=np.int32).reshape((-1, 1, 2)), True, (0, 255, 0), 2)
-                            
-                            # Draw the 4 corners explicitly as small blue dots
-                            for pt in [c010, c110, top_right, top_left]:
-                                cv2.circle(color_image, (int(pt[0]), int(pt[1])), 2, (255, 0, 0), -1)
-                    except Exception as e:
-                        pass # fallback to original center
-
-                    # Draw the final calculated center (either interpolated or raw fallback) as a small red dot
-                    cv2.circle(color_image, (obb_cx, obb_cy), 2, (0, 0, 255), -1)
+                    cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
 
                     cv2.putText(
                         color_image,
@@ -506,9 +371,9 @@ def _vision_loop_inner():
                     # Only update latest_3d_coords for the selected target
                     if current_target_class and cls_name == current_target_class.lower():
                         CAM_TO_ROBOT_T = np.array([
-                            [0.7328061018, 0.6121545059, -0.2970893437, 0.7217746900],
-                            [0.6799624012, -0.6424940804, 0.3533447178, -0.4958178639],
-                            [-0.0349166256, -0.4652557478, -0.8865538354, 0.8232286668],
+                            [0.7389493262, 0.5903177251, -0.3247751171, 0.7326856827],
+                            [0.6725179732, -0.6755053173, 0.3023444095, -0.4961713772],
+                            [-0.0272403049, -0.4667249144, -0.8845155980, 0.8220003503],
                             [0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000],
                             ], dtype=np.float64)
 

@@ -159,6 +159,12 @@
             onEventCallback('robot_moving_status:' + data.isRobotMoving);
           }
         }
+        if (data.estop_status !== undefined) {
+          console.log(`[JS] Progress SSE: estop_status=${data.estop_status}`);
+          if (onEventCallback) {
+            onEventCallback('estop_status:' + data.estop_status);
+          }
+        }
         if (data.snapshot_image) {
           console.log(`[JS] Received snapshot for "${data.snapshot_target}" (${data.snapshot_image.length} b64 chars)`);
           if (onEventCallback) {

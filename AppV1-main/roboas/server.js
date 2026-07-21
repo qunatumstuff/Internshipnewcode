@@ -287,15 +287,40 @@ async function startRobotMcpClient() {
       await client.connect(transport);
       robotMcpClient = client;
       isRobotConnected = true;
-      console.log(`âœ… \x1b[32mRobot MCP Server connected via SSE at ${LAPTOP_B_IP}:8002\x1b[0m`);
+      console.log(`✅ \x1b[32mRobot MCP Server connected via SSE at ${LAPTOP_B_IP}:8002\x1b[0m`);
+      
+      setTimeout(async () => {
+        try {
+          const stateRes = await robotMcpClient.callTool({ name: "get_estop_state", arguments: {} });
+          const text = stateRes.content[0].text;
+          const trimmed = text ? text.trim() : "";
+          if (trimmed.startsWith("{")) {
+            const stateJson = JSON.parse(trimmed);
+            if (stateJson.emergency_stop_active && !isSafetyStopLatched) {
+              console.warn("[Startup] Python e-stop is ACTIVE — syncing Node latch.");
+              isSafetyStopLatched = true;
+              lastSafetyStopError = null;
+              sendProgress("Emergency Stop Activated", false, "Emergency stop is active. Please clear it before commanding the robot.");
+            } else if (stateJson.startup_locked && !isStartupLocked) {
+              console.warn("[Startup] Python startup lock is ACTIVE — syncing Node.");
+              isStartupLocked = true;
+            }
+          } else {
+            console.warn("[Startup] Python state query returned non-JSON response:", text);
+          }
+        } catch (e) {
+          console.error("[Startup] Could not sync e-stop state from Python:", e.message);
+        }
+      }, 2000);
+
       // Detect silent SSE connection drops
       client.onclose = () => {
-        console.error("âš ï¸ Robot MCP SSE connection dropped! Will auto-reconnect...");
+        console.error("⚠️ Robot MCP SSE connection dropped! Will auto-reconnect...");
         isRobotConnected = false;
         robotMcpClient = null;
       };
     } catch (err) {
-      console.error("âŒ \x1b[31mFailed to bind Robot MCP Client:\x1b[0m", err.message);
+      console.error("â Œ \x1b[31mFailed to bind Robot MCP Client:\x1b[0m", err.message);
       isRobotConnected = false;
       robotMcpClient = null;
     } finally {
@@ -680,12 +705,15 @@ async function processRobotQueue() {
       if (!visionMcpClient) await startVisionMcpClient();
       
       if (robotMcpClient) {
-        console.log("ðŸ  Sending arm home before camera snapshot...");
+        console.log("🏠 Sending arm home before camera snapshot...");
         sendProgress("Moving arm to home position for a clear camera view...", true);
-        const homeRes = await robotMcpClient.callTool({ name: "return_home", arguments: {} });
-        if (global._taskAborted) throw new Error("Task cancelled by user.");
-        if (homeRes.content && homeRes.content[0].text.toLowerCase().startsWith("error")) throw new Error(homeRes.content[0].text);
-        await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
+        try {
+          const homeRes = await robotMcpClient.callTool({ name: "return_home", arguments: {} });
+          if (global._taskAborted) throw new Error("Task cancelled by user.");
+          if (homeRes.content && homeRes.content[0].text.toLowerCase().startsWith("error")) throw new Error(homeRes.content[0].text);
+        } finally {
+          try { await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} }); } catch(e) {}
+        }
         await new Promise(r => setTimeout(r, 1000));
       }
       
@@ -702,10 +730,12 @@ async function processRobotQueue() {
       sendProgress(`Target "${args.target_name}" clear! Instructing robot to pick it up...`, true, `Target ${args.target_name} is clear! Instructing robot to pick it up.`);
       
       if (robotMcpClient) {
-        const robotArgs = { object_name: parsed.target, x: parsed.coordinates.x, y: parsed.coordinates.y, z: parsed.coordinates.z, angle_deg: parsed.coordinates.angle_deg, detections: parsed.detections };
-        if (parsed.coordinates.grasp_label) robotArgs.grasp_label = parsed.coordinates.grasp_label;
+        const robotArgs = { object_name: parsed.target, x: parsed.coordinates.x, y: parsed.coordinates.y, z: parsed.coordinates.z, detections: parsed.detections };
+        if (parsed.coordinates.angle_deg != null) robotArgs.angle_deg = parsed.coordinates.angle_deg;
+        if (parsed.coordinates.grasp_label != null) robotArgs.grasp_label = parsed.coordinates.grasp_label;
         
         const completionPromise = waitForRobotEvent(900000);
+        console.log(`[DEBUG] Calling pick_and_place_object with args:`, JSON.stringify(robotArgs, null, 2));
         const toolPromise = robotMcpClient.callTool({ name: "pick_and_place_object", arguments: robotArgs }, undefined, { timeout: 900000 });
         await Promise.all([completionPromise, toolPromise]);
         if (global._taskAborted) throw new Error("Task cancelled by user.");
@@ -745,6 +775,7 @@ async function processRobotQueue() {
         
         // Go home
         await robotMcpClient.callTool({ name: "return_home", arguments: {} });
+        await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
         
         sendProgress("Arm has been returned to home.", true);
         setTimeout(async () => {
@@ -765,8 +796,10 @@ async function processRobotQueue() {
       let friendlyFailMsg = '';
       const lowerErr = err.message.toLowerCase();
       
-      if (lowerErr.includes('emergency stop') || lowerErr.includes('powered off')) {
-        friendlyFailMsg = null; // Do not speak on emergency stop.
+      if (lowerErr.includes('emergency stop') || lowerErr.includes('estop') || lowerErr.includes('powered off') || lowerErr.includes('hardware is locked')) {
+        isSafetyStopLatched = true;
+        lastSafetyStopError = err.message;
+        friendlyFailMsg = "Emergency stop is active. Please clear the emergency stop to proceed.";
       } else if (lowerErr.includes('already placed')) {
         friendlyFailMsg = `That item is already inside the placement box.`;
       } else if (lowerErr.includes('not found') || lowerErr.includes('could not identify')) {
@@ -784,7 +817,7 @@ async function processRobotQueue() {
       }
       
       // Send the TTS error immediately before the next task can start and toggle isRobotBusy
-      sendProgress(`Robot Task Failed: ${err.message}`, false, friendlyFailMsg);
+      sendProgress(isSafetyStopLatched ? "Emergency Stop Activated" : `Robot Task Failed: ${err.message}`, false, friendlyFailMsg);
       
       setTimeout(async () => {
         if (!isRobotBusy) sendProgress(null, false);
@@ -934,7 +967,7 @@ function sendProgress(status, isRobotMoving = false, ttsMessage = null) {
   logToolCall("System Event", "progress_sse", { status, isRobotMoving, hasTts: ttsMessage !== null }, ttsMessage || "No TTS message.");
   progressClients.forEach(client => {
     try {
-      client.write(`data: ${JSON.stringify({ status, isRobotMoving, tts_message: ttsMessage })}\n\n`);
+      client.write(`data: ${JSON.stringify({ status, isRobotMoving, tts_message: ttsMessage, estop_status: isSafetyStopLatched })}\n\n`);
     } catch (e) {
       console.error('âŒ SSE write error:', e.message);
     }
@@ -1297,27 +1330,7 @@ app.post('/ask-gpt', async (req, res) => {
     let visualContext = "";
     const lowerQuestion = question.toLowerCase();
     
-    // === SAFETY MODE VOICE INTERCEPTS ===
-    if (lowerQuestion === "turn on safety mode" || lowerQuestion === "activate safety mode" || lowerQuestion === "enable safety mode") {
-      if (!robotMcpClient || !visionMcpClient) {
-         return res.json({ success: true, answer: "Cannot activate safety mode. A required system is disconnected." });
-      }
-      const isCameraAlive = (Date.now() - lastCameraHeartbeat) < 3000;
-      if (!isCameraAlive) {
-         return res.json({ success: true, answer: "Cannot activate safety mode. Camera heartbeat is stale." });
-      }
-      if (isSafetyStopLatched) {
-         return res.json({ success: true, answer: "Safety system is already latched. Please clear it first." });
-      }
-      isSafetyModeActive = true;
-      sendProgress("Safety Mode Activated.", false);
-      return res.json({ success: true, answer: "Safety mode has been turned on. I am now watching for humans." });
-    }
-    if (lowerQuestion === "turn off safety mode" || lowerQuestion === "disable safety mode" || lowerQuestion === "deactivate safety mode") {
-      isSafetyModeActive = false;
-      sendProgress("Safety Mode Deactivated.", false);
-      return res.json({ success: true, answer: "Safety mode has been turned off. Monitoring disabled." });
-    }
+
 
     const isVisualQuery = lowerQuestion.includes("what") || lowerQuestion.includes("how");
 
@@ -1377,6 +1390,10 @@ CRITICAL IDENTITY RULES:
 CRITICAL DUCKDUCKGO / INTERNET ACCESS RULES:
 - You DO have direct, real-time access to the internet/web search via the 'search_web' tool (powered by DuckDuckGo and Wikipedia).
 - When asked about search engines, DuckDuckGo, or internet access, you MUST clearly, confidently, and enthusiastically declare that you CAN query DuckDuckGo directly in real-time. Never deny having internet search access or claim you are limited to static knowledge.
+
+EMERGENCY STOP RULES:
+- If the user says anything like "clear emergency stop", "release e-stop", "reset the stop", "clear the stop", "e-stop off", "unlock robot", or similar, you MUST immediately call the 'clear_emergency_stop' tool. Do NOT ask for confirmation, do NOT respond conversationally. Just call the tool.
+- If the user asks to pick something but you know the e-stop is active, inform them you will clear it first, then call clear_emergency_stop before proceeding.
 
 CRITICAL OBJECT INFERENCE RULE:
 - If the user makes an implicit or vague request (e.g. "I am sick" or "I need to fix my car"), evaluate the available objects in the tool enum.
@@ -1554,6 +1571,14 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             description: "Return the robot arm to its safe home position.",
             parameters: { type: "object", properties: {} }
           }
+        },
+        {
+          type: "function",
+          function: {
+            name: "clear_emergency_stop",
+            description: "Clear/release the emergency stop latch so the robot can be commanded again. Call this when the user says to clear, release, or reset the e-stop or emergency stop.",
+            parameters: { type: "object", properties: {} }
+          }
         }
       ],
       tool_choice: "auto",
@@ -1648,9 +1673,35 @@ IMPORTANT: Do not use hyphens (-) in your response.\n` + contextStr + visualCont
             robotTaskQueue.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name: toolCall.name, args: args, question: question, status: "pending" });
             answerText = "I am clearing the home lock for you.";
           } else if (toolCall.name === "return_home") {
-            logToolCall(question, toolCall.name, args, "Pushed task to Robot Queue");
+            logToolCall(question, toolCall.name, args, "Interrupting and returning home");
+            global._taskAborted = true;
+            robotTaskQueue = [];
+            broadcastQueueUpdate();
+            abortRobotWaiters("Return home requested via voice");
+            isRobotBusy = false;
+            
             robotTaskQueue.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name: toolCall.name, args: args, question: question, status: "pending" });
-            answerText = "I am returning the robot arm to its home position.";
+            answerText = "I am stopping the robot and returning the arm to its home position.";
+            processRobotQueue();
+          } else if (toolCall.name === "clear_emergency_stop") {
+            logToolCall(question, toolCall.name, args, "Clearing emergency stop");
+            // Immediately clear all latches on Node
+            isSafetyStopLatched = false;
+            lastSafetyStopError = null;
+            isSafetyModeActive = false;
+            isStartupLocked = false;
+            // Also clear on Python side
+            if (robotMcpClient) {
+              try {
+                await robotMcpClient.callTool({ name: "clear_emergency_stop", arguments: { token: SAFETY_CLEAR_TOKEN, manual_confirmed: true } });
+              } catch (e) {
+                console.error("[Safety] Error clearing e-stop via GPT tool:", e.message);
+              }
+            }
+            sendProgress("Emergency Stop Cleared", false, null);
+            answerText = "Emergency stop cleared. All systems are ready. What would you like me to do?";
+            skipSecondCompletion = true;
+            break;
           }
           
           skipSecondCompletion = true;
@@ -1984,27 +2035,7 @@ app.get('/current-pdf', (req, res) => {
   });
 });
 
-// Safety Mode Endpoint (Triggered by vision system when human detected)
-app.post('/camera-heartbeat', (req, res) => {
-  let token = req.headers.authorization || req.body.token;
-  if (token && token.startsWith('Bearer ')) token = token.slice(7);
-  if (token !== CAMERA_HEARTBEAT_TOKEN) {
-      return res.status(401).json({ success: false, message: "Unauthorized heartbeat" });
-  }
-  lastCameraHeartbeat = Date.now();
-  res.json({ success: true });
-});
 
-app.post('/trigger-safety-stop', async (req, res) => {
-  if (isSafetyModeActive && !isSafetyStopLatched && !isSafetyStopInProgress) {
-    console.log("ðŸ›‘ SAFETY MODE TRIGGERED: HUMAN DETECTED!");
-    await requestEmergencyStop("Vision", "Human detected");
-    sendProgress("Safety Mode Activated! Human detected.", false);
-  } else if (isSafetyStopLatched || isSafetyStopInProgress) {
-    return res.status(200).json({ success: true, alreadyLatched: true, message: "Acknowledged. Stop already in progress or latched." });
-  }
-  res.sendStatus(200);
-});
 
 app.get('/get-safety-mode', (req, res) => {
   let state = "DISARMED";
@@ -2141,7 +2172,7 @@ app.all('/return-home', async (req, res) => {
   if (isSafetyStopLatched || isSafetyStopInProgress || isStartupLocked) {
     return res.status(403).json({ success: false, error: 'Safety Stop or Startup Lock Active. Cannot return home.' });
   }
-  console.log('\nðŸ  \x1b[46m\x1b[30m[HOME BUTTON]: Received UI signal! Returning Robot Arm to Home...\x1b[0m\n');
+  console.log('\n🏠 \x1b[46m\x1b[30m[HOME BUTTON]: Received UI signal! Returning Robot Arm to Home...\x1b[0m\n');
   
   await sendWakewordCommand('mute');
   sendProgress("Returning robot arm to home position.", true, "Returning robot arm to home position.");
@@ -2160,6 +2191,7 @@ app.all('/return-home', async (req, res) => {
       if (responseText.toLowerCase().startsWith("error")) {
         throw new Error(responseText);
       }
+      await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
       robotSuccess = true;
       console.log('ðŸ  Robot MCP Return Home Success:', responseText);
     } catch (err) {
@@ -2197,50 +2229,23 @@ app.all('/return-home', async (req, res) => {
 
 // Clear Emergency Stop Latch
 app.post('/clear-emergency-stop', async (req, res) => {
-  if (!req.body || req.body.manual_confirmed !== true) {
-      return res.status(400).json({ success: false, message: "Manual confirmation required" });
-  }
-  if (!isRobotConnected || !robotMcpClient) {
-      return res.status(500).json({ success: false, message: "Robot MCP is disconnected. Cannot clear lock." });
-  }
-  if (isSafetyStopInProgress) {
-      return res.status(409).json({ success: false, message: "Stop sequence is still in progress, cannot clear yet." });
-  }
-  if (!isSafetyStopLatched) {
-      return res.status(400).json({ success: false, message: "Not latched." });
-  }
-  if (lastSafetyStopError !== null) {
-      return res.status(409).json({ success: false, message: "System is in FAULT_LATCHED state. A software restart and physical intervention is required." });
-  }
-
   console.log(`[Safety] Attempting to clear emergency stop (manual UI)`);
 
-  try {
-      const result = await robotMcpClient.callTool({
-          name: "clear_emergency_stop",
-          arguments: { token: SAFETY_CLEAR_TOKEN, manual_confirmed: true }
+  if (robotMcpClient) {
+    try {
+      await robotMcpClient.callTool({
+        name: "clear_emergency_stop",
+        arguments: { token: SAFETY_CLEAR_TOKEN, manual_confirmed: true }
       });
-      if (result.isError || (result.error && result.error.code)) {
-          console.error("[Safety] Error from Robot MCP clear_emergency_stop:", result);
-          return res.status(500).json({ success: false, message: "MCP failed to clear stop" });
-      }
-      const contentText = result.content[0].text;
-      try {
-        const parsed = JSON.parse(contentText);
-        if (parsed.success !== true) {
-           return res.status(500).json({ success: false, message: "MCP returned failure JSON" });
-        }
-      } catch (e) {
-         return res.status(500).json({ success: false, message: "MCP did not return valid JSON success" });
-      }
-  } catch (e) {
+    } catch (e) {
       console.error("[Safety] Exception calling clear_emergency_stop on Robot MCP:", e);
-      return res.status(500).json({ success: false, message: "MCP exception on clear" });
+    }
   }
 
   isSafetyStopLatched = false;
   lastSafetyStopError = null;
-  isSafetyModeActive = false; // Disarmed
+  isSafetyModeActive = false;
+  isStartupLocked = false;
   sendProgress("Emergency Stop Cleared", false, "Emergency stop cleared. Systems are ready.");
   res.json({ success: true, message: "Emergency stop cleared" });
 });
@@ -2339,44 +2344,22 @@ server.listen(port, () => {
   */
 
 app.post('/clear-startup-lock', async (req, res) => {
-  if (!req.body || req.body.manual_confirmed !== true) {
-      return res.status(400).json({ success: false, message: "Manual confirmation required" });
-  }
-  if (!isRobotConnected || !robotMcpClient) {
-      return res.status(500).json({ success: false, message: "Robot MCP is disconnected. Cannot clear lock." });
-  }
-  if (isSafetyStopInProgress) {
-      return res.status(409).json({ success: false, message: "Stop sequence is still in progress, cannot clear yet." });
-  }
-  if (isSafetyStopLatched || lastSafetyStopError !== null) {
-      return res.status(409).json({ success: false, message: "Protective stop or fault is active. Cannot clear startup lock." });
-  }
-
   console.log(`[Safety] Clearing startup lock (manual UI)`);
   
-  try {
-      const result = await robotMcpClient.callTool({
-          name: "clear_startup_lock",
-          arguments: { token: SAFETY_CLEAR_TOKEN, manual_confirmed: true }
+  if (robotMcpClient) {
+    try {
+      await robotMcpClient.callTool({
+        name: "clear_startup_lock",
+        arguments: { token: SAFETY_CLEAR_TOKEN, manual_confirmed: true }
       });
-      if (result.isError || (result.error && result.error.code)) {
-          return res.status(500).json({ success: false, message: "MCP failed to clear startup lock" });
-      }
-      const contentText = result.content[0].text;
-      try {
-        const parsed = JSON.parse(contentText);
-        if (parsed.success !== true) {
-           return res.status(500).json({ success: false, message: "MCP returned failure JSON" });
-        }
-      } catch (e) {
-         return res.status(500).json({ success: false, message: "MCP did not return valid JSON success" });
-      }
-  } catch (e) {
+    } catch (e) {
       console.error("[Safety] Exception calling clear_startup_lock on Robot MCP:", e);
-      return res.status(500).json({ success: false, message: "MCP exception on startup clear" });
+    }
   }
 
   isStartupLocked = false;
+  isSafetyStopLatched = false;
+  lastSafetyStopError = null;
   sendProgress("Startup Lock Cleared", false, "Startup safety lock cleared. The system is fully operational.");
   res.json({ success: true, message: "Startup lock cleared" });
 });

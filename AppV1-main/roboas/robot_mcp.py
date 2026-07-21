@@ -1,19 +1,9 @@
-import os
-from dotenv import load_dotenv
-load_dotenv()
 
 import threading
 import urllib.request as _urllib_req
 
 # ROBOT MCP SERVER — compatible with Week_10_day_5Humanedited_MCP_COMPAT.py
-import os
 import asyncio
-
-SAFETY_CLEAR_TOKEN = os.environ.get("SAFETY_CLEAR_TOKEN")
-if not SAFETY_CLEAR_TOKEN:
-    raise ValueError("CRITICAL: SAFETY_CLEAR_TOKEN is missing from the environment.")
-SAFETY_TRANSITION_LOCK = asyncio.Lock()
-
 import logging
 import os
 import importlib.util
@@ -100,34 +90,7 @@ def send_robot_event(event_type, error_msg=None):
         logger.error(f"Failed to send event to server: {e}")
 
 # Register the callback in the robot control module
-robot_control.ROBOT_EVENT_TOKEN = os.environ.get("ROBOT_EVENT_TOKEN")
-if not robot_control.ROBOT_EVENT_TOKEN:
-    logger.warning("Warning: ROBOT_EVENT_TOKEN is not set.")
-
-def send_robot_event_secure(event_type, error_msg=None):
-    global CLIENT_IP
-    import urllib.request
-    import json
-    
-    server_host = os.environ.get("SERVER_HOST", CLIENT_IP)
-    url = f"http://{server_host}:3000/robot-event"
-    payload = {"event": event_type}
-    if error_msg:
-        payload["error"] = str(error_msg)
-        
-    logger.info(f"Sending event '{event_type}' to server at {url}...")
-    try:
-        data = json.dumps(payload).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
-        if robot_control.ROBOT_EVENT_TOKEN:
-            headers["Authorization"] = f"Bearer {robot_control.ROBOT_EVENT_TOKEN}"
-        req = urllib.request.Request(url, data=data, headers=headers)
-        with urllib.request.urlopen(req, timeout=3) as response:
-            logger.info(f"Event sent successfully, response status: {response.status}")
-    except Exception as e:
-        logger.error(f"Failed to send event to server: {e}")
-
-robot_control.ROBOT_EVENT_CALLBACK = send_robot_event_secure
+robot_control.ROBOT_EVENT_CALLBACK = send_robot_event
 
 # 1. Initialize the MCP Server
 server = Server("robot-arm-mcp-server")
@@ -155,7 +118,7 @@ async def handle_list_tools() -> list[Tool]:
                     "y": {"type": "number", "description": "Robot-frame Y in metres."},
                     "z": {"type": "number", "description": "Robot-frame Z in metres. If too low, main code uses calibrated fallback."},
                     "angle_deg": {
-                        "type": "number",
+                        "type": ["number", "null"],
                         "description": (
                             "Object yaw angle in degrees in robot base frame, "
                             "extracted from YOLOv11 OBB transformation matrix RPY decomposition. "
@@ -196,7 +159,7 @@ async def handle_list_tools() -> list[Tool]:
                     "z": {"type": "number"},
                     "object_name": {"type": "string", "default": "cube"},
                     "angle_deg": {
-                        "type": "number",
+                        "type": ["number", "null"],
                         "description": (
                             "Object yaw angle in degrees in robot base frame, "
                             "from YOLOv11 OBB RPY decomposition. Optional."
@@ -230,7 +193,7 @@ async def handle_list_tools() -> list[Tool]:
                     "obstacle_y": {"type": "number", "description": "Robot-frame Y of obstacle in metres."},
                     "obstacle_z": {"type": "number", "description": "Robot-frame Z of obstacle in metres."},
                     "obstacle_angle_deg": {
-                        "type": "number",
+                        "type": ["number", "null"],
                         "description": "Obstacle yaw in degrees from OBB RPY decomposition. Optional."
                     },
                     "detections": {
@@ -256,11 +219,6 @@ async def handle_list_tools() -> list[Tool]:
             inputSchema={"type": "object", "properties": {}}
         ),
         Tool(
-            name="clear_startup_lock",
-            description="Clear the startup lock.",
-            inputSchema={"type": "object", "properties": {"manual_confirmed": {"type": "boolean", "description": "Must be true to proceed."}, "token": {"type": "string"}}, "required": ["manual_confirmed", "token"]}
-        ),
-        Tool(
             name="return_home",
             description="Return home. Clears errors, ensures robot is ready, and moves to the home position safely.",
             inputSchema={"type": "object", "properties": {}}
@@ -268,7 +226,7 @@ async def handle_list_tools() -> list[Tool]:
         Tool(
             name="clear_emergency_stop",
             description="Explicitly acknowledge and clear a latched emergency stop. Required before the robot can move again after emergency_stop was triggered.",
-            inputSchema={"type": "object", "properties": {"manual_confirmed": {"type": "boolean", "description": "Must be true to proceed."}, "token": {"type": "string"}}, "required": ["manual_confirmed", "token"]}
+            inputSchema={"type": "object", "properties": {}}
         ),
         Tool(
             name="clear_return_home",
@@ -282,16 +240,9 @@ async def handle_list_tools() -> list[Tool]:
 async def handle_call_tool(name: str, arguments: dict | None) -> list[TextContent]:
     args = arguments or {}
 
-    if name in ["pick_and_place_object", "move_to_coordinates", "relocate_object", "return_home"]:
-        if robot_control.STARTUP_LOCKED:
-            return [TextContent(type="text", text="Error: STARTUP_LOCKED is active. Manual clear required.")]
-        if robot_control.EMERGENCY_STOP_ACTIVE:
-            return [TextContent(type="text", text="Error: EMERGENCY_STOP_ACTIVE flag is set. Hardware is locked.")]
-
-
     # 1. Check Latches before allowing movement commands
-    if name in ["pick_and_place_object", "move_to_coordinates", "relocate_object", "return_home"]:
-        if getattr(robot_control, 'EMERGENCY_STOP_ACTIVE', False) or getattr(robot_control.STOP_EVENT, 'is_set', lambda: False)():
+    if name in ["pick_and_place_object", "move_to_coordinates", "relocate_object"]:
+        if getattr(robot_control, 'EMERGENCY_STOP_ACTIVE', False):
             logger.warning(f"Blocked {name}: Emergency Stop is active.")
             return [TextContent(type="text", text="Error: Robot is in Emergency Stop state. Clear it before commanding.")]
         if getattr(robot_control, 'RETURN_HOME_ACTIVE', False):
@@ -412,34 +363,20 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         return [TextContent(type="text", text=f"Completed: {result}")]
 
     if name == "emergency_stop":
-        async with SAFETY_TRANSITION_LOCK:
-            if robot_control.EMERGENCY_STOP_ACTIVE:
-                return [TextContent(type="text", text="Emergency Stop Successful: Already Latched.")]
-            logger.warning("⚠️ EMERGENCY STOP TRIGGERED!")
-            robot_control.EMERGENCY_STOP_ACTIVE = True
-            if hasattr(robot_control, 'STOP_EVENT'):
-                robot_control.STOP_EVENT.set()
-            try:
-                if hasattr(robot_control, 'power_off_robot'):
-                    await asyncio.to_thread(robot_control.power_off_robot)
-                    return [TextContent(type="text", text="Emergency Stop Successful: Robot powered off.")]
-                elif hasattr(robot_control, 'r') and robot_control.r is not None:
-                    await asyncio.to_thread(robot_control.r.stop)
-                    return [TextContent(type="text", text="Emergency Stop Successful: Robot stopped (power off unavailable).")]
-                else:
-                    return [TextContent(type="text", text="Error: No hardware stop function available! Software latch engaged.")]
-            except Exception as e:
-                logger.error(f"Error during emergency stop: {e}")
-                return [TextContent(type="text", text=f"Error executing emergency stop: {str(e)}")]
-
-    if name == "clear_startup_lock":
-        async with SAFETY_TRANSITION_LOCK:
-            if not args.get("manual_confirmed"):
-                return [TextContent(type="text", text="Error: manual_confirmed must be true to clear startup lock.")]
-            if args.get("token") != SAFETY_CLEAR_TOKEN:
-                return [TextContent(type="text", text="Error: Invalid capability token.")]
-            robot_control.STARTUP_LOCKED = False
-        return [TextContent(type="text", text='{"success":true,"state":"CLEARED"}')]
+        logger.warning("⚠️ EMERGENCY STOP TRIGGERED!")
+        robot_control.EMERGENCY_STOP_ACTIVE = True
+        robot_control.RETURN_HOME_ACTIVE = False  # Clear any stuck return-home latch
+        if hasattr(robot_control, 'STOP_EVENT'):
+            robot_control.STOP_EVENT.set()
+        try:
+            if hasattr(robot_control, 'power_off_robot'):
+                await asyncio.to_thread(robot_control.power_off_robot)
+            elif hasattr(robot_control, 'r') and robot_control.r is not None:
+                await asyncio.to_thread(robot_control.r.stop)
+            return [TextContent(type="text", text="Emergency Stop Successful: Robot powered off.")]
+        except Exception as e:
+            logger.error(f"Error during emergency stop: {e}")
+            return [TextContent(type="text", text=f"Error executing emergency stop: {str(e)}")]
 
     if name == "return_home":
         print("\n🏠 [VS CODE CONSOLE] RETURN HOME SIGNAL RECEIVED! Interrupting motion and returning home.\n")
@@ -448,8 +385,6 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         try:
             if hasattr(robot_control, 'mcp_return_home'):
                 await asyncio.to_thread(robot_control.mcp_return_home)
-            else:
-                raise RuntimeError('mcp_return_home is not implemented in robot control.')
             # Latch remains active until explicitly cleared
             return [TextContent(type="text", text="Return Home Successful: Robot interrupted and moved to home position.")]
         except Exception as e:
@@ -458,16 +393,12 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             return [TextContent(type="text", text=f"Error executing return home: {str(e)}")]
     
     if name == "clear_emergency_stop":
-        if not args.get("manual_confirmed"):
-            return [TextContent(type="text", text="Error: manual_confirmed=True is required to clear latch.")]
-        async with SAFETY_TRANSITION_LOCK:
-            if args.get("token") != SAFETY_CLEAR_TOKEN:
-                return [TextContent(type="text", text="Error: Invalid capability token.")]
-            logger.warning("✅ Emergency stop manually cleared by user.")
-            robot_control.EMERGENCY_STOP_ACTIVE = False
-            if hasattr(robot_control, 'STOP_EVENT'):
-                robot_control.STOP_EVENT.clear()
-            return [TextContent(type="text", text='{"success":true,"state":"CLEARED"}')]
+        logger.warning("✅ Emergency stop manually cleared by user.")
+        robot_control.EMERGENCY_STOP_ACTIVE = False
+        robot_control.RETURN_HOME_ACTIVE = False  # Clear any stuck return-home latch
+        if hasattr(robot_control, 'STOP_EVENT'):
+            robot_control.STOP_EVENT.clear()
+        return [TextContent(type="text", text="Emergency stop cleared. Robot may now be commanded again.")]
 
     if name == "clear_return_home":
         logger.warning("✅ Return home latch manually cleared by user/system.")

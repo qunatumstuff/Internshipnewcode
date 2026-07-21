@@ -1,6 +1,5 @@
-from object_catalogue import OBJECT_CATALOGUE
 """
-pick_place_real.py  â€”â€”  LARA 5 REAL ROBOT VERSION
+pick_place_real.py  ——  LARA 5 REAL ROBOT VERSION
 ============================================================
 Real-robot counterpart of pick_place_sim.py.
 
@@ -16,12 +15,12 @@ BEFORE RUNNING:
   3. Confirm the safety fence is closed and e-stop is released.
   4. Verify gripper digital output pin assignments below.
 
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+═══════════════════════════════════════════════════════════
 GRIPPER GEOMETRY
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+═══════════════════════════════════════════════════════════
 
 GRIPPER_LENGTH = 0.16 m  (160 mm from TCP flange to fingertip)
-GRIPPER_RADIUS = 0.045 m (45 mm â€” widest extent from centreline)
+GRIPPER_RADIUS = 0.045 m (45 mm — widest extent from centreline)
 
 The gripper is modelled as a vertical capsule: a cylinder of
 radius GRIPPER_RADIUS running from the TCP down to the fingertip
@@ -40,11 +39,11 @@ PICK / DROP Z HEIGHT:
   This places the fingertip exactly at 0.10 m above the floor
   when gripping, matching the object height.
 
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-BOUNDARY & OBSTACLE ENFORCEMENT â€” HOW IT WORKS
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+═══════════════════════════════════════════════════════════
+BOUNDARY & OBSTACLE ENFORCEMENT — HOW IT WORKS
+═══════════════════════════════════════════════════════════
 
-LAYER 1 â€” Input validation (before any robot motion):
+LAYER 1 — Input validation (before any robot motion):
   Every coordinate is checked against the workspace box before
   being accepted. If outside, the operator sees all four corner
   coordinates and is asked to try again. The robot never starts.
@@ -52,30 +51,30 @@ LAYER 1 â€” Input validation (before any robot motion):
   no-go zone. If either lands inside, the operator is rejected
   and must re-enter.
 
-LAYER 2 â€” Pre-flight trajectory validation:
+LAYER 2 — Pre-flight trajectory validation:
   All three phases are computed before any motion starts.
-  Every waypoint is checked â€” for the full gripper volume â€”
+  Every waypoint is checked — for the full gripper volume —
   against the workspace, camera stand, and extra obstacle.
   If any waypoint fails, execution is refused entirely.
   No motion has been sent to the robot at this point.
 
-LAYER 3 â€” Global optimal path planning:
+LAYER 3 — Global optimal path planning:
   For each segment, ALL valid via-point candidates are collected
   from every obstacle face upfront.  Three route types are then
   evaluated and ranked by total arc length (shortest wins):
-    â€¢ Direct path           start â†’ end
-    â€¢ One via-point         start â†’ V â†’ end  (all candidates)
-    â€¢ Two via-points        start â†’ V1 â†’ V2 â†’ end  (all pairs)
+    • Direct path           start → end
+    • One via-point         start → V → end  (all candidates)
+    • Two via-points        start → V1 → V2 → end  (all pairs)
   Every sub-leg of every route is validated with the full
   gripper-volume obstacle check before it can be accepted.
 
-LAYER 4 â€” Stand hard-abort in main():
+LAYER 4 — Stand hard-abort in main():
   main() re-checks both pick and drop even when coordinates come
   from the camera feed (bypassing the input loop).
 
 TRANSIT MOTION:
-  Transit legs (homeâ†”lift_pick, lift_pickâ†”lift_drop,
-  lift_dropâ†”home) use move_linear for smooth organic motion.
+  Transit legs (home↔lift_pick, lift_pick↔lift_drop,
+  lift_drop↔home) use move_linear for smooth organic motion.
   Pick/drop approach legs use move_linear for precise vertical
   control.
 
@@ -101,7 +100,7 @@ CONVEYOR BELT NO-GO ZONE (physical + 50 mm safety margin):
   + 50 mm margin     : X -0.850->0.850   Y 0.150->0.850
   Blocked at ALL Z heights (same treatment as camera stand).
   Gripper-body checks expand these further by GRIPPER_RADIUS.
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+═══════════════════════════════════════════════════════════
 """
 
 import sys
@@ -113,74 +112,8 @@ import threading
 # pymodbus/pyserial no longer used -- gripper now goes through
 # r.execute_external_device_function(), same as the LoRA collector script.
 
-
-# --- PROTECTIVE STOP SAFETY OVERRIDES ---
-import threading
-STARTUP_LOCKED = False
-EMERGENCY_STOP_ACTIVE = False
-STOP_EVENT = threading.Event()
-
-class EmergencyStopException(Exception):
-    pass
-
-def check_safety(phase=""):
-    if STARTUP_LOCKED:
-        msg = "System is locked pending startup confirmation. Please clear startup lock."
-        if phase: msg += f" (Phase: {phase})"
-        raise EmergencyStopException(msg)
-    if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-        msg = "Emergency Stop Active! Halting execution."
-        if phase: msg += f" (Phase: {phase})"
-        raise EmergencyStopException(msg)
-
-# Monkey-patch neurapy.Robot to enforce safety checks on all physical commands
-try:
-    from neurapy.robot import Robot
-    _orig_move_linear = Robot.move_linear
-    _orig_move_joint = Robot.move_joint
-    _orig_move_pose = Robot.move_pose
-    _orig_power_on = Robot.power_on
-    _orig_reset_errors = Robot.reset_errors
-    _orig_execute = Robot.execute_external_device_function
-
-    def _safe_move_linear(self, *args, **kwargs):
-        check_safety()
-        return _orig_move_linear(self, *args, **kwargs)
-
-    def _safe_move_joint(self, *args, **kwargs):
-        check_safety()
-        return _orig_move_joint(self, *args, **kwargs)
-
-    def _safe_move_pose(self, *args, **kwargs):
-        check_safety()
-        return _orig_move_pose(self, *args, **kwargs)
-
-    def _safe_power_on(self, *args, **kwargs):
-        check_safety()
-        return _orig_power_on(self, *args, **kwargs)
-
-    def _safe_reset_errors(self, *args, **kwargs):
-        check_safety()
-        return _orig_reset_errors(self, *args, **kwargs)
-
-    def _safe_execute(self, *args, **kwargs):
-        check_safety()
-        return _orig_execute(self, *args, **kwargs)
-
-    Robot.move_linear = _safe_move_linear
-    Robot.move_joint = _safe_move_joint
-    Robot.move_pose = _safe_move_pose
-    Robot.power_on = _safe_power_on
-    Robot.reset_errors = _safe_reset_errors
-    Robot.execute_external_device_function = _safe_execute
-except ImportError:
-    pass
-# ----------------------------------------
-
 try:
     import keyboard
-
-
     HAS_KEYBOARD = True
 except ImportError:
     HAS_KEYBOARD = False
@@ -209,7 +142,7 @@ EMERGENCY_STOP_ACTIVE = False
 #   X=420.7974mm  Y=-0.15297mm  Z=-20.11582mm
 # Only Z matters here -- this defines where the table surface actually
 # sits in robot base coordinates, independent of gripper length.
-TABLE_Z_M = -0.02011582
+TABLE_Z_M = 0 #-0.02011582
 
 GRIPPER_SAFETY_LENGTH = 0.000
 
@@ -217,7 +150,7 @@ GRIPPER_SAFETY_LENGTH = 0.000
 # THREE-SEGMENT STACK, measured downward from TCP (Z=0 = TCP origin)
 # -----------------------------------------------------------------
 # 1) FLANGE -- topmost, the Quick Changer itself (datasheet-confirmed
-#    Ã˜71mm), sitting directly below the robot's TCP/flange face.
+#    Ø71mm), sitting directly below the robot's TCP/flange face.
 # 2) NECK   -- middle section, modelled as a box (not a cylinder --
 #    corrected from the old model, since the real cross-section here
 #    is not round).
@@ -321,7 +254,136 @@ CAMERA_ANGLE_OFFSET_DEG = 20
 
 # Object selection catalogue. Add more objects here later.
 # Dimensions are in metres.
+OBJECT_CATALOGUE = {
+    # Numbered object catalogue.
+    # length_m  = long side / longest bounding-box side
+    # width_m   = first short side used for footprint/grip planning
+    # breadth_m = second short side/depth used for footprint/grip planning
+    # height_m  = object height above the table, used for middle-height grip Z planning
+    #
+    # object_orientation_deg     = default object angle on the table if no camera angle is available
+    # preferred_grasp_angle_deg = desired wrist/jaw offset for that object
 
+    "1": {
+        "label": "yellow cube",
+        "name": "Yellow Cube",
+        "length_m": 0.025,
+        "width_m": 0.025,
+        "breadth_m": 0.025,
+        "height_m": 0.025,
+        "object_orientation_deg": 90.0,
+        "preferred_grasp_angle_deg": 0.0,
+        "grasp_symmetry_deg": 90.0,   # cube gripped face-to-face: 4 equivalent angles
+        "description": "Yellow cube",
+    },
+
+    "2": {
+        "label": "blue cube",
+        "name": "Blue Cube",
+        "length_m": 0.03,
+        "width_m": 0.03,
+        "breadth_m": 0.03,
+        "height_m": 0.03,
+        "object_orientation_deg": 90.0,
+        "preferred_grasp_angle_deg": 0.0,
+        "grasp_symmetry_deg": 90.0,
+        "description": "Blue cube",
+    },
+
+    "3": {
+        "label": "green cube",
+        "name": "Green Cube",
+        "length_m": 0.03,
+        "width_m": 0.03,
+        "breadth_m": 0.03,
+        "height_m": 0.03,
+        "object_orientation_deg": 90.0,
+        "preferred_grasp_angle_deg": 0.0,
+        "grasp_symmetry_deg": 90.0,
+        "description": "Green cube",
+    },
+
+    "4": {
+        "label": "red cube",
+        "name": "Red Cube",
+        "length_m": 0.030,
+        "width_m": 0.030,
+        "breadth_m": 0.030,
+        "height_m": 0.030,
+        "object_orientation_deg": 90.0,
+        "preferred_grasp_angle_deg": 0.0,
+        "grasp_symmetry_deg": 90.0,
+        "description": "Red cube",
+    },
+
+    "5": {
+        "label": "nut",
+        "name": "Nut",
+        "length_m": 0.0346,
+        "width_m": 0.03,
+        "breadth_m": 0.03,
+        "height_m": 0.017,
+        "object_orientation_deg": 90.0,
+        "preferred_grasp_angle_deg": 0.0,
+        "grasp_symmetry_deg": 60.0,   # hex nut gripped flat-to-flat: 6 equivalent angles
+        "description": "Nut",
+    },
+
+    "6": {
+        "label": "black marker",
+        "name": "Black Marker",
+        "length_m": 0.134,
+        "width_m": 0.02053,
+        "breadth_m": 0.02053,
+        "height_m": 0.02053,
+        "object_orientation_deg": 90.0,
+        "preferred_grasp_angle_deg": 0.0,
+        "description": "Black marker",
+    },
+
+    "7": {
+        "label": "medicine",
+        "name": "Medicine",
+        "length_m": 0.112,
+        "width_m": 0.028,
+        "breadth_m": 0.028,
+        "height_m": 0.023,
+        "object_orientation_deg": 90.0,
+        "preferred_grasp_angle_deg": 0.0,
+        "description": "Medicine",
+    },
+
+    "8": {
+        "label": "sponge",
+        "name": "Sponge",
+        "length_m": 0.075,
+        "width_m": 0.03,
+        "breadth_m": 0.03,
+        "height_m": 0.015,
+        "object_orientation_deg": 90.0,
+        "preferred_grasp_angle_deg": 0.0,
+        "description": "Sponge",
+    },
+
+    "9":{
+    "label": "screwdriver",
+    "name": "Screwdriver",
+
+    # Overall object footprint
+    "length_m": 0.104,
+    "width_m": 0.0244,      # thickest end / maximum width
+    "breadth_m": 0.0244,
+    "height_m": 0.0244,
+
+    # Grasping info
+    "grasp_width_m": 0.0181,        # narrower midpoint grasp area
+    "preferred_grasp_region": "middle",
+    "object_orientation_deg": 90.0,
+    "preferred_grasp_angle_deg": 0.0,
+
+    "description": "Asymmetric screwdriver; maximum width at thick end is 24.4 mm, preferred grasp region is the narrower middle section at around 18.1 mm."
+    }
+}
 GRIP_EXTRA_SPACE_M = 0.000        # no extra stroke gap; grip target stays at actual object width
 PRE_PICK_EXTRA_RATIO = 0.30       # open 30% wider before descending/releasing so fingers do not scrape the object
 GRIP_CENTER_RATIO = 0.50          # grip from the middle height of the object
@@ -420,7 +482,7 @@ HYBRID_GRIP_MIN_PERCENT             = 0
 HYBRID_GRIP_TORQUE_SAMPLES          = 3
 
 # =================================================================
-# CAMERA STAND â€” PERMANENT NO-GO ZONE
+# CAMERA STAND — PERMANENT NO-GO ZONE
 # =================================================================
 STAND_X_MIN  = 0.67
 STAND_X_MAX  = 0.83
@@ -439,7 +501,7 @@ _STAND_GRP_Y_MIN = _STAND_EFF_Y_MIN - GRIPPER_RADIUS
 _STAND_GRP_Y_MAX = _STAND_EFF_Y_MAX + GRIPPER_RADIUS
 
 # =================================================================
-# CONVEYOR BELT â€” PERMANENT NO-GO ZONE
+# CONVEYOR BELT — PERMANENT NO-GO ZONE
 # =================================================================
 CONV_X_MIN    = -0.800
 CONV_X_MAX    =  0.800
@@ -623,13 +685,12 @@ def select_object_profile_by_name(object_name):
         case _:
             target_labels = {name}
 
-    for key, obj in OBJECT_CATALOGUE.items():
-        key_lower = key.strip().lower()
-        if key_lower in target_labels:
-            res = dict(obj)
-            res["name"] = key
-            res["label"] = key
-            return res
+    for obj in OBJECT_CATALOGUE.values():
+        label = str(obj.get("label", "")).strip().lower()
+        display = str(obj.get("name", "")).strip().lower()
+
+        if label in target_labels or display in target_labels:
+            return dict(obj)
 
     raise ValueError(f"Unsupported MCP object_name: {object_name!r}")
 
@@ -666,13 +727,7 @@ def get_object_grip_label(selected_object=None):
     try:
         obj = selected_object if selected_object is not None else globals().get("SELECTED_OBJECT", {})
         return str(obj.get("label", obj.get("name", ""))).strip().lower()
-    except EmergencyStopException:
-        raise
-    except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
+    except Exception:
         return ""
 
 
@@ -713,7 +768,7 @@ def select_object_profile():
     print("\n=== Object selection ===")
     for key, obj in OBJECT_CATALOGUE.items():
         print(
-            f"  {key}. {obj.get('name', key)} â€” {obj.get('description', '')} "
+            f"  {key}. {obj.get('name', key)} — {obj.get('description', '')} "
             f"(L={obj.get('length_m', 0)*1000:.1f} mm, "
             f"W={obj.get('width_m', 0)*1000:.1f} mm, "
             f"B={obj.get('breadth_m', obj.get('width_m', 0))*1000:.1f} mm, "
@@ -763,17 +818,7 @@ def _call_gripper_function(function_name, params=None):
     """Thin wrapper around execute_external_device_function with consistent error printing."""
     try:
         return r.execute_external_device_function(PROCESS_FILE, function_name, params or {})
-    except EmergencyStopException:
-        raise
     except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
         print(f"[Gripper ERROR] '{function_name}' failed: {e}")
         raise
 
@@ -815,17 +860,7 @@ def wait_gripper_done(timeout=10, target_percent=None, tolerance=3):
             status = str(result.get("getStatus", "")).strip().lower()
             if status in ("grip detected", "idle", "completed"):
                 return True
-        except EmergencyStopException:
-            raise
         except Exception as e:
-            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-                raise EmergencyStopException("Motion interrupted by protective stop") from e
-            if STARTUP_LOCKED:
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-                raise EmergencyStopException("System is locked pending startup confirmation.") from e
             print(f"[Gripper WARN] Status read failed: {e}")
 
         time.sleep(0.2)
@@ -846,17 +881,7 @@ def gripper_startup():
     print("[Gripper] Attempting device Init...")
     try:
         _call_gripper_function("Init")
-    except EmergencyStopException:
-        raise
     except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
         print(f"[Gripper] Init call failed or unsupported, continuing anyway: {e}")
     time.sleep(0.3)
 
@@ -993,17 +1018,7 @@ def gripper_grip_object_plain(object_width_m):
         status = str(result.get("getStatus", "")).strip().lower()
         print(f"[Grip] GraspWorkpiece result status: {status!r}")
         return status == "grip detected"
-    except EmergencyStopException:
-        raise
     except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
         print(f"[Grip WARNING] GraspWorkpiece did not confirm contact: {e}")
         try:
             r.reset_errors()
@@ -1012,14 +1027,8 @@ def gripper_grip_object_plain(object_width_m):
             device_reset = r.reset_external_device_error(PROCESS_FILE, ignore_no_connection=True)
             print(f"[Grip Recovery] Step 2/2: reset_external_device_error() -> {device_reset}")
 
-        except EmergencyStopException:
-            raise
-        except Exception as e:
-            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-                raise EmergencyStopException("Motion interrupted by protective stop") from e
-            if STARTUP_LOCKED:
-                raise EmergencyStopException("System is locked pending startup confirmation.") from e
-            print(f"[Grip WARNING] Full recovery failed partway through: {e}")
+        except Exception as reset_e:
+            print(f"[Grip WARNING] Full recovery failed partway through: {reset_e}")
         return False
 
 
@@ -1304,7 +1313,7 @@ PICK_TARGET_Y = 0.0
 
 
 # -----------------------------------------------------------------
-# SECTION 1 â€” BASIC HELPERS
+# SECTION 1 — BASIC HELPERS
 # -----------------------------------------------------------------
 
 def clamp(val, lo, hi):
@@ -1336,7 +1345,7 @@ def _normalise_angle_deg(angle):
 
 
 # -----------------------------------------------------------------
-# SECTION 1b â€” COMPATIBILITY ALIASES
+# SECTION 1b — COMPATIBILITY ALIASES
 # -----------------------------------------------------------------
 # Some earlier versions used different helper names. These wrappers keep
 # the code stable if a call site uses an older name.
@@ -1369,13 +1378,7 @@ def get_current_jaw_width_m():
     """
     try:
         internal_opening = percent_to_opening_m(CURRENT_GRIPPER_PERCENT)
-    except EmergencyStopException:
-        raise
-    except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
+    except Exception:
         internal_opening = percent_to_opening_m(PICK_CLOSE_PERCENT) if 'PICK_CLOSE_PERCENT' in globals() else 0.020
 
     internal_opening = max(JAW_MIN_OPENING_M, min(JAW_MAX_OPENING_M, internal_opening))
@@ -1491,7 +1494,7 @@ def segmented_gripper_in_extra_obs(tcp_x, tcp_y, tcp_z):
     """Segmented end-effector collision check against the optional obstacle.
 
     Checks:
-      1) flange as a circle (Ã˜71mm, the real Quick Changer diameter),
+      1) flange as a circle (Ø71mm, the real Quick Changer diameter),
       2) neck as a yaw-rotated rectangle (90mm x 60mm box, NOT a cylinder
          -- corrected from the old model),
       3) jaws as a yaw-rotated rectangle (27mm fixed x dynamic opening+14mm).
@@ -1544,7 +1547,7 @@ def carried_object_hits_extra_obs(tcp_x, tcp_y, tcp_z):
 
     return in_x and in_y and in_z
 # -----------------------------------------------------------------
-# SECTION 2 â€” GRIPPER-VOLUME OBSTACLE & WORKSPACE CHECKS
+# SECTION 2 — GRIPPER-VOLUME OBSTACLE & WORKSPACE CHECKS
 # -----------------------------------------------------------------
 
 def _gripper_shaft_z_samples(tcp_z):
@@ -1676,7 +1679,7 @@ def point_in_obstacle(px, py, pz):
         or mcp_point_in_dynamic_obstacle(px, py, pz)
     )
 
-# Only Z is checked here intentionally â€” via-point candidates may be generated
+# Only Z is checked here intentionally — via-point candidates may be generated
 # outside the pick workspace XY box (e.g. lateral detours around the conveyor).
 # To also enforce XY bounds, use gripper_in_workspace() instead.
 def point_in_workspace(px, py, pz):
@@ -1701,7 +1704,7 @@ def is_in_workspace(pose):
     return point_in_workspace(pose[0], pose[1], pose[2])
 
 # -----------------------------------------------------------------
-# SECTION 2b â€” PRE-FLIGHT TRAJECTORY VALIDATION
+# SECTION 2b — PRE-FLIGHT TRAJECTORY VALIDATION
 # -----------------------------------------------------------------
 
 def validate_kinematics(waypoints, label="trajectory"):
@@ -1725,17 +1728,7 @@ def validate_kinematics(waypoints, label="trajectory"):
             if isinstance(res, tuple) and len(res) > 1 and isinstance(res[1], bool):
                 if not res[1]:
                     raise RuntimeError("IK Returned Unreachable Status")
-        except EmergencyStopException:
-            raise
         except Exception as e:
-            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-                raise EmergencyStopException("Motion interrupted by protective stop") from e
-            if STARTUP_LOCKED:
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-                raise EmergencyStopException("System is locked pending startup confirmation.") from e
             raise RuntimeError(
                 f"\n  {'='*62}\n"
                 f"  PRE-FLIGHT IK ABORT\n"
@@ -1812,7 +1805,7 @@ def validate_trajectory(waypoints, label="trajectory", bypass_extra_obs=False):
                 f"    TCP   X={tcp_x:.3f}  Y={tcp_y:.3f}  Z={tcp_z:.3f}\n"
                 f"    Fingertip Z={tip_z:.3f}\n"
                 f"    Obstacle centre ({OBS_X:.3f}, {OBS_Y:.3f})  H={OBS_H:.3f}m\n"
-                f"    Segmented tool model: flange Ã˜{FLANGE_DIAMETER_M*1000:.1f}mm, neck {NECK_LENGTH_DIM_M*1000:.0f}x{NECK_THICKNESS_M*1000:.0f}mm box, jaw {JAW_FIXED_WIDTH_M*1000:.1f}mm x {get_current_jaw_width_m()*1000:.1f}mm\n"
+                f"    Segmented tool model: flange Ø{FLANGE_DIAMETER_M*1000:.1f}mm, neck {NECK_LENGTH_DIM_M*1000:.0f}x{NECK_THICKNESS_M*1000:.0f}mm box, jaw {JAW_FIXED_WIDTH_M*1000:.1f}mm x {get_current_jaw_width_m()*1000:.1f}mm\n"
                 f"  {'='*62}\n"
                 f"  No motion has been sent to the robot.\n"
             )
@@ -1822,7 +1815,7 @@ def validate_trajectory(waypoints, label="trajectory", bypass_extra_obs=False):
     return True
 
 # -----------------------------------------------------------------
-# SECTION 2c â€” INPUT VALIDATION
+# SECTION 2c — INPUT VALIDATION
 # -----------------------------------------------------------------
 
 def _in_workspace_xy(x, y):
@@ -1835,7 +1828,7 @@ def _in_conveyor(x, y):
     return _conveyor_zone_contains_xy(x, y, expanded_for_gripper=False)
 
 # -----------------------------------------------------------------
-# SECTION 2d â€” FIXED PLACEMENT BOX HELPERS
+# SECTION 2d — FIXED PLACEMENT BOX HELPERS
 # -----------------------------------------------------------------
 
 
@@ -2424,7 +2417,7 @@ def allocate_drop_slot_for_object(selected_object):
 
 
 # -----------------------------------------------------------------
-# SECTION 2e â€” PRE-PLANNED PLACEMENT SUMMARY / DIAGRAM
+# SECTION 2e — PRE-PLANNED PLACEMENT SUMMARY / DIAGRAM
 # -----------------------------------------------------------------
 
 def reserve_drop_slot_for_object(selected_object):
@@ -2536,7 +2529,7 @@ def clear_temporary_future_object_obstacle(was_manual_obstacle):
 
 
 # -----------------------------------------------------------------
-# SECTION 6 â€” ROBOT STARTUP + HOME
+# SECTION 6 — ROBOT STARTUP + HOME
 # -----------------------------------------------------------------
 
 def power_off_robot():
@@ -2545,20 +2538,9 @@ def power_off_robot():
         r.stop()
         time.sleep(0.5)
         r.power_off()
-        if not (EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set()):
-            gripper_shutdown()
+        gripper_shutdown()
         _MCP_ROBOT_READY = False
-    except EmergencyStopException:
-        raise
     except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
         _MCP_ROBOT_READY = False
         return
 
@@ -2588,7 +2570,7 @@ def ensure_robot_ready(r):
     # power_on/init_program may not yet reflect the arm's true settled
     # position.
     time.sleep(1.0)
-    _ = r.get_tcp_pose()   # discard â€” may be stale immediately after init
+    _ = r.get_tcp_pose()   # discard — may be stale immediately after init
     time.sleep(0.3)
     print(f"[Startup] Settled pose confirmed: {r.get_tcp_pose()}")
 
@@ -2597,13 +2579,7 @@ def ensure_robot_ready(r):
         if r.get_override() < ROBOT_SPEED_OVERRIDE:
             r.set_override(ROBOT_SPEED_OVERRIDE)
             time.sleep(0.2)
-    except EmergencyStopException:
-        raise
-    except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
+    except Exception:
         pass
 
 
@@ -2620,17 +2596,7 @@ def is_at_home(r, tol=0.01):
         return (abs(c[0] - HOME_X) < tol and
                 abs(c[1] - HOME_Y) < tol and
                 abs(c[2] - HOME_Z) < tol)
-    except EmergencyStopException:
-        raise
     except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
         return False
 
 def get_home_pose(current):
@@ -2652,7 +2618,7 @@ def move_to_home_emergency(r):
 
     traj = build_full_trajectory([current, home])
     execute_trajectory(r, traj, label="Emergency return home")
-    # No try/except â€” let exceptions propagate so on_h knows if it failed
+    # No try/except — let exceptions propagate so on_h knows if it failed
 
 MCP_INTENTIONAL_STOP = False
 
@@ -2661,7 +2627,7 @@ def mcp_return_home():
     global MCP_INTENTIONAL_STOP, EMERGENCY_STOP_ACTIVE
 
     if EMERGENCY_STOP_ACTIVE:
-        print("[SAFETY] Emergency stop is still latched â€” refusing to auto-recover or move. "
+        print("[SAFETY] Emergency stop is still latched — refusing to auto-recover or move. "
               "Call clear_emergency_stop explicitly before attempting return_home.")
         raise RuntimeError("Robot is in Emergency Stop state. Clear it before commanding.")
     
@@ -2697,17 +2663,7 @@ def mcp_return_home():
             time.sleep(0.5)
             reconnected = r.connect_external_device(PROCESS_FILE)
             print(f"[Gripper] Reconnected to external device: {reconnected}")
-        except EmergencyStopException:
-            raise
         except Exception as e:
-            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-                raise EmergencyStopException("Motion interrupted by protective stop") from e
-            if STARTUP_LOCKED:
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-                raise EmergencyStopException("System is locked pending startup confirmation.") from e
             print(f"[Gripper WARN] disconnect/reconnect cycle failed: {e}")
 
         # CRITICAL SAFETY FIX: gripper_open() is now its own try/except,
@@ -2720,32 +2676,12 @@ def mcp_return_home():
         # working gripper.
         try:
             gripper_open()
-        except EmergencyStopException:
-            raise
         except Exception as e:
-            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-                raise EmergencyStopException("Motion interrupted by protective stop") from e
-            if STARTUP_LOCKED:
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-                raise EmergencyStopException("System is locked pending startup confirmation.") from e
             print(f"[Gripper WARN] gripper_open() failed during return-home, "
                   f"continuing to move the arm home anyway: {e}")
 
         move_to_home_emergency(r)     # always attempt this, regardless of gripper state
-    except EmergencyStopException:
-        raise
     except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
         print(f"Error returning home: {e}")
     finally:
         MCP_INTENTIONAL_STOP = False
@@ -2754,7 +2690,7 @@ def mcp_return_home():
         
 
 # -----------------------------------------------------------------
-# SECTION 7 â€” KEYBOARD LISTENER
+# SECTION 7 — KEYBOARD LISTENER
 # -----------------------------------------------------------------
 
 def keyboard_listener(r):
@@ -2775,13 +2711,7 @@ def keyboard_listener(r):
             time.sleep(1)
             gripper_open()                # now safe to open gripper
             move_to_home_emergency(r)     # then go home
-        except EmergencyStopException:
-            raise
-        except Exception as e:
-            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-                raise EmergencyStopException("Motion interrupted by protective stop") from e
-            if STARTUP_LOCKED:
-                raise EmergencyStopException("System is locked pending startup confirmation.") from e
+        except Exception:
             pass
         
         finally:
@@ -2794,29 +2724,17 @@ def keyboard_listener(r):
             time.sleep(0.5)
             time.sleep(1)
             move_to_home_emergency(r)
-        except EmergencyStopException:
-            raise
-        except Exception as e:
-            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-                raise EmergencyStopException("Motion interrupted by protective stop") from e
-            if STARTUP_LOCKED:
-                raise EmergencyStopException("System is locked pending startup confirmation.") from e
+        except Exception:
             pass
-         # Step 2: try to recover to home â€” best effort, do NOT power off mid-move if this fails
+         # Step 2: try to recover to home — best effort, do NOT power off mid-move if this fails
         
         try:
             r.reset_errors()
             r.switch_to_automatic_mode()
             time.sleep(1)
             move_to_home_emergency(r)
-        except EmergencyStopException:
-            raise
-        except Exception as e:
-            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-                raise EmergencyStopException("Motion interrupted by protective stop") from e
-            if STARTUP_LOCKED:
-                raise EmergencyStopException("System is locked pending startup confirmation.") from e
-            pass  # could not reach home â€” power off in current position
+        except Exception:
+            pass  # could not reach home — power off in current position
         
         # Step 3: always power off and exit
         power_off_robot()
@@ -2827,7 +2745,7 @@ def keyboard_listener(r):
     keyboard.wait()
 
 # -----------------------------------------------------------------
-# SECTION 8 â€” MAIN
+# SECTION 8 — MAIN
 # -----------------------------------------------------------------
 
 
@@ -2855,7 +2773,7 @@ def is_valid_path(path):
 
 def find_best_linear_detour_route(start, end):
     """
-    Alternative to the BÃ©zier arc planner:
+    Alternative to the Bézier arc planner:
     - For low obstacles (< 0.4 m): try linear UP -> ACROSS -> DOWN routes
     - For taller obstacles: try linear side-detour routes
     Returns a node list (not dense waypoints).
@@ -2959,7 +2877,7 @@ def plan_best_route(start_pose, end_pose):
 
 
 # -----------------------------------------------------------------
-# SECTION 3 â€” GLOBAL OPTIMAL PATH PLANNER
+# SECTION 3 — GLOBAL OPTIMAL PATH PLANNER
 # -----------------------------------------------------------------
 
 WP_SPACING = 0.04   # metres between interpolated waypoints (25 mm)
@@ -3137,7 +3055,7 @@ def find_optimal_route(start, end):
     return best_nodes
 
 # -----------------------------------------------------------------
-# SECTION 4 â€” TRAJECTORY BUILDER  (density-scaled, linear only)
+# SECTION 4 — TRAJECTORY BUILDER  (density-scaled, linear only)
 # -----------------------------------------------------------------
 
 def build_full_trajectory(checkpoints):
@@ -3167,14 +3085,13 @@ def build_full_trajectory(checkpoints):
     return full_path
 
 # -----------------------------------------------------------------
-# SECTION 5 â€” EXECUTION
+# SECTION 5 — EXECUTION
 # -----------------------------------------------------------------
 SHORTERSIDE_SIDE = min(OBS_W, OBS_D) if HAS_EXTRA_OBS else 0.05
 BLEND_RADIUS = SHORTERSIDE_SIDE * 0.1
 BLEND_RADIUS = max(0.005, min(BLEND_RADIUS, 0.05))
 
 def execute_joint_transit(r, start_pose, end_pose, label=""):
-    check_safety(label)
     """
     Transit uses full dynamic planner + blended Cartesian linear movement.
     """
@@ -3184,7 +3101,6 @@ def execute_joint_transit(r, start_pose, end_pose, label=""):
 
 def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_speed=None, is_blending=True):
     """
-    check_safety(label)
     Execute a linear trajectory via ONE blended move_linear command.
 
     This avoids waypoint-by-waypoint stopping:
@@ -3215,17 +3131,7 @@ def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_sp
             controller_parameters={"control_mode": "position"},
             target_pose=trajectory,
             )
-    except EmergencyStopException:
-        raise
     except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
         r.stop()
         raise
 
@@ -3233,7 +3139,7 @@ def execute_trajectory(r, full_path, label="", bypass_extra_obs=False, custom_sp
 
 
 # -----------------------------------------------------------------
-# SECTION 7 â€” KEYBOARD LISTENER
+# SECTION 7 — KEYBOARD LISTENER
 # -----------------------------------------------------------------
 
 def keyboard_listener(r):
@@ -3250,34 +3156,14 @@ def keyboard_listener(r):
         try:
             r.stop()
             gripper_open()
-        except EmergencyStopException:
-            raise
         except Exception as e:
-            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-                raise EmergencyStopException("Motion interrupted by protective stop") from e
-            if STARTUP_LOCKED:
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-                raise EmergencyStopException("System is locked pending startup confirmation.") from e
             return
         time.sleep(0.5)
         try:
             r.reset_errors()
             r.switch_to_automatic_mode()
             time.sleep(1)
-        except EmergencyStopException:
-            raise
         except Exception as e:
-            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-                raise EmergencyStopException("Motion interrupted by protective stop") from e
-            if STARTUP_LOCKED:
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-                raise EmergencyStopException("System is locked pending startup confirmation.") from e
             return
         move_to_home_emergency(r)
         home_busy = False
@@ -3291,18 +3177,8 @@ def keyboard_listener(r):
             r.switch_to_automatic_mode()
             time.sleep(1)
             move_to_home_emergency(r)
-        except EmergencyStopException:
-            raise
         except Exception as e:
-            if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-                raise EmergencyStopException("Motion interrupted by protective stop") from e
-            if STARTUP_LOCKED:
-                if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                    ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-                raise EmergencyStopException("System is locked pending startup confirmation.") from e
-            return
+           return
         finally:
             power_off_robot()
             sys.exit(0)
@@ -3312,7 +3188,7 @@ def keyboard_listener(r):
     keyboard.wait()
 
 # -----------------------------------------------------------------
-# SECTION 8 â€” MAIN
+# SECTION 8 — MAIN
 # -----------------------------------------------------------------
 
 
@@ -3472,11 +3348,10 @@ def set_active_pick_item(seq_item, cycle_index=1, total_cycles=1):
     DROP_Y = _RUNTIME["DROP_Y"]
 
     if OBJECT_GRIP_WIDTH_M > MAX_STROKE_M:
-        logger.warning(
+        raise RuntimeError(
             f"Selected object requires {OBJECT_GRIP_WIDTH_M*1000:.1f} mm opening, "
-            f"clamping to max usable stroke of {MAX_STROKE_M*1000:.1f} mm."
+            f"but the usable gripper stroke is {MAX_STROKE_M*1000:.1f} mm."
         )
-        OBJECT_GRIP_WIDTH_M = MAX_STROKE_M
 
     PRE_PICK_OPEN_PERCENT = get_pre_pick_open_percent(OBJECT_GRIP_WIDTH_M)
     PICK_CLOSE_PERCENT = get_pick_close_percent(OBJECT_GRIP_WIDTH_M)
@@ -3611,41 +3486,41 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
         move_to_home_emergency(r)
     home = get_home_pose(r.get_tcp_pose())   # always fresh, using the REAL current position
     
-    execute_joint_transit(r, home, lift_pick_forward, label="Phase 1 transit â€” Home -> lift_pick_forward")
+    execute_joint_transit(r, home, lift_pick_forward, label="Phase 1 transit — Home -> lift_pick_forward")
     
-    execute_trajectory(r, phase1_rotate, label="Phase 1 wrist rotate â€” forward -> grip angle", custom_speed=0.5, is_blending=False)
+    execute_trajectory(r, phase1_rotate, label="Phase 1 wrist rotate — forward -> grip angle", custom_speed=0.5, is_blending=False)
     time.sleep(0.3)
 
     # Open 30% larger than the object before descending.
     gripper_open_for_object(OBJECT_GRIP_WIDTH_M)
 
-    execute_trajectory(r, phase1_approach, label="Phase 1 approach â€” lift_pick -> pick_pose")
+    execute_trajectory(r, phase1_approach, label="Phase 1 approach — lift_pick -> pick_pose")
     gripper_grip_object(OBJECT_GRIP_WIDTH_M)
 
     CARRIED_OBJECT_ENABLED = True
 
-    execute_trajectory(r, phase2_depart, label="Phase 2 depart â€” pick_pose -> lift_pick")
+    execute_trajectory(r, phase2_depart, label="Phase 2 depart — pick_pose -> lift_pick")
     
-    execute_trajectory(r, phase2_reorient, label="Phase 2 reorient â€” pick angle -> forward", custom_speed=0.5, is_blending=False)
-    execute_joint_transit(r, lift_pick_forward_after, lift_drop, label="Phase 2 transit â€” pick_forward -> drop_forward")
-    execute_trajectory(r, [lift_drop, lift_drop_grip], label="Phase 2 reorient â€” forward -> drop angle", custom_speed=0.5, is_blending=False)
+    execute_trajectory(r, phase2_reorient, label="Phase 2 reorient — pick angle -> forward", custom_speed=0.5, is_blending=False)
+    execute_joint_transit(r, lift_pick_forward_after, lift_drop, label="Phase 2 transit — pick_forward -> drop_forward")
+    execute_trajectory(r, [lift_drop, lift_drop_grip], label="Phase 2 reorient — forward -> drop angle", custom_speed=0.5, is_blending=False)
     
-    execute_trajectory(r, phase2_approach, label="Phase 2 approach â€” lift_drop -> drop_pose")
+    execute_trajectory(r, phase2_approach, label="Phase 2 approach — lift_drop -> drop_pose")
     gripper_release_object(OBJECT_GRIP_WIDTH_M)
 
     CARRIED_OBJECT_ENABLED = False
 
-    execute_trajectory(r, phase3_depart, label="Phase 3 depart â€” drop_pose -> lift_drop")
+    execute_trajectory(r, phase3_depart, label="Phase 3 depart — drop_pose -> lift_drop")
     
-    execute_trajectory(r,[lift_drop_grip, lift_drop],label="Phase 3 reorient â€” grip angle -> forward", custom_speed=0.5, is_blending=False)
+    execute_trajectory(r,[lift_drop_grip, lift_drop],label="Phase 3 reorient — grip angle -> forward", custom_speed=0.5, is_blending=False)
 
     if MCP_IS_RELOCATING:
-        execute_joint_transit(r, lift_drop, home, label="Phase 3 transit â€” lift_drop -> Home")
+        execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
         if ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("relocate_placed")
         return
 
-    execute_joint_transit(r, lift_drop, home, label="Phase 3 transit â€” lift_drop -> Home")
+    execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
 
     if not MCP_IS_RELOCATING:
         if ROBOT_EVENT_CALLBACK:
@@ -3796,13 +3671,7 @@ def _mcp_detection_inside_placement_box(det):
             PLACEMENT_BOX_X_MIN - INBOX_TOLERANCE_M <= x <= PLACEMENT_BOX_X_MAX + INBOX_TOLERANCE_M and
             PLACEMENT_BOX_Y_MIN - INBOX_TOLERANCE_M <= y <= PLACEMENT_BOX_Y_MAX + INBOX_TOLERANCE_M
         )
-    except EmergencyStopException:
-        raise
-    except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
+    except Exception:
         return False
 
 
@@ -3911,7 +3780,7 @@ def mcp_build_pick_sequence(target_object_name=None, x=None, y=None, z=0.0, angl
     MCP angle is the object yaw in robot base frame from YOLOv11 OBB RPY decomposition.
     If angle is None, the catalogue preferred_grasp_angle_deg is used instead.
 
-    grasp_label â€” for the pipe: which end the segmentation model selected
+    grasp_label — for the pipe: which end the segmentation model selected
     (grasp_A or grasp_B). When provided, x/y/z already point to that exact
     end and catalogue offsets are confirmed zero so nothing shifts the position.
     """
@@ -4093,7 +3962,7 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
     MCP angle is the object yaw in degrees in robot base frame, from YOLOv11 OBB RPY
     decomposition. If None, the catalogue preferred_grasp_angle_deg is used instead.
 
-    grasp_label â€” for the pipe: which end vision segmentation selected
+    grasp_label — for the pipe: which end vision segmentation selected
     (grasp_A or grasp_B). Stored for diagnostics. x/y/z already point to
     the correct end when this is provided.
     """
@@ -4124,19 +3993,7 @@ def run_mcp_pick_and_place(object_name=None, x=None, y=None, z=0.0, angle=None, 
         for seq_item in sequence:
             set_active_pick_item(seq_item, 1, 1)
             execute_one_pick_cycle(seq_item, 1, 1)
-    except EmergencyStopException as exc:
-        if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-            ROBOT_EVENT_CALLBACK("error", f"Protective stop: {exc}")
-        raise
     except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
         if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("error", str(e))
         if not MCP_INTENTIONAL_STOP:
@@ -4336,23 +4193,11 @@ def run_mcp_relocate_object(
         selected_object["_planned_drop_slot"] = reloc_slot
 
         # Step 4: execute the pick-and-drop.
-        # preplan_all_drop_slots is NOT called here â€” the slot is already set above
+        # preplan_all_drop_slots is NOT called here — the slot is already set above
         # and we do not want to allocate placement-box space for a workspace relocation.
         set_active_pick_item(sequence[0], 1, 1)
         execute_one_pick_cycle(sequence[0], 1, 1)
-    except EmergencyStopException as exc:
-        if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-            ROBOT_EVENT_CALLBACK("error", f"Protective stop: {exc}")
-        raise
     except Exception as e:
-        if EMERGENCY_STOP_ACTIVE or STOP_EVENT.is_set():
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"Protective stop: {e}")
-            raise EmergencyStopException("Motion interrupted by protective stop") from e
-        if STARTUP_LOCKED:
-            if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
-                ROBOT_EVENT_CALLBACK("error", f"System locked: {e}")
-            raise EmergencyStopException("System is locked pending startup confirmation.") from e
         if not MCP_INTENTIONAL_STOP and ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("error", str(e))
         if not MCP_INTENTIONAL_STOP:
