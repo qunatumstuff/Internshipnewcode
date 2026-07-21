@@ -332,18 +332,29 @@ async function startRobotMcpClient() {
 startRobotMcpClient();
 
 // Periodic Reconnection Check Loop
-setInterval(() => {
+setInterval(async () => {
   if (!isEmojiConnected) {
-    console.log("ðŸ”Œ Attempting to reconnect to Emoji MCP Server...");
+    console.log("🔌 Attempting to reconnect to Emoji MCP Server...");
     startMcpClient();
   }
   if (!isVisionConnected) {
-    console.log("ðŸ”Œ Attempting to reconnect to Vision MCP Server...");
+    console.log("🔌 Attempting to reconnect to Vision MCP Server...");
     startVisionMcpClient();
   }
+  
   if (!isRobotConnected) {
-    console.log("ðŸ”Œ Attempting to reconnect to Robot MCP Server...");
+    console.log("🔌 Attempting to reconnect to Robot MCP Server...");
     startRobotMcpClient();
+  } else if (robotMcpClient) {
+    // Active heartbeat: Ping the Python server to ensure the session hasn't gone stale
+    // If Python was restarted, this will fail with 'uninitialized' and trigger a reconnect.
+    try {
+      await robotMcpClient.callTool({ name: "get_estop_state" });
+    } catch (e) {
+      console.error(`⚠️ Robot MCP heartbeat failed (${e.message}). Marking as disconnected...`);
+      isRobotConnected = false;
+      robotMcpClient = null;
+    }
   }
 }, 5000);
 

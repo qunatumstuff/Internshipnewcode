@@ -2343,9 +2343,12 @@ def find_best_drop_slot(selected_object):
     
     grid_step = SMART_PLACEMENT_GRID_STEP_M
 
-    base_angle = planned_rz_for_object(selected_object)
+    # Base angle is always HOME_RZ so objects are placed squarely relative to the box (robot POV)
+    # completely ignoring the slanted angle they had on the table when picked up.
+    base_angle = HOME_RZ
 
-    for angle_offset in PLACEMENT_ANGLE_OFFSETS_DEG:
+    # Only test strictly square placement angles (0 and 90 degrees relative to box)
+    for angle_offset in [0, 90]:
         placement_angle_deg = _normalise_angle_deg(base_angle + angle_offset)
 
         for rotated in (False, True):
