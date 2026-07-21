@@ -3472,10 +3472,11 @@ def set_active_pick_item(seq_item, cycle_index=1, total_cycles=1):
     DROP_Y = _RUNTIME["DROP_Y"]
 
     if OBJECT_GRIP_WIDTH_M > MAX_STROKE_M:
-        raise RuntimeError(
+        logger.warning(
             f"Selected object requires {OBJECT_GRIP_WIDTH_M*1000:.1f} mm opening, "
-            f"but the usable gripper stroke is {MAX_STROKE_M*1000:.1f} mm."
+            f"clamping to max usable stroke of {MAX_STROKE_M*1000:.1f} mm."
         )
+        OBJECT_GRIP_WIDTH_M = MAX_STROKE_M
 
     PRE_PICK_OPEN_PERCENT = get_pre_pick_open_percent(OBJECT_GRIP_WIDTH_M)
     PICK_CLOSE_PERCENT = get_pick_close_percent(OBJECT_GRIP_WIDTH_M)

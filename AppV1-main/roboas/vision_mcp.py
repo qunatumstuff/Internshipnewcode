@@ -793,8 +793,31 @@ def is_inside_placement_box(det: dict) -> bool:
 
 def is_target_match(target: str, object_name: str) -> bool:
     """Helper to match logical target names against YOLO object_names."""
-    if target in ["soy milk", "soymilk", "umbrella", "wrench", "hat", "blue cube", "red cube", "green cube", "yellow cube"]:
+    target = target.strip().lower()
+    object_name = object_name.strip().lower()
+
+    # Exact match first (handles "blue cube", "red cube", "screwdriver", etc.)
+    if target == object_name:
+        return True
+
+    # Generic "cube" matches any colored cube
+    if target == "cube":
         return "cube" in object_name
+
+    # Generic "marker" or "black marker" aliases
+    if target in ("marker", "black marker"):
+        return object_name in ("black marker", "marker")
+
+    # Generic aliases for non-cube items
+    ALIASES = {
+        "soy milk": ["soy milk", "soymilk"],
+        "soymilk": ["soy milk", "soymilk"],
+        "med": ["medicine", "medicine box"],
+        "medicine box": ["medicine", "medicine box"],
+    }
+    if target in ALIASES:
+        return object_name in ALIASES[target]
+
     return target in object_name
 
 def check_overlap_obb(d1: dict, d2: dict, clearance: float = 0.0) -> bool:
@@ -1066,7 +1089,9 @@ async def qwen_plan_next_action(
         if sticker in target_base or sticker in user_context.lower():
             target_base = "cube"
             break
-    if "cube" in target_base:
+    # Only collapse to generic "cube" if user said literally "cube" with no color
+    # Keep "blue cube", "red cube", etc. as specific names so we match only that color
+    if target_base == "cube" or (target_base not in ["blue cube", "red cube", "green cube", "yellow cube"] and "cube" in target_base):
         target_base = "cube"
 
     target_dets = [
