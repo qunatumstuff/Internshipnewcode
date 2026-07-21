@@ -709,7 +709,7 @@ async function processRobotQueue() {
         sendProgress("Moving arm to home position for a clear camera view...", true);
         try {
           console.log("[DEBUG] Calling return_home...");
-          const homeRes = await robotMcpClient.callTool({ name: "return_home", arguments: {} });
+          const homeRes = await robotMcpClient.callTool({ name: "return_home" });
           console.log("[DEBUG] return_home succeeded.");
           if (global._taskAborted) throw new Error("Task cancelled by user.");
           if (homeRes.content && homeRes.content[0].text.toLowerCase().startsWith("error")) throw new Error(homeRes.content[0].text);
@@ -719,7 +719,7 @@ async function processRobotQueue() {
         } finally {
           try { 
             console.log("[DEBUG] Calling clear_return_home...");
-            await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} }); 
+            await robotMcpClient.callTool({ name: "clear_return_home" }); 
             console.log("[DEBUG] clear_return_home succeeded.");
           } catch(e) {
             console.error(`[DEBUG] clear_return_home FAILED: ${e.message}`);
@@ -785,7 +785,7 @@ async function processRobotQueue() {
     }
     else if (name === "clear_return_home") {
       sendProgress("Clearing home lock...");
-      if (robotMcpClient) await robotMcpClient.callTool({ name: "clear_return_home", arguments: args });
+      if (robotMcpClient) await robotMcpClient.callTool({ name: "clear_return_home" });
       sendProgress("Home lock cleared successfully.");
       await new Promise(r => setTimeout(r, 1500));
     }
@@ -795,8 +795,8 @@ async function processRobotQueue() {
         // E-stop instantly
         
         // Go home
-        await robotMcpClient.callTool({ name: "return_home", arguments: {} });
-        await robotMcpClient.callTool({ name: "clear_return_home", arguments: {} });
+        await robotMcpClient.callTool({ name: "return_home" });
+        await robotMcpClient.callTool({ name: "clear_return_home" });
         
         sendProgress("Arm has been returned to home.", true);
         setTimeout(async () => {
@@ -806,7 +806,11 @@ async function processRobotQueue() {
       }
     }
   } catch (err) {
-    console.error(`âŒ Task Queue Failed: ${err.message}`);
+    console.error(`❌ Task Queue Failed: ${err.message}`);
+    
+    // Completely clear the queue on any failure so we don't accidentally execute stale commands.
+    robotTaskQueue = [];
+    broadcastQueueUpdate();
     
     if (err.message !== "Task cancelled by user.") {
       // John speaks a friendly verbal reply about the failure

@@ -216,22 +216,27 @@ async def handle_list_tools() -> list[Tool]:
         Tool(
             name="emergency_stop",
             description="Emergency stop. Halts all physical robot movements immediately.",
-            inputSchema={"type": "object", "properties": {}}
+            inputSchema={"type": "object"}
         ),
         Tool(
             name="return_home",
             description="Return home. Clears errors, ensures robot is ready, and moves to the home position safely.",
-            inputSchema={"type": "object", "properties": {}}
+            inputSchema={"type": "object"}
         ),
         Tool(
             name="clear_emergency_stop",
             description="Explicitly acknowledge and clear a latched emergency stop. Required before the robot can move again after emergency_stop was triggered.",
-            inputSchema={"type": "object", "properties": {}}
+            inputSchema={"type": "object"}
         ),
         Tool(
             name="clear_return_home",
             description="Clear the home latch, allowing the robot to accept new commands after returning home.",
-            inputSchema={"type": "object", "properties": {}}
+            inputSchema={"type": "object"}
+        ),
+        Tool(
+            name="get_estop_state",
+            description="Returns the current latched state of the emergency stop and return home flags.",
+            inputSchema={"type": "object"}
         ),
     ]
 
@@ -404,6 +409,13 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         logger.warning("✅ Return home latch manually cleared by user/system.")
         robot_control.RETURN_HOME_ACTIVE = False
         return [TextContent(type="text", text="Return home latch cleared. Robot may now be commanded again.")]
+
+    if name == "get_estop_state":
+        state = {
+            "estop_active": getattr(robot_control, 'EMERGENCY_STOP_ACTIVE', False),
+            "return_home_active": getattr(robot_control, 'RETURN_HOME_ACTIVE', False)
+        }
+        return [TextContent(type="text", text=json.dumps(state))]
 
     raise ValueError(f"Unknown tool: {name}")
 
