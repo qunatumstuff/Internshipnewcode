@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const cors = require('cors');
@@ -1977,7 +1977,8 @@ app.get('/current-pdf', (req, res) => {
 
 // Safety Mode Endpoint (Triggered by vision system when human detected)
 app.post('/camera-heartbeat', (req, res) => {
-  const token = req.headers.authorization || req.body.token;
+  let token = req.headers.authorization || req.body.token;
+  if (token && token.startsWith('Bearer ')) token = token.slice(7);
   if (token !== CAMERA_HEARTBEAT_TOKEN) {
       return res.status(401).json({ success: false, message: "Unauthorized heartbeat" });
   }

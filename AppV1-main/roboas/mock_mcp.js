@@ -16,8 +16,8 @@ app.get('/sse', (req, res) => {
     
     clients.push(res);
     
-    // Send endpoint event
-    res.write(`event: endpoint\ndata: http://127.0.0.1:8002/messages\n\n`);
+    // Send endpoint event matching the port it connected to
+    res.write(`event: endpoint\ndata: http://127.0.0.1:${req.socket.localPort}/messages\n\n`);
 });
 
 app.post('/messages', (req, res) => {
@@ -25,11 +25,20 @@ app.post('/messages', (req, res) => {
     res.status(202).send('Accepted');
     
     setTimeout(() => {
-        let result = { content: [{ type: "text", text: '{"success":true,"state":"CLEARED"}' }] };
+        let result = {};
         let isError = false;
-        let errorCode = 0;
         
-        if (msg.method === "tools/call") {
+        if (msg.method === "initialize") {
+            result = {
+                protocolVersion: "2024-11-05",
+                capabilities: {},
+                serverInfo: { name: "mock", version: "1.0.0" }
+            };
+        } else if (msg.method === "notifications/initialized") {
+            return; // no response needed
+        } else if (msg.method === "ping") {
+            result = {};
+        } else if (msg.method === "tools/call") {
             const tool = msg.params.name;
             const args = msg.params.arguments;
             
@@ -44,8 +53,7 @@ app.post('/messages', (req, res) => {
             } else if (tool === "clear_emergency_stop") {
                 if (mockFail) {
                     isError = true;
-                    errorCode = -32000;
-                    result = { error: { code: -32000, message: "Fault" } };
+                    result = { code: -32000, message: "Fault" };
                 } else if (args.token !== "test-clear-token") {
                     result = { content: [{ type: "text", text: "Error: Invalid capability token" }] };
                 } else {
@@ -57,21 +65,25 @@ app.post('/messages', (req, res) => {
                 } else {
                     result = { content: [{ type: "text", text: '{"success":true,"state":"CLEARED"}' }] };
                 }
+            } else {
+                result = { content: [{ type: "text", text: "success" }] };
             }
         }
         
-        const response = {
-            jsonrpc: "2.0",
-            id: msg.id,
-        };
-        
-        if (isError) {
-            response.error = result.error;
-        } else {
-            response.result = result;
+        if (msg.id !== undefined) {
+            const response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+            };
+            
+            if (isError) {
+                response.error = result;
+            } else {
+                response.result = result;
+            }
+            
+            clients.forEach(c => c.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`));
         }
-        
-        clients.forEach(c => c.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`));
     }, mockDelay * 1000);
 });
 

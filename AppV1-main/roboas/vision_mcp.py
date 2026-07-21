@@ -343,8 +343,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale):
             # TSR Integration
             try:
                 from top_surface_refinement import refine_top_surface_center, FLAT_TOP_CLASSES
-                # Extract corners float from result.obb.xyxyxyxy[i] if not done yet
-                corners_float = box.cpu().numpy().tolist()
+                corners_float = obb.xyxyxyxy[0].cpu().numpy().tolist()
                 
                 if cls_name in FLAT_TOP_CLASSES:
                     cat_entry = OBJECT_CATALOGUE.get(cls_name, {})
@@ -453,30 +452,6 @@ def run_yolo_detection(color_image, depth_frame, intrinsics, depth_scale):
             if coords is None:
                 continue
 
-            # TSR Integration
-            try:
-                from top_surface_refinement import refine_top_surface_center, FLAT_TOP_CLASSES
-                # Extract corners float from result.obb.xyxyxyxy[i] if not done yet
-                corners_float = box.cpu().numpy().tolist()
-                
-                if cls_name in FLAT_TOP_CLASSES:
-                    cat_entry = OBJECT_CATALOGUE.get(cls_name, {})
-                    refined = refine_top_surface_center(
-                        class_name=cls_name,
-                        obb_corners=corners_float,
-                        image_shape=color_image.shape,
-                        depth_image=np.asanyarray(depth_frame), # depth_frame is now a numpy array from atomic snapshot
-                        depth_scale=depth_scale,
-                        intrinsics=intrinsics,
-                        cam_to_robot_t=CAM_TO_ROBOT_T,
-                        expected_height_m=cat_entry.get("height_m", 0.0),
-                        method="hybrid"
-                    )
-                    if refined["valid"]:
-                        coords["raw_x"] = refined["x"]
-                        coords["raw_y"] = refined["y"]
-            except Exception as e:
-                logger.error(f"TSR error: {e}")
 
             # Apply permanent and grasp offsets exactly once
             offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})

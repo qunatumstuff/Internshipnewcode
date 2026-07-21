@@ -1,78 +1,5 @@
 [
   {
-    "timestamp": "2026-07-20T03:46:26.762Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "Welcome! I'm John, your robotic assistant. How can I help you today?",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-07-20T03:46:50.801Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_request",
-    "args": {
-      "text": "Hey"
-    },
-    "result": "Generating TTS..."
-  },
-  {
-    "timestamp": "2026-07-20T03:46:52.018Z",
-    "userQuestion": "System Event",
-    "toolName": "tts_success",
-    "args": {
-      "text": "Hey",
-      "attempt": 1
-    },
-    "result": "OpenAI TTS generated successfully."
-  },
-  {
-    "timestamp": "2026-07-20T03:46:58.763Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_request",
-    "args": {
-      "size": 75321,
-      "mimetype": "audio/webm"
-    },
-    "result": "Transcription request received."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:07.894Z",
-    "userQuestion": "System Event",
-    "toolName": "transcribe_success",
-    "args": {},
-    "result": "Transcription result: \"Yeah, so you see that's the weak point right there. You can ask him anything.\""
-  },
-  {
-    "timestamp": "2026-07-20T03:47:08.009Z",
-    "userQuestion": "Yeah, so you see that's the weak point right there...",
-    "toolName": "ask-gpt_prompt",
-    "args": {},
-    "result": "GPT request received."
-  },
-  {
-    "timestamp": "2026-07-20T03:47:08.881Z",
-    "userQuestion": "System Status",
-    "toolName": "get_status_emoji",
-    "args": {
-      "state": "answering"
-    },
-    "result": "updated to 🤖"
-  },
-  {
-    "timestamp": "2026-07-20T03:47:08.886Z",
-    "userQuestion": "System Event",
-    "toolName": "progress_sse",
-    "args": {
-      "status": null,
-      "isRobotMoving": false,
-      "hasTts": false
-    },
-    "result": "No TTS message."
-  },
-  {
     "timestamp": "2026-07-20T03:47:08.899Z",
     "userQuestion": "Yeah, so you see that's the weak point right there...",
     "toolName": "ask-gpt_response",
@@ -463,5 +390,65 @@
       "hasTts": false
     },
     "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-07-21T00:42:51.528Z",
+    "userQuestion": "turn on safety mode",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-07-21T00:42:51.533Z",
+    "userQuestion": "System Event",
+    "toolName": "progress_sse",
+    "args": {
+      "status": "Safety Mode Activated.",
+      "isRobotMoving": false,
+      "hasTts": false
+    },
+    "result": "No TTS message."
+  },
+  {
+    "timestamp": "2026-07-21T00:43:18.176Z",
+    "userQuestion": "turn on safety mode",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-07-21T00:43:24.481Z",
+    "userQuestion": "turn on safety mode",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-07-21T00:43:46.538Z",
+    "userQuestion": "turn on safety mode",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-07-21T00:43:52.308Z",
+    "userQuestion": "turn on safety mode",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-07-21T01:00:37.343Z",
+    "userQuestion": "turn on safety mode",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
+  },
+  {
+    "timestamp": "2026-07-21T01:00:43.159Z",
+    "userQuestion": "turn on safety mode",
+    "toolName": "ask-gpt_prompt",
+    "args": {},
+    "result": "GPT request received."
   }
 ]

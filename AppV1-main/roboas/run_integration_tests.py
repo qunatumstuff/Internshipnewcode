@@ -74,12 +74,12 @@ def run_tests():
             assertions = 0
             
             print("1. Testing Unauthorized Heartbeat...")
-            res, status = fetch_json("http://localhost:3000/camera-heartbeat", "POST", {"token": "wrong"}, token="test-camera-token")
+            res, status = fetch_json("http://localhost:3000/camera-heartbeat", "POST", {"token": "wrong"}, token="wrong")
             assert status == 401, f"Expected 401, got {status}"
             assertions += 1
             
             print("2. Testing Authorized Heartbeat...")
-            res, status = fetch_json("http://localhost:3000/camera-heartbeat", "POST", {"token": "test-camera-token"})
+            res, status = fetch_json("http://localhost:3000/camera-heartbeat", "POST", {"token": "test-camera-token"}, token="test-camera-token")
             assert status == 200, f"Expected 200, got {status}"
             assertions += 1
             
@@ -93,8 +93,9 @@ def run_tests():
             assert status == 403, f"Expected 403, got {status}"
             assertions += 1
             
-            print("5. Testing Invalid Voice Activation...")
-            res, status = fetch_json("http://localhost:3000/voice-command", "POST", {"question": "turn on safety mode"})
+            print("5. Testing Invalid Voice Activation (Stale Heartbeat)...")
+            time.sleep(3.1)
+            res, status = fetch_json("http://localhost:3000/ask-gpt", "POST", {"question": "turn on safety mode"})
             # Should fail because heartbeat is stale or because it's locked
             assert "Cannot activate" in res.get("answer", "") or "already latched" in res.get("answer", ""), f"Voice activation didn't block correctly: {res}"
             assertions += 1
@@ -138,7 +139,7 @@ def run_tests():
             print("9. Testing Clear E-Stop...")
             res, status = fetch_json("http://localhost:3000/clear-emergency-stop", "POST", {"manual_confirmed": True})
             if fail:
-                assert status == 500, f"Expected 500 on fail mode, got {status} - {res}"
+                assert status == 409, f"Expected 409 on fail mode, got {status} - {res}"
             else:
                 assert status == 200, f"Expected 200 on clear, got {status} - {res}"
             assertions += 1
