@@ -67,6 +67,8 @@ CLIENT_IP = "localhost"
 
 def send_robot_event(event_type, error_msg=None):
     global CLIENT_IP
+    import urllib.request
+    import json
     
     server_host = os.environ.get("SERVER_HOST", CLIENT_IP)
     url = f"http://{server_host}:3000/robot-event"
@@ -337,6 +339,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         if result.get("requires_redetection"):
             logger.info("Relocation complete — triggering fresh YOLO detection...")
             try:
+                import urllib.request
+                import json
                 payload = {
                     "jsonrpc": "2.0",
                     "method": "tools/call",

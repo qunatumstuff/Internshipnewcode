@@ -239,49 +239,61 @@ def _rotation_matrix_to_euler(R):
         yaw   = 0.0
     return roll, pitch, yaw
 
+def _pixel_to_robot(
+    cx_px,
+    cy_px,
+    angle_rad,
+    depth_frame,
+    intrinsics,
+    cls_name: str = ""
+):
+    """
+    Convert the interpolated OBB centre pixel into robot coordinates.
+    Uses the same single-pixel depth method as cameraidk.py.
+    """
 
-def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name: str = ""):
-    """
-    Convert a pixel centre + OBB angle into robot-frame XYZ and yaw.
-    The depth camera reads the TOP SURFACE of an object.
-    We correct Z to the object's true centre by adding catalogue_height / 2.
-    Returns dict {x, y, z, angle_deg} or None if depth is invalid.
-    """
-    median_result = get_median_everything(depth_frame, cx_px, cy_px)
-    if median_result is None: #or median_result <= 0.0
+    center_x = int(cx_px)
+    center_y = int(cy_px)
+
+    # Read depth from the exact interpolated centre pixel
+    depth = depth_frame.get_distance(center_x, center_y)
+
+    if not np.isfinite(depth) or depth <= 0.0:
         return None
 
-    median_x, median_y, median_depth = median_result
+    # Convert pixel and depth into camera-frame XYZ
+    cam_pt = rs.rs2_deproject_pixel_to_point(
+        intrinsics,
+        [center_x, center_y],
+        depth
+    )
 
-    cam_pt  = rs.rs2_deproject_pixel_to_point(intrinsics, [median_x,median_y] ,median_depth)
-    robot_pt = CAM_TO_ROBOT_T @ np.array([cam_pt[0], cam_pt[1], cam_pt[2], 1.0])
-
-    R_cam_to_robot   = CAM_TO_ROBOT_T[:3, :3]
-    R_obj_in_camera  = np.array([
-        [ math.cos(angle_rad), -math.sin(angle_rad), 0],
-        [ math.sin(angle_rad),  math.cos(angle_rad), 0],
-        [ 0,                    0,                   1],
+    # Transform camera-frame XYZ into robot-frame XYZ
+    robot_pt = CAM_TO_ROBOT_T @ np.array([
+        cam_pt[0],
+        cam_pt[1],
+        cam_pt[2],
+        1.0
     ])
-    _, _, yaw = _rotation_matrix_to_euler(R_cam_to_robot @ R_obj_in_camera)
 
-    # Camera reads top surface. Shift Z down to object centre (height / 2).
-    cat_entry = OBJECT_CATALOGUE.get(cls_name, {})
-    height_m  = cat_entry.get("height_m", 0.0)
-    z_centre  = round(float(robot_pt[2]) + Z_OFFSET_M + (height_m / 2), 4)
+    # Convert the OBB angle into robot-frame yaw
+    R_cam_to_robot = CAM_TO_ROBOT_T[:3, :3]
 
-    x_val = float(robot_pt[0])
-    y_val = float(robot_pt[1])
-    
-    offsets = GRASP_OFFSETS.get(cls_name.lower(), {"x": 0.0, "y": 0.0, "z": 0.0})
-    x_val += offsets["x"] - PERMA_OFFSET_X 
-    y_val += offsets["y"] - PERMA_OFFSET_Y
-    z_centre += offsets["z"]
+    R_obj_in_camera = np.array([
+        [math.cos(angle_rad), -math.sin(angle_rad), 0],
+        [math.sin(angle_rad),  math.cos(angle_rad), 0],
+        [0,                     0,                    1]
+    ])
+
+    _, _, yaw = _rotation_matrix_to_euler(
+        R_cam_to_robot @ R_obj_in_camera
+    )
 
     return {
-        "x":         round(x_val, 4),
-        "y":         round(y_val, 4),
-        "z":         z_centre,
-        "angle_deg": round(math.degrees(yaw),  2),
+        "x": round(float(robot_pt[0]), 4),
+        "y": round(float(robot_pt[1]), 4),
+        "z": round(float(robot_pt[2]), 4),
+        "angle_deg": round(math.degrees(yaw), 2),
     }
 
 
@@ -1106,7 +1118,7 @@ async def qwen_plan_next_action(
         "hat": "red"
     }
 
-    target = target.lower()#-----------------------------
+    target = target.lower()#_
     for sticker in STICKER_MAPPINGS.keys():
         if sticker in target_base or sticker in user_context.lower():
             target_base = "cube"

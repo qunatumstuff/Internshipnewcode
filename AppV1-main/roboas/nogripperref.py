@@ -250,7 +250,7 @@ DEFAULT_GRIPPER_SPEED = 50
 # of the catalogue default. This avoids adding a manual angle-selection menu.
 DEFAULT_OBJECT_ORIENTATION_DEG = 90.0
 DEFAULT_PREFERRED_GRASP_ANGLE_DEG = 0.0
-CAMERA_ANGLE_OFFSET_DEG = 0
+CAMERA_ANGLE_OFFSET_DEG = 0 #20
 
 # Object selection catalogue. Add more objects here later.
 # Dimensions are in metres.
@@ -596,15 +596,15 @@ GRIPPER_WIDTH_CMD_INTERCEPT = 40.538462
 # Safety cap: real logged timeouts traced to commanding 100% open
 # (width_cmd=87.3), which extrapolates beyond our validated calibration
 # data (real logged points only go up to 28mm gap -> width 75). Capping
-# ordinary opens at 80% keeps commands close to/within the validated
-# range (80% -> ~78, near the confirmed-working 75).
-GRIPPER_MAX_SAFE_OPEN_PERCENT = 80
+# ordinary opens at 90% keeps commands close to/within the validated
+# range (90% -> ~78, near the confirmed-working 75).
+GRIPPER_MAX_SAFE_OPEN_PERCENT = 90
 
 # Default "resting/traveling" open percent -- used while moving between
 # positions (not actively gripping a specific object), instead of
 # leaving the gripper at whatever percent it was last commanded to, or
 # jumping straight to a risky 100%.
-GRIPPER_TRAVEL_OPEN_PERCENT = 80
+GRIPPER_TRAVEL_OPEN_PERCENT = 90
 
 HYBRID_FORCE_GRIP_ENABLED = False  # forced off -- see note above; real force
                                     # feedback is not available on this hardware
