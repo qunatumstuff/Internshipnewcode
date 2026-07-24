@@ -14,11 +14,11 @@ except ImportError:
     rs = None
 
 try:
-    from neurapy.robot import Robot
+    from neurapy.robot import Robot  # type: ignore
 except ImportError:
     import sys
     sys.path.append(r"C:\Module-A\PythonAPI")
-    from neurapy.robot import Robot
+    from neurapy.robot import Robot  # type: ignore
 
 
 # ============================================================

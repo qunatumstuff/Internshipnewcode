@@ -120,10 +120,10 @@ except ImportError:
     pass  # print removed for MCP quiet operation
 
 try:
-    from neurapy.robot import Robot
+    from neurapy.robot import Robot  # type: ignore
 except ImportError:
     sys.path.append(r"C:\Module-A\PythonAPI")
-    from neurapy.robot import Robot
+    from neurapy.robot import Robot  # type: ignore
 
 r = Robot()
 

@@ -67,9 +67,7 @@ CLIENT_IP = "localhost"
 
 def send_robot_event(event_type, error_msg=None):
     global CLIENT_IP
-    import urllib.request
-    import json
-    
+        
     server_host = os.environ.get("SERVER_HOST", CLIENT_IP)
     url = f"http://{server_host}:3000/robot-event"
     payload = {"event": event_type}
@@ -79,12 +77,12 @@ def send_robot_event(event_type, error_msg=None):
     logger.info(f"Sending event '{event_type}' to server at {url}...")
     try:
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
+        req = _urllib_req.Request(
             url,
             data=data,
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=3) as response:
+        with _urllib_req.urlopen(req, timeout=3) as response:
             logger.info(f"Event sent successfully, response status: {response.status}")
     except Exception as e:
         logger.error(f"Failed to send event to server: {e}")
@@ -339,20 +337,18 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         if result.get("requires_redetection"):
             logger.info("Relocation complete — triggering fresh YOLO detection...")
             try:
-                import urllib.request
-                import json
                 payload = {
                     "jsonrpc": "2.0",
                     "method": "tools/call",
                     "params": {"name": "capture_and_detect", "arguments": {}},
                     "id": 1
                 }
-                req = urllib.request.Request(
+                req = _urllib_req.Request(
                     "http://localhost:8001/messages",
                     data=json.dumps(payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"}
                 )
-                with urllib.request.urlopen(req, timeout=10) as r:
+                with _urllib_req.urlopen(req, timeout=10) as r:
                     res_data = json.loads(r.read().decode("utf-8"))
                     if "result" in res_data:
                         content_text = res_data["result"]["content"][0]["text"]

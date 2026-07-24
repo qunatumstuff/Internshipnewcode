@@ -121,10 +121,10 @@ except ImportError:
     print("[WARN] 'keyboard' module not found — H/Q hotkeys disabled.")
 
 try:
-    from neurapy.robot import Robot
+    from neurapy.robot import Robot  # type: ignore
 except ImportError:
     sys.path.append(r"C:\Module-A\PythonAPI")
-    from neurapy.robot import Robot
+    from neurapy.robot import Robot  # type: ignore
 
 r = Robot()
 

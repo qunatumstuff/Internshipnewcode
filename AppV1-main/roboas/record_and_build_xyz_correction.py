@@ -29,7 +29,7 @@ import pyrealsense2 as rs
 from ultralytics import YOLO
 
 try:
-    from neurapy.robot import Robot
+    from neurapy.robot import Robot  # type: ignore
 except ImportError:
     print("Warning: neurapy library not found. Robot integration will fail.")
 
