@@ -1216,7 +1216,7 @@ async def qwen_plan_next_action(
         f"PLACEMENT BOX BOUNDS: X: 0.248m to 0.586m, Y: 0.055m to 0.280m. Objects within this area are already safely placed and should generally not be picked.\n\n"
         f"INSTRUCTIONS:\n"
         f"  1. Look at the image AND read the Python sensor analysis for info of objects that can be picked up by the gripper.\n"
-        f"  2. IMPORTANT: Do NOT try to visually look for the stickers on the cubes. You MUST blindly trust the following mapping.\n"
+        f"  2. IMPORTANT: You MUST blindly trust the object names provided in the Python Sensor Analysis list. Do NOT second-guess the names of the objects based on your own visual judgement (e.g. confusing a marker for a screwdriver). If the user asked for '{target}', you MUST pick the ID that is explicitly labeled as '{target}'.\n"
         f"  3. STICKER MAPPING: The stickers (soy milk, hat, wrench, umbrella) are on the GREEN, RED, BLUE, and YELLOW cubes respectively. If the user asked for one of these, find the matching colored cube. If the user asked for a colored cube directly (e.g., 'blue cube'), pick THAT specific colored cube. The target you must pick is '{target}'.\n"
         f"  4. CRITICAL COLOR CHECK: If you are asked to pick up a specific colored cube (e.g., 'blue cube'), you MUST visually verify the target cube matches that color. If the requested color is missing from the image entirely, output 'abort' and write 'not found' in your reasoning. Do NOT pick a differently colored cube just to be helpful.\n"
         f"  5. If the user asks for an object NOT in the catalogue, output 'abort'.\n"

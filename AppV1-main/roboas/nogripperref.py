@@ -250,7 +250,7 @@ DEFAULT_GRIPPER_SPEED = 50
 # of the catalogue default. This avoids adding a manual angle-selection menu.
 DEFAULT_OBJECT_ORIENTATION_DEG = 90.0
 DEFAULT_PREFERRED_GRASP_ANGLE_DEG = 0.0
-CAMERA_ANGLE_OFFSET_DEG = 20
+CAMERA_ANGLE_OFFSET_DEG = 0
 
 # Object selection catalogue. Add more objects here later.
 # Dimensions are in metres.
