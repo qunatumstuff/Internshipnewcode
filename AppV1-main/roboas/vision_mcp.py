@@ -154,10 +154,10 @@ OBJECT_CATALOGUE = {
 # Grasping offsets (X, Y, Z) in meters for each object class.
 # Edit these values to fine-tune the robot's grasping position for specific objects.
 
-PERMA_OFFSET_X = 0.007
-PERMA_OFFSET_Y = -0.012
+PERMA_OFFSET_X = 0.01067 
+PERMA_OFFSET_Y = -0.01086 
 GRASP_OFFSETS = {
-    "black marker": {"x": 0.0, "y": 0.0, "z": 0.0},
+    "black marker": {"x": 0.0, "y": 0.0, "z": -0.007},
     "blue cube":    {"x": 0.0, "y": 0.0, "z": 0.0},
     "red cube":     {"x": 0.0, "y": 0.0, "z": 0.0},
     "green cube":   {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -186,7 +186,7 @@ CAM_TO_ROBOT_T = np.array([
 # on the top surface of the object rather than its centre.
 # 25mm raises the robot's approach height so the gripper doesn't
 # dig into the object on descent.
-Z_OFFSET_M = 0
+Z_OFFSET_M = -0.02
 
 server = Server("vision-mcp-server")
 
@@ -202,18 +202,25 @@ def isinside(point_x, point_y):
     # Y: -370 to 0  (tolerance: -380 to 10)
     return 240 <= point_x <= 595 and -380 <= point_y <= 10
 
-def get_median_depth(depth_frame, cx, cy, radius=4):
-    valid_depths = []
+def get_median_everything(depth_frame, cx, cy, radius=4):
+    valid_points = []# valid points changed form depth since we using x y z
     width = depth_frame.get_width()
     height = depth_frame.get_height()
     for y in range(max(0, int(cy) - radius), min(height, int(cy) + radius + 1)):
         for x in range(max(0, int(cx) - radius), min(width, int(cx) + radius + 1)):
             depth = depth_frame.get_distance(x, y)
             if np.isfinite(depth) and depth > 0.0:
-                valid_depths.append(depth)
-    if not valid_depths:
+                valid_points.append((x,y,depth))
+
+    if not valid_points:
         return None
-    return float(np.median(valid_depths))
+    valid_points = np.asarray(valid_points, dtype=np.float64)
+
+    median_x=(float(np.median(valid_points[:,0])))
+    median_y=(float(np.median(valid_points[:,1])))
+    median_depth=(float(np.median(valid_points[:,2])))
+
+    return median_x,median_y,median_depth
 
 # ==========================================
 # DETECTION — runs on demand using camera frame
@@ -240,11 +247,13 @@ def _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name: 
     We correct Z to the object's true centre by adding catalogue_height / 2.
     Returns dict {x, y, z, angle_deg} or None if depth is invalid.
     """
-    distance = get_median_depth(depth_frame, cx_px, cy_px)
-    if distance is None or distance <= 0.0:
+    median_result = get_median_everything(depth_frame, cx_px, cy_px)
+    if median_result is None: #or median_result <= 0.0
         return None
 
-    cam_pt  = rs.rs2_deproject_pixel_to_point(intrinsics, [cx_px, cy_px], distance)
+    median_x, median_y, median_depth = median_result
+
+    cam_pt  = rs.rs2_deproject_pixel_to_point(intrinsics, [median_x,median_y] ,median_depth)
     robot_pt = CAM_TO_ROBOT_T @ np.array([cam_pt[0], cam_pt[1], cam_pt[2], 1.0])
 
     R_cam_to_robot   = CAM_TO_ROBOT_T[:3, :3]
@@ -313,7 +322,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
         return []
 
     for result in obb_results:
-        if result.obb is None:
+        if result.obb is None or len(result.obb) == 0:
             # RUN DISCONTINUITY FALLBACK
             if camera.inference_lock.acquire(timeout=2.0):
                 try:
@@ -350,9 +359,13 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                     if not isinside(coords["x"] * 1000, coords["y"] * 1000):
                         continue
 
-                    distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
-                    w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
-                    h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
+                    median_result = get_median_everything(depth_frame, cx_px, cy_px)
+                    if median_result is None:
+                        median_depth = 0.0
+                    else:
+                        _, _, median_depth = median_result
+                    w_m = (w_px * median_depth) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
+                    h_m = (h_px * median_depth) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
                     detections.append({
                         "source":      "FALLBACK",
@@ -384,14 +397,13 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             if cls_name not in obb_angles or conf > obb_angles[cls_name]["conf"]:
                 obb_angles[cls_name] = {"angle_rad": angle_rad, "conf": conf}
 
-            # Pipe and sponge: keep angle only, position comes from segmentation
-            if cls_name in ("pipe", "sponge"):
-                continue
 
-            cx_px = float(obb.xywhr[0][0])
-            cy_px = float(obb.xywhr[0][1])
-            w_px  = float(obb.xywhr[0][2])
-            h_px  = float(obb.xywhr[0][3])
+            center_topx, center_topy = camera.get_interpolated_center(obb)
+
+            cx_px = float(center_topx)
+            cy_px = float(center_topy)
+            w_px = float(obb.xywhr[0][2])
+            h_px = float(obb.xywhr[0][3])
 
             coords = _pixel_to_robot(cx_px, cy_px, angle_rad, depth_frame, intrinsics, cls_name=cls_name)
             if coords is None:
@@ -401,9 +413,14 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
                 continue
 
             # Calculate physical dimensions
-            distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
-            w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
-            h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
+            median_result = get_median_everything(depth_frame, cx_px, cy_px)
+            if median_result is None:
+                median_depth=0
+            else:
+                _, _, median_depth = median_result
+            
+            w_m = (w_px * median_depth) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
+            h_m = (h_px * median_depth) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
             detections.append({
                 "source":      "OBB",
@@ -441,7 +458,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
         confs     = seg_result.boxes.conf.cpu().numpy()
 
         for mask, class_id, conf in zip(masks, class_ids, confs):
-            cls_name = camera.model.names[class_id].lower()
+            cls_name = camera.segment.names[class_id].lower()
 
             mask_bin = cv2.resize(mask, (color_image.shape[1], color_image.shape[0]))
             mask_bin = ((mask_bin > 0.5) * 255).astype(np.uint8)
@@ -478,9 +495,13 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             if not isinside(coords["x"] * 1000, coords["y"] * 1000):
                 continue
 
-            distance = get_median_depth(depth_frame, cx_px, cy_px) or 0.0
-            w_m = (w_px * distance) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
-            h_m = (h_px * distance) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
+            median_result = get_median_everything(depth_frame, cx_px, cy_px) 
+            if median_result is None:
+                median_depth=0
+            else:
+                _, _, median_depth = median_result
+            w_m = (w_px * median_depth) / intrinsics.fx if hasattr(intrinsics, 'fx') and intrinsics.fx > 0 else 0
+            h_m = (h_px * median_depth) / intrinsics.fy if hasattr(intrinsics, 'fy') and intrinsics.fy > 0 else 0
 
             detections.append({
                 "source":      "SEG",
@@ -1085,7 +1106,7 @@ async def qwen_plan_next_action(
         "hat": "red"
     }
 
-    target_base = target.lower()
+    target = target.lower()#-----------------------------
     for sticker in STICKER_MAPPINGS.keys():
         if sticker in target_base or sticker in user_context.lower():
             target_base = "cube"

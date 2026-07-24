@@ -135,7 +135,77 @@ def get_median_depth(depth_frame, cx, cy, radius=4):
         return None
     return float(np.median(valid_depths))
 
+def get_interpolated_center(obb):
+    coordinates = obb.xyxyxyxy[0].cpu().numpy().astype(int)
 
+    x1, y1 = coordinates[0]
+    x2, y2 = coordinates[1]
+    x3, y3 = coordinates[2]
+    x4, y4 = coordinates[3]
+
+    coordinates_list = [
+        (x1, y1),
+        (x2, y2),
+        (x3, y3),
+        (x4, y4)
+    ]
+
+    top = sorted(
+        coordinates_list,
+        key=lambda point: point[1]
+    )[:2]
+
+    bottom = sorted(
+        coordinates_list,
+        reverse=True,
+        key=lambda point: point[1]
+    )[:2]
+
+    if top[0][0] < top[1][0]:
+        top_left = top[0]
+        top_right = top[1]
+    else:
+        top_left = top[1]
+        top_right = top[0]
+
+    if bottom[0][0] < bottom[1][0]:
+        bottom_left = bottom[0]
+        bottom_right = bottom[1]
+    else:
+        bottom_left = bottom[1]
+        bottom_right = bottom[0]
+
+    c010 = (
+        int(
+            top_left[0]
+            + 0.77 * (bottom_left[0] - top_left[0])
+        ),
+        int(
+            top_left[1]
+            + 0.77 * (bottom_left[1] - top_left[1])
+        )
+    )
+
+    c110 = (
+        int(
+            top_right[0]
+            + 0.77 * (bottom_right[0] - top_right[0])
+        ),
+        int(
+            top_right[1]
+            + 0.77 * (bottom_right[1] - top_right[1])
+        )
+    )
+
+    center_top = np.mean(
+        [c010, c110, top_right, top_left],
+        axis=0
+    )
+
+    center_topx = int(center_top[0])
+    center_topy = int(center_top[1])
+
+    return center_topx, center_topy
 
 def _vision_loop_inner():
     global current_rgb_frame, current_target_class, latest_3d_coords, last_click, spatial_coords, current_depth_frame, camera_intrinsics
@@ -353,10 +423,17 @@ def _vision_loop_inner():
                         2
                     )
 
-                    # Red centre dot at OBB centre
-                    obb_cx = int(obb.xywhr[0][0])
-                    obb_cy = int(obb.xywhr[0][1])
-                    cv2.circle(color_image, (obb_cx, obb_cy), 5, (0, 0, 255), -1)
+                    # Red centre dot at interpolated centre
+                    center_topx, center_topy = get_interpolated_center(obb)
+                    cv2.circle(
+                        color_image,
+                        (center_topx, center_topy),
+                        5,
+                        (0, 0, 255),
+                        -1
+                    )
+
+                   
 
                     cv2.putText(
                         color_image,
@@ -377,29 +454,36 @@ def _vision_loop_inner():
                             [0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000],
                             ], dtype=np.float64)
 
-                        rotation_from_matrix = CAM_TO_ROBOT_T[:3, :3]
-
-                        center_x = int(obb.xywhr[0][0])
-                        center_y = int(obb.xywhr[0][1])
-                        angle = float(obb.xywhr[0][4])
-
-                        rotation_from_camera = np.array([
-                            [math.cos(angle), -math.sin(angle), 0],
-                            [math.sin(angle),  math.cos(angle), 0],
-                            [0,                0,               1]
-                        ])
+                        
+                        center_topx, center_topy = get_interpolated_center(obb)
+                        center_x = center_topx
+                        center_y = center_topy
+                        
 
                         distance = get_median_depth(depth_frame, center_x, center_y, radius=4)
                         if distance is None or distance <= 0:
                             continue
                         spatial_coords = rs.rs2_deproject_pixel_to_point(intrinsics, [center_x, center_y], distance)
+                        robot = CAM_TO_ROBOT_T @ np.array([
+                             spatial_coords[0],
+                             spatial_coords[1],
+                             spatial_coords[2],
+                             1.0
+                        ])
+                        latest_3d_coords["x"] = smooth_coord(
+                             latest_3d_coords["x"],
+                             robot[0]
+                            )
+                        latest_3d_coords["y"] = smooth_coord(   
+                         latest_3d_coords["y"],
+                         robot[1]
+                        )
 
-                        latest_3d_coords["x"] = smooth_coord(latest_3d_coords["x"], spatial_coords[0])
-                        latest_3d_coords["y"] = smooth_coord(latest_3d_coords["y"], spatial_coords[1])
-                        latest_3d_coords["z"] = smooth_coord(latest_3d_coords["z"], spatial_coords[2] + Z_OFFSET)
+                        latest_3d_coords["z"] = smooth_coord(
+                             latest_3d_coords["z"],
+                             robot[2] + Z_OFFSET
+                        )
 
-                        roll, pitch, yaw = rotationMatrixToEulerAngles(rotation_from_matrix @ rotation_from_camera)
-                        robot = CAM_TO_ROBOT_T @ np.array([spatial_coords[0], spatial_coords[1], spatial_coords[2], 1.0])
 
                         cv2.putText(
                             color_image,
