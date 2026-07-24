@@ -832,10 +832,10 @@ async function processRobotQueue() {
       let friendlyFailMsg = '';
       const lowerErr = err.message.toLowerCase();
       
-      if (lowerErr.includes('emergency stop') || lowerErr.includes('estop') || lowerErr.includes('powered off') || lowerErr.includes('hardware is locked')) {
+      if (lowerErr.includes('emergency stop') || lowerErr.includes('estop') || lowerErr.includes('powered off') || lowerErr.includes('hardware is locked') || lowerErr.includes('error state') || lowerErr.includes('failed to execute function') || lowerErr.includes('3104')) {
         isSafetyStopLatched = true;
         lastSafetyStopError = err.message;
-        friendlyFailMsg = "Emergency stop is active. Please clear the emergency stop to proceed.";
+        friendlyFailMsg = "The robot hardware encountered an error state. Please clear the emergency stop or reset the system to proceed.";
       } else if (lowerErr.includes('already placed')) {
         friendlyFailMsg = `That item is already inside the placement box.`;
       } else if (lowerErr.includes('not found') || lowerErr.includes('could not identify')) {
@@ -858,13 +858,13 @@ async function processRobotQueue() {
       setTimeout(async () => {
         if (!isRobotBusy) sendProgress(null, false);
         await sendWakewordCommand('unmute');
-      }, 2000);
+      }, 6000);
     } else {
       sendProgress("Task was cancelled.", false);
       setTimeout(async () => {
         if (!isRobotBusy) sendProgress(null, false);
         await sendWakewordCommand('unmute');
-      }, 2000);
+      }, 3000);
     }
   } finally {
     if (robotTaskQueue.length > 0 && robotTaskQueue[0].id === task.id) {
@@ -980,7 +980,9 @@ console.error = function(...args) {
     isServerLogging = false;
   }
 };
-// ==================================
+
+let lastProgressData = null;
+
 app.get('/progress', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -988,6 +990,13 @@ app.get('/progress', (req, res) => {
   res.flushHeaders();
 
   progressClients.push(res);
+
+  if (lastProgressData) {
+    try {
+      res.write(`data: ${JSON.stringify(lastProgressData)}\n\n`);
+    } catch (_) {}
+  }
+
   req.on('close', () => {
     progressClients = progressClients.filter(client => client !== res);
   });
@@ -999,13 +1008,16 @@ function isExpectedStopError(errMsg) {
 }
 
 function sendProgress(status, isRobotMoving = false, ttsMessage = null) {
-  console.log(`ðŸ“¡ [SSE Progress Broadcast]: "${status}" (isRobotMoving: ${isRobotMoving}, ttsMessage: ${ttsMessage !== null})`);
+  console.log(`📡 [SSE Progress Broadcast]: "${status}" (isRobotMoving: ${isRobotMoving}, ttsMessage: ${ttsMessage !== null})`);
   logToolCall("System Event", "progress_sse", { status, isRobotMoving, hasTts: ttsMessage !== null }, ttsMessage || "No TTS message.");
+  
+  lastProgressData = { status, isRobotMoving, tts_message: ttsMessage, estop_status: isSafetyStopLatched };
+
   progressClients.forEach(client => {
     try {
-      client.write(`data: ${JSON.stringify({ status, isRobotMoving, tts_message: ttsMessage, estop_status: isSafetyStopLatched })}\n\n`);
+      client.write(`data: ${JSON.stringify(lastProgressData)}\n\n`);
     } catch (e) {
-      console.error('âŒ SSE write error:', e.message);
+      console.error('❌ SSE write error:', e.message);
     }
   });
 }
@@ -1431,11 +1443,21 @@ EMERGENCY STOP RULES:
 - If the user says anything like "clear emergency stop", "release e-stop", "reset the stop", "clear the stop", "e-stop off", "unlock robot", or similar, you MUST immediately call the 'clear_emergency_stop' tool. Do NOT ask for confirmation, do NOT respond conversationally. Just call the tool.
 - If the user asks to pick something but you know the e-stop is active, inform them you will clear it first, then call clear_emergency_stop before proceeding.
 
-CRITICAL OBJECT INFERENCE RULE:
-- If the user makes an implicit or vague request (e.g. "I am sick" or "I need to fix my car"), evaluate the available objects in the tool enum.
-  * If EXACTLY ONE object makes sense (e.g. "medicine" for being sick), call the tool directly without asking for clarification.
-  * If MULTIPLE objects could logically satisfy the request (e.g. "wrench" and "screwdriver" for fixing a car), YOU MUST NOT CALL THE TOOL. YOU MUST INSTEAD ASK THE USER TO CLARIFY which specific object they want (e.g. "I have a wrench and a screwdriver, which one do you need?").
-- If the user explicitly asks for a specific object that is NOT in the available tool parameters/enum values (e.g. a "hammer"), you MUST NOT call any locate or pick tool. Instead, politely inform the user that this object is not available in the workspace and list the actual objects you can interact with. Never guess or fall back to an unrelated object like "cube".
+CRITICAL OBJECT INFERENCE & CLARIFICATION RULES:
+- CONTEXTUAL INFERENCE (PREFER INFERRING OVER ASKING):
+  * You SHOULD INFER the intended object using common sense and context clues whenever reasonable.
+  * Examples of valid inferences:
+    - "not feeling well" / "sick" / "headache" / "something for how I am feeling" -> infer "medicine"
+    - "something to write with" / "something for the whiteboard" -> infer "black marker"
+    - "something to block the sun" / "rain" -> infer "umbrella" (or "hat")
+    - "clean up" / "wipe table" -> infer "sponge"
+    - "fix a car" / "turn a bolt" -> infer "wrench" (or "screwdriver")
+  * When the user gives a sequence with clear context clues (e.g., "I'm not feeling well, then a hat, then something to write with"), infer the sequence (["medicine", "hat", "black marker"]) and call 'locate_object' directly without asking for clarification!
+- ONLY CLARIFY IF TRULY AMBIGUOUS (NO CONTEXT CLUES):
+  * Only ask for clarification if the statement is TRULY UNRESOLVABLE because there are ZERO context clues and multiple identical objects exist.
+  * Example requiring clarification: "pick up a cube" (when red, blue, green, and yellow cubes exist without any color/sticker specified), or "pick up a tool" (when wrench and screwdriver both exist and no purpose was mentioned).
+- UNSUPPORTED OBJECTS:
+  * If the user explicitly asks for an object that is NOT in the available tool parameter enum (e.g. "hammer" or "phone"), do NOT call any pick tool. Politely inform the user that it is not available in the workspace and list the available objects.
 
 CRITICAL OUTPUT CLEANLINESS:
 - Do NOT output raw coordinates (e.g. x, y, z values), technical tool arguments, or structured JSON/dictionary info. Keep your responses purely conversational, natural, and concise. Speak about actions in plain English, not data info.

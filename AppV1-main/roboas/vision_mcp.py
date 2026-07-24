@@ -1111,25 +1111,30 @@ async def qwen_plan_next_action(
     """
     # 1. Resolve sticker -> colour mapping and find the base target name
     STICKER_MAPPINGS = {
-        "umbrella": "yellow",
-        "wrench": "blue",
-        "soy milk": "green",
-        "soymilk": "green",
-        "hat": "red"
+        "umbrella": "yellow cube",
+        "wrench": "blue cube",
+        "soy milk": "green cube",
+        "soymilk": "green cube",
+        "hat": "red cube"
     }
 
-    target = target.lower()#_
-    for sticker in STICKER_MAPPINGS.keys():
-        if sticker in target_base or sticker in user_context.lower():
-            target_base = "cube"
+    target = target.lower()
+    target_base = STICKER_MAPPINGS.get(target, target)
+    for sticker, mapped in STICKER_MAPPINGS.items():
+        if sticker in target or sticker in user_context.lower():
+            target_base = mapped
             break
-    if "cube" in target_base:
-        target_base = "cube"
 
+    # Strictly filter candidates by the mapped base target (e.g. 'red cube' for 'hat')
     target_dets = [
         d for d in detections
-        if is_target_match(target_base, d.get("object_name", "").lower())
+        if d.get("object_name", "").lower() == target_base.lower() and not is_inside_placement_box(d)
     ]
+    if not target_dets:
+        target_dets = [
+            d for d in detections
+            if is_target_match(target_base, d.get("object_name", "").lower()) and not is_inside_placement_box(d)
+        ]
 
     # 2. Map implied colours to disambiguate targets
     COLOUR_WORDS = ["blue", "red", "green", "yellow", "black", "white", "orange", "purple"]
@@ -1138,7 +1143,7 @@ async def qwen_plan_next_action(
     
     for sticker, mapped_color in STICKER_MAPPINGS.items():
         if sticker in request_text and mapped_color not in mentioned_colours:
-            mentioned_colours.append(mapped_color)
+            mentioned_colours.append(mapped_color.split()[0])
 
     resolved_target = target_base
     colour_matches = []
@@ -1533,11 +1538,15 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             if target_base in STICKER_MAPPINGS_EXACT:
                 target_base = STICKER_MAPPINGS_EXACT[target_base]
                 
-            # Restore original fuzzy match array for Qwen fallback and depth analysis
             target_detections = [
                 d for d in detections
-                if is_target_match(target, d.get("object_name", "")) and not is_inside_placement_box(d)
+                if d.get("object_name", "").lower() == target_base.lower() and not is_inside_placement_box(d)
             ]
+            if not target_detections:
+                target_detections = [
+                    d for d in detections
+                    if is_target_match(target, d.get("object_name", "")) and not is_inside_placement_box(d)
+                ]
                 
             exact_matches_outside = [
                 d for d in detections

@@ -470,6 +470,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       _audioElement?.pause();
       _audioElement?.src = '';
       try {
+        // Also stop any active Web Audio source so error messages play immediately
+        _waSourceNode?.stop(0);
+      } catch (_) {}
+      _waSourceNode = null;
+      try {
         html.window.speechSynthesis?.cancel();
       } catch (_) {}
 
