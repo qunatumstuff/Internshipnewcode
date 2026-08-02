@@ -1,137 +1,289 @@
-# Roboas
+# 🤖 HRI Robot Assistant — Setup & Operation Guide
 
-A Flutter-based AI Chatbot integrated with a Computer Vision system and a Robotic Arm via the Model Context Protocol (MCP).
+A voice-controlled Human-Robot Interaction (HRI) system where users speak naturally to an AI persona ("John" or "Linda") to command a **Neura LARA robotic arm** to pick and place physical objects on a table. The system combines speech recognition, GPT-4 reasoning, YOLO computer vision, and direct robot arm control into a single real-time pipeline.
 
-## Multi-Server Robot & Vision Architecture (MCP)
+---
 
-This outlines the system architecture where the **Camera (Vision)** and the **Robotic Arm (Kinematics)** are operating as two completely separate MCP servers. 
+## System Architecture
 
-In this setup, the LLM acts as the central intelligence orchestrator, chaining the two services together.
-
-### High-Level Architecture Diagram
-
-```mermaid
-graph TD
-    %% User and Frontend
-    User((User))
-    FlutterApp[Chatbot UI\nFlutter App]
-
-    %% Main Server (Orchestrator)
-    subgraph "PC / Main Server"
-        ServerJS[Orchestration Server\nserver.js]
-        LLM[LLM Engine\nGPT-4]
-        
-        %% Multiple MCP Clients
-        MCP_Client_Vision[MCP Client 1\nVision]
-        MCP_Client_Arm[MCP Client 2\nRobot Arm]
-    end
-
-    %% Edge Device 1: Vision
-    subgraph "Vision Subsystem"
-        VisionMCP[Camera MCP Server\nvision_mcp.py]
-        Camera[Camera / YOLO Object Detection]
-    end
-
-    %% Edge Device 2: Robot Arm
-    subgraph "Kinematics Subsystem"
-        ArmMCP[Robot Arm MCP Server\nrobot_mcp.py]
-        ArmHardware[Robotic Arm Hardware SDK]
-    end
-
-    %% Connections
-    User -->|Voice/Text| FlutterApp
-    FlutterApp -->|HTTP/REST| ServerJS
-    ServerJS <-->|API Calls| LLM
-    
-    %% Internal Client Bindings
-    ServerJS --- MCP_Client_Vision
-    ServerJS --- MCP_Client_Arm
-    
-    %% External MCP Connections (Ethernet/SSE)
-    MCP_Client_Vision <-->|SSE Transport| VisionMCP
-    MCP_Client_Arm <-->|SSE Transport| ArmMCP
-    
-    %% Hardware bindings
-    VisionMCP <--> Camera
-    ArmMCP <--> ArmHardware
+```
+Flutter Web App (UI + Wakeword)
+        │
+        ▼
+  Node.js Server (server.js)
+        │
+   ┌────┴────┐
+   ▼         ▼
+Vision MCP  Robot MCP
+(vision_mcp.py)  (robot_mcp.py)
+   │              │
+Camera.py    nogripperref.py
+(RealSense)  (Neura LARA API)
 ```
 
 ---
 
-### Network & Port Assignments (Ethernet SSE)
+## Hardware Requirements
 
-Because the devices communicate over a physical Ethernet network, they must use the **SSE (Server-Sent Events) transport** instead of standard `stdio`. 
-
-The following ports and IP addresses should be configured for the connection:
-
-*   **PC / Orchestration Server (`server.js`)**
-    *   **IP:** `192.168.1.100` (Static IP recommended)
-    *   **Port:** `3000` (Listens for Flutter App API calls)
-*   **Camera Vision Subsystem (`vision_mcp.py`)**
-    *   **IP:** `192.168.1.101` (Static IP recommended)
-    *   **Port:** `8001` (Listens for SSE connections on `0.0.0.0`)
-*   **Robot Arm Kinematics Subsystem (`robot_mcp.py`)**
-    *   **IP:** `192.168.1.102` (Static IP recommended)
-    *   **Port:** `8002` (Listens for SSE connections on `0.0.0.0`)
+| Component | Details |
+|-----------|---------|
+| **Robot Arm** | Neura Robotics LARA arm with Modbus gripper |
+| **Depth Camera** | Intel RealSense D435i (or compatible) |
+| **PC** | Windows 10/11, Ubuntu, or macOS host |
+| **Network** | Robot arm and PC must be on the same Ethernet subnet |
+| **Microphone** | Any USB or built-in microphone for wake word detection |
 
 ---
 
-### Component Roles
+## Prerequisites
 
-#### 1. Main Server (`server.js`)
-`server.js` instantiates **two** separate MCP clients (one for the camera, one for the arm). It aggregates the tools from both servers and presents them to the LLM.
+### 1. Python (≥ 3.10)
+Download from [python.org](https://www.python.org/downloads/).
 
-#### 2. Camera MCP Server (`vision_mcp.py`)
-A standalone MCP server dedicated entirely to computer vision. 
-- **Exposes Tools:** `locate_object(target_name)`, `scan_obstacles()`
-- **Output:** Returns spatial data (e.g., X,Y,Z coordinates and bounding boxes).
+### 2. Node.js (≥ 18.0.0)
+Download from [nodejs.org](https://nodejs.org/).
 
-#### 3. Robot Arm MCP Server (`robot_mcp.py`)
-A standalone MCP server dedicated to moving motors.
-- **Exposes Tools:** `move_to_coordinates(x, y, z)`, `grab()`, `avoid_obstacles(obstacle_list)`
-- **Output:** Returns hardware execution statuses (success/fail).
+### 3. Flutter SDK (≥ 3.10)
+Download from [flutter.dev](https://flutter.dev/docs/get-started/install).
 
----
+### 4. Neura Robot SDK (`neurapy`)
+Install from your Neura Robotics distribution package or internal repository:
+```bash
+pip install neurapy
+```
+> ⚠️ This is a proprietary SDK. Contact your Neura Robotics representative if you don't have access.
 
-### The "Chain of Tools" Flow (Step-by-Step)
-
-Because the Camera and Arm are separate, the **LLM acts as the orchestrator** linking them together. This requires a multi-step "chain of thought" from the AI.
-
-1. **User:** *"Pick up the screwdriver."*
-2. **LLM (Step 1):** Realizes it needs to know where the screwdriver is first.
-   - **Action:** Calls the Camera Tool: `locate_object({ target: "screwdriver" })`.
-3. **Camera MCP:** Captures the frame, runs detection, and returns the data: 
-   - `{"found": true, "coordinates": [120, 45, 10], "obstacles": [{"type": "cup", "coords": [100, 30, 0]}]}`
-4. **LLM (Step 2):** Receives the coordinates. Now it knows exactly where to move the arm.
-   - **Action:** Calls the Arm Tool: `move_to_coordinates({ x: 120, y: 45, z: 10, obstacles: [...] })`.
-5. **Robot Arm MCP:** Calculates the path avoiding the cup, moves the arm to `[120, 45, 10]`, and executes the grab. It returns:
-   - `{"status": "success"}`
-6. **LLM (Final):** Looks at the success message and responds to the user:
-   - *"I've used the camera to locate the screwdriver and successfully commanded the arm to pick it up!"*
+### 5. Intel RealSense SDK
+Download and install the **librealsense** SDK from:
+[https://github.com/IntelRealSense/librealsense/releases](https://github.com/IntelRealSense/librealsense/releases)
 
 ---
 
-## Instructions for Future AI Implementation
+## Python Dependencies
 
-If you (an AI assistant) are tasked with implementing this architecture in `server.js` in the future, follow these exact steps:
+Install all Python packages with:
 
-1.  **Add SSE Dependencies:** Ensure `SSEClientTransport` from `@modelcontextprotocol/sdk/client/sse.js` is imported in `server.js`.
-2.  **Initialize SSE Clients:** Create two separate `SSEClientTransport` connections pointing to the static IPs and Ports of the Vision and Robot Arm MCP servers (e.g., `http://192.168.1.101:8001/sse` and `http://192.168.1.102:8002/sse`).
-3.  **Define the Tools:** Inject the JSON schemas for `locate_object`, `scan_obstacles`, `move_to_coordinates`, `grab`, and `avoid_obstacles_and_move` into the `tools` array of the `openai.createChatCompletion` call in the `/ask-gpt` endpoint.
-4.  **Handle Tool Calls:** In the `if (responseMessage.tool_calls)` block, add routing logic to check `toolCall.function.name` and forward the specific tool call to the correct MCP client (`mcpVisionClient.callTool` or `mcpArmClient.callTool`).
-5.  **Chain the Responses:** Ensure the result from the Vision MCP (like the coordinates) is successfully appended to the GPT `messages` array as a "tool" role message, and trigger a second `createChatCompletion` so the LLM can immediately read the coordinates and call the Arm MCP.
+```bash
+pip install -r requirements.txt
+```
+
+Or manually:
+
+```bash
+# Core vision
+pip install opencv-python          # Computer vision
+pip install numpy                  # Numerical computation
+pip install pyrealsense2           # Intel RealSense camera SDK
+
+# AI / ML
+pip install ultralytics            # YOLO object detection (YOLOv8/v11)
+
+# MCP Server framework
+pip install mcp                    # Model Context Protocol SDK
+
+# Web server
+pip install uvicorn                # ASGI server for MCP endpoints
+
+# Robot control (proprietary)
+pip install neurapy                # Neura LARA robot SDK
+
+# Optional utilities
+pip install keyboard               # Keyboard shortcut support
+```
+
+**Full pip install line:**
+```bash
+pip install opencv-python numpy pyrealsense2 ultralytics mcp uvicorn keyboard
+```
 
 ---
 
-## Flutter App Getting Started
+## Node.js Dependencies
 
-This project is a starting point for a Flutter application.
+Navigate to the `roboas/` directory and run:
 
-A few resources to get you started if this is your first Flutter project:
+```bash
+cd roboas
+npm install
+```
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+This installs all packages from `package.json`:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+| Package | Purpose |
+|---------|---------|
+| `openai` | GPT-4 API for John/Linda AI reasoning |
+| `@anthropic-ai/sdk` | Claude AI SDK (alternative agent) |
+| `@modelcontextprotocol/sdk` | MCP client to communicate with Python servers |
+| `express` | HTTP web server |
+| `cors` | Cross-origin request support |
+| `dotenv` | Load environment variables from `.env` |
+| `multer` | File upload handling |
+| `ws` | WebSocket support |
+| `pdf-parse` | PDF reading for document Q&A |
+
+---
+
+## Flutter Dependencies
+
+Navigate to the project root and run:
+
+```bash
+flutter pub get
+```
+
+Key packages from `pubspec.yaml`:
+
+| Package | Purpose |
+|---------|---------|
+| `http` | HTTP requests to Node.js backend |
+| `record` | Microphone audio recording |
+| `video_player` | John/Linda avatar animation videos |
+| `google_fonts` | UI typography |
+| `flutter_markdown` | Render markdown in chat responses |
+| `web_socket_channel` | WebSocket communications |
+
+---
+
+## Environment Setup
+
+### Node.js `.env` file
+Create `roboas/.env` with the following:
+
+```env
+OPENAI_API_KEY=sk-...           # Your OpenAI API key
+FIREBASE_PROJECT_ID=...         # Firebase project (for auth)
+PORT=3000                       # Server port (default 3000)
+```
+
+### Python Server Ports
+| Server | Default Port |
+|--------|-------------|
+| `vision_mcp.py` | `8081` |
+| `robot_mcp.py` | `8082` |
+
+---
+
+## YOLO Model Files
+
+Place model files in the `roboas/` directory:
+
+| File | Model | Purpose |
+|------|-------|---------|
+| `best29.pt` | YOLOv11 OBB | Primary object orientation detection |
+| `best28.pt` | YOLOv11 Segment | Object segmentation for precise centre-of-mass |
+| `best (14).pt` | Discontinuity | Depth-edge fallback detection |
+
+> Download models using `download_models.py` or obtain from your project supervisor.
+
+---
+
+## Startup Instructions
+
+Open **4 separate terminals** and run each in order:
+
+### Terminal 1 — Vision Server
+```bash
+cd roboas
+python vision_mcp.py
+```
+Wait for: `Uvicorn running on http://0.0.0.0:8081`
+
+### Terminal 2 — Robot MCP Server
+```bash
+cd roboas
+python robot_mcp.py
+```
+Wait for: `Uvicorn running on http://0.0.0.0:8082`
+
+### Terminal 3 — Node.js Orchestrator
+```bash
+cd roboas
+node server.js
+# or for auto-reload during development:
+npm run dev
+```
+Wait for: `Server running on port 3000`
+
+### Terminal 4 — Flutter Web App
+```bash
+# From the project root
+flutter run -d chrome
+```
+Or to serve the pre-built web app:
+```bash
+flutter build web
+cd build/web
+python -m http.server 8080
+```
+Then open: `http://localhost:8080`
+
+---
+
+## How to Operate
+
+1. **Open the Flutter web app** in Chrome.
+2. **Grant microphone permission** when prompted.
+3. **Say the wake word** — either **"John"** or **"Hey John"** (or **"Linda"** for the second persona).
+4. **Wait for the listening indicator** to appear on screen.
+5. **Speak your command**, for example:
+   - *"Pick up the red cube"*
+   - *"Pick up the hat and put it in the box"*
+   - *"Pick up the sponge, then the blue cube"*
+   - *"Return home"*
+   - *"Clear emergency stop"*
+6. **John will confirm** your command verbally and the robot will execute the task.
+7. If the robot encounters an issue, **John will say so out loud** — you do not need to watch the server logs.
+
+---
+
+## Calibration
+
+If the camera is moved or the robot's coordinate accuracy drops, run the calibration tool:
+
+```bash
+cd roboas
+python record_and_build_xyz_correction.py
+```
+
+Follow the on-screen instructions to tap the robot to calibration points. The script will automatically compute a new correction matrix.
+
+---
+
+## Key Files Reference
+
+| File | What it does |
+|------|-------------|
+| `server.js` | Main Node.js orchestrator — handles voice commands, GPT, queues |
+| `vision_mcp.py` | Python vision server — YOLO detection, Qwen planning, obstacle checks |
+| `robot_mcp.py` | Python robot server — exposes robot tools via MCP protocol |
+| `nogripperref.py` | Low-level robot arm control using the Neura LARA SDK |
+| `camera.py` | RealSense camera thread — depth frames, RGB, coordinate transforms |
+| `top_surface_refinement.py` | 3D geometric centre-of-mass calculator for accurate grasping |
+| `object_catalogue.py` | Master list of all graspable objects and their sticker mappings |
+| `record_and_build_xyz_correction.py` | Camera-to-robot coordinate calibration tool |
+| `Public/index.html` | Flutter web shell + OpenWakeWord JS engine integration |
+| `Public/WakeWordEngine.js` | Wake word detection using ONNX models in the browser |
+| `Public/models/` | ONNX wake word models for John, Linda, Hey John, Abort Mission |
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| Robot throws `[3104]` error | The arm is in a fault state. Say *"Clear emergency stop"* or press the physical E-Stop button and release it |
+| John stays silent after a task | Restart the Flutter app — a stale audio node may be blocking TTS |
+| Wrong object picked | Check `object_catalogue.py` sticker mappings are correct for your physical setup |
+| `-32602 JSON-RPC` error in logs | `robot_mcp.py` needs a restart; the schema handshake failed |
+| Camera not found | Ensure the RealSense camera is plugged in before starting `vision_mcp.py` |
+| Wake word not triggering | Check browser microphone permissions; look for `[OWW Scores]` in browser console |
+| Node server disconnects from Python | The heartbeat auto-reconnects within 5 seconds — wait and retry your command |
+
+---
+
+## Architecture Notes
+
+- The system uses **MCP (Model Context Protocol)** for structured communication between Node.js and Python servers.
+- Wake word detection runs entirely **in the browser** using ONNX Runtime WebAssembly — no data is sent to external servers for wakeword processing.
+- Messages are always **plain text only** — no HTML is rendered in the chat.
+- The vision pipeline runs **deterministic safety checks first**, then calls the AI vision model (Qwen) only when needed.
