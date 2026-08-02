@@ -135,6 +135,35 @@ PORT=3000
 
 ---
 
+## Debug Website — Live Log Forwarding
+
+Both `vision_mcp.py` and `robot_mcp.py` forward their logs in real time to the Node.js debug website at `http://<SERVER_HOST>:3000`.
+
+- **`vision_mcp.py`** posts to `/python-log`
+- **`robot_mcp.py`** posts to `/python-log` and `/robot-event`
+
+### Running on the same machine (localhost)
+No extra config needed — both servers default to `localhost:3000` automatically.
+
+### Running on a separate machine (Ethernet setup)
+Set the `SERVER_HOST` environment variable to the IP address of the machine running `server.js`:
+
+**Windows (PowerShell):**
+```powershell
+$env:SERVER_HOST="192.168.2.10"; python vision_mcp.py
+$env:SERVER_HOST="192.168.2.10"; python robot_mcp.py
+```
+
+**Linux / macOS (bash):**
+```bash
+SERVER_HOST=192.168.2.10 python vision_mcp.py
+SERVER_HOST=192.168.2.10 python robot_mcp.py
+```
+
+> The IP `192.168.2.10` is the current configured IP of the Node server — match it to your `NODE_SERVER_URL` in `.env`.
+
+---
+
 ## YOLO Model Files
 
 Place in `AppV1-main/roboas/`:
