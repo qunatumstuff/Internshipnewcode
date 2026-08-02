@@ -1,6 +1,6 @@
 # 🤖 HRI Robot Assistant — Setup & Operation Guide
 
-A voice-controlled Human-Robot Interaction (HRI) system where users speak naturally to an AI persona ("John" or "Linda") to command a **Neura LARA robotic arm** to pick and place physical objects on a table. The system combines speech recognition, GPT-4 reasoning, YOLO computer vision, and direct robot arm control into a single real-time pipeline.
+A voice-controlled Human-Robot Interaction (HRI) system where users speak naturally to an AI persona ("John" or "Linda") to command a **Neura LARA robotic arm** to pick and place physical objects on a table. The system combines speech recognition, GPT-5.4-mini reasoning, YOLO computer vision, and direct robot arm control into a single real-time pipeline.
 
 ---
 
@@ -89,7 +89,7 @@ npm install
 
 | Package | Purpose |
 |---------|---------|
-| `openai` | GPT-4 API for John/Linda AI reasoning |
+| `openai` | GPT-5.4-mini API for John/Linda AI reasoning |
 | `@anthropic-ai/sdk` | Claude AI SDK (alternative agent) |
 | `@modelcontextprotocol/sdk` | MCP client to communicate with Python servers |
 | `express` | HTTP web server |
