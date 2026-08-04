@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LARA 5 · System Monitor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:           #04060d;
+            --surface:      rgba(255,255,255,0.03);
+            --surface2:     rgba(255,255,255,0.055);
+            --border:       rgba(255,255,255,0.07);
+            --border-glow:  rgba(0,230,255,0.18);
+            --cyan:         #00e6ff;
+            --cyan-glow:    rgba(0,230,255,0.25);
+            --purple:       #7c3aed;
+            --purple-glow:  rgba(124,58,237,0.25);
+            --green:        #00ffaa;
+            --green-glow:   rgba(0,255,170,0.25);
+            --red:          #ff3b6b;
+            --amber:        #ffb340;
+            --text:         #dde4f0;
+            --text-dim:     #8899b0;
+            --text-muted:   #536078;
+        }
+
+        *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+        html, body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* ─── AMBIENT BACKGROUND ─── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 60% 50% at 15% 10%, rgba(124,58,237,0.18) 0%, transparent 70%),
+                radial-gradient(ellipse 55% 45% at 85% 85%, rgba(0,230,255,0.14) 0%, transparent 70%),
+                radial-gradient(ellipse 40% 35% at 50% 50%, rgba(0,255,170,0.04) 0%, transparent 60%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        body > * { position: relative; z-index: 1; }
+
+        /* ─── SCAN LINE OVERLAY ─── */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0,0,0,0.03) 2px,
+                rgba(0,0,0,0.03) 4px
+            );
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ─── TOP BAR ─── */
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            height: 68px;
+            background: rgba(4,6,13,0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 200;
+        }
+
+        .topbar-left { display: flex; align-items: center; gap: 20px; }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, var(--cyan) 0%, var(--purple) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-divider {
+            width: 1px;
+            height: 28px;
+            background: var(--border);
+        }
+
+        .logo-sub {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+        }
+
+        .topbar-right { display: flex; align-items: center; gap: 16px; }
+
+        .live-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            border-radius: 999px;
+            border: 1px solid rgba(0,255,170,0.3);
+            background: rgba(0,255,170,0.06);
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            color: var(--green);
+            text-transform: uppercase;
+        }
+
+        .live-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse 1.6s infinite;
+        }
+
+        @keyframes pulse {
+            0%,100% { opacity: 0.4; transform: scale(0.9); }
+            50%      { opacity: 1;   transform: scale(1.1); }
+        }
+
+        .update-time {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* ─── PAGE ─── */
+        .page {
+            padding: 24px 32px 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* ─── GLASS CARD ─── */
+        .glass {
+            background: var(--surface);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .glass:hover { border-color: var(--border-glow); }
+
+        /* ─── INTENT BANNER ─── */
+        .intent-banner {
+            display: flex;
+            align-items: center;
+            background: rgba(4,6,13,0.9);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 32px;
+            gap: 32px;
+            position: sticky;
+            top: 68px; /* below topbar */
+            z-index: 199;
+            backdrop-filter: blur(10px);
+        }
+        .intent-col { display: flex; flex-direction: column; gap: 4px; flex: 1; overflow: hidden; }
+        .intent-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 1px; }
+        .intent-val { font-size: 1.1rem; font-weight: 600; color: var(--text); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        
+        /* ─── FLASH RED ─── */
+        @keyframes flashRed {
+            0%, 100% { background: var(--surface); border-color: var(--border); box-shadow: none; }
+            50% { background: rgba(255,59,107,0.15); border-color: var(--red); box-shadow: 0 0 20px rgba(255,59,107,0.4); }
+        }
+        .flash-red {
+            animation: flashRed 1s infinite;
+        }
+        .stat-icon.red { background: rgba(255,59,107,0.1); box-shadow: inset 0 0 12px rgba(255,59,107,0.1); border: 1px solid rgba(255,59,107,0.25); }
+
+        /* ─── STAT ROW ─── */
+        .stat-row {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+        }
+
+        .stat-card {
+            padding: 22px 24px;
+            display: flex;
+            align-items: center;
+            gap: 18px;
+        }
+
+        .stat-icon {
+            width: 50px; height: 50px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        .stat-icon.cyan   { background: rgba(0,230,255,0.08);  box-shadow: inset 0 0 12px rgba(0,230,255,0.1); border: 1px solid rgba(0,230,255,0.18); }
+        .stat-icon.green  { background: rgba(0,255,170,0.08);  box-shadow: inset 0 0 12px rgba(0,255,170,0.1); border: 1px solid rgba(0,255,170,0.18); }
+        .stat-icon.amber  { background: rgba(255,179,64,0.08); box-shadow: inset 0 0 12px rgba(255,179,64,0.1); border: 1px solid rgba(255,179,64,0.18); }
+        .stat-icon.purple { background: rgba(124,58,237,0.1);  box-shadow: inset 0 0 12px rgba(124,58,237,0.1); border: 1px solid rgba(124,58,237,0.2); }
+
+        .stat-label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 1.45rem;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1;
+        }
+
+        .stat-sub {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* ─── CONNECTIONS ─── */
+        .conn-bar {
+            padding: 18px 24px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .conn-bar-label {
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        .conn-items { display: flex; gap: 12px; flex-wrap: wrap; flex: 1; }
+
+        .conn-chip {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 18px;
+            border-radius: 10px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            flex: 1;
+            min-width: 160px;
+            transition: border-color 0.3s;
+        }
+
+        .conn-chip:hover { border-color: var(--border-glow); }
+
+        .conn-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--red);
+            box-shadow: 0 0 6px var(--red);
+            flex-shrink: 0;
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+
+        .conn-dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+
+        .conn-chip-text { flex: 1; }
+        .conn-chip-name  { font-size: 0.82rem; font-weight: 600; }
+        .conn-chip-desc  { font-size: 0.67rem; color: var(--text-muted); margin-top: 1px; }
+
+        .conn-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+            letter-spacing: 0.5px;
+        }
+
+        .conn-badge.online  { background: rgba(0,255,170,0.12); color: var(--green); border: 1px solid rgba(0,255,170,0.25); }
+        .conn-badge.offline { background: rgba(255,59,107,0.1);  color: var(--red);   border: 1px solid rgba(255,59,107,0.2); }
+
+        /* ─── 3-PANEL GRID ─── */
+        .panels {
+            display: grid;
+            grid-template-columns: 1fr 1.1fr 1fr;
+            gap: 18px;
+        }
+
+        .panel {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 370px);
+            min-height: 320px;
+            overflow: hidden;
+        }
+
+        .panel-head {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .panel-head-left { display: flex; align-items: center; gap: 12px; }
+
+        .ph-icon {
+            width: 34px; height: 34px;
+            border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1rem;
+        }
+
+        .ph-icon.cyan   { background: rgba(0,230,255,0.1);  border: 1px solid rgba(0,230,255,0.2); }
+        .ph-icon.green  { background: rgba(0,255,170,0.1);  border: 1px solid rgba(0,255,170,0.2); }
+        .ph-icon.purple { background: rgba(124,58,237,0.12); border: 1px solid rgba(124,58,237,0.25); }
+
+        .ph-title    { font-size: 0.88rem; font-weight: 700; letter-spacing: 0.3px; }
+        .ph-subtitle { font-size: 0.68rem; color: var(--text-muted); margin-top: 1px; }
+
+        .panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px;
+        }
+
+        .panel-body::-webkit-scrollbar { width: 4px; }
+        .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+        /* ─── LOG TABS ─── */
+        .log-tabs {
+            display: flex;
+            gap: 2px;
+            padding: 0 16px 0;
+            border-top: 1px solid var(--border);
+            background: rgba(0,0,0,0.2);
+            overflow-x: auto;
+        }
+
+        .log-tab {
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-muted);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.73rem;
+            font-weight: 600;
+            padding: 8px 12px;
+            cursor: pointer;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            transition: color 0.2s, border-color 0.2s;
+        }
+
+        .log-tab:hover { color: var(--text); }
+
+        .log-tab.active {
+            color: var(--cyan);
+            border-bottom-color: var(--cyan);
+        }
+
+        /* ─── SOURCE BADGES ─── */
+        .src-badge {
+            display: inline-block;
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 4px;
+            margin-right: 6px;
+            vertical-align: middle;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .src-badge.src-robot_mcp  { background: rgba(0,230,255,0.12); color: var(--cyan);   border: 1px solid rgba(0,230,255,0.2); }
+        .src-badge.src-vision_mcp { background: rgba(0,255,170,0.1);  color: var(--green);  border: 1px solid rgba(0,255,170,0.2); }
+        .src-badge.src-qwen       { background: rgba(124,58,237,0.12); color: #a78bfa;       border: 1px solid rgba(124,58,237,0.25); }
+
+        /* ─── QUEUE TOOLBAR ─── */
+        .queue-toolbar {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0,0,0,0.25);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .qt-select, .qt-input {
+            background: rgba(0,0,0,0.5);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 7px 10px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.78rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .qt-select:focus, .qt-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(0,230,255,0.08); }
+        .qt-input { flex: 1; }
+
+        .btn-add {
+            padding: 7px 14px;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: 0.3px;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+
+        .btn-add:hover   { opacity: 0.88; }
+        .btn-add:active  { transform: scale(0.96); }
+
+        .btn-danger {
+            padding: 7px 12px;
+            background: rgba(255,59,107,0.1);
+            border: 1px solid rgba(255,59,107,0.25);
+            border-radius: 8px;
+            color: var(--red);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-danger:hover { background: rgba(255,59,107,0.2); border-color: rgba(255,59,107,0.5); }
+
+        /* ─── TOOL LOG ENTRY ─── */
+        .entry {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            transition: border-color 0.25s, transform 0.2s;
+            animation: slideIn 0.3s ease;
+        }
+
+        .entry:hover { border-color: var(--border-glow); transform: translateX(2px); }
+
+        @keyframes slideIn { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform:none; } }
+
+        .entry-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .action-pill {
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 3px 11px;
+            border-radius: 999px;
+            background: rgba(0,230,255,0.1);
+            color: var(--cyan);
+            border: 1px solid rgba(0,230,255,0.25);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .entry-time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.67rem;
+            color: var(--text-muted);
+        }
+
+        .entry-question {
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            font-style: italic;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .entry-row {
+            display: flex;
+            gap: 8px;
+            font-size: 0.77rem;
+            margin-top: 6px;
+        }
+
+        .ekey { color: var(--text-muted); flex-shrink: 0; min-width: 55px; font-weight: 600; }
+        .eval { color: var(--text-dim); word-break: break-word; }
+        .eval.ok  { color: var(--green); font-weight: 600; }
+        .eval.err { color: var(--red);   font-weight: 600; }
+
+        /* ─── QUEUE ENTRY ─── */
+        .q-entry {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 10px;
+            transition: border-color 0.25s;
+            animation: slideIn 0.3s ease;
+        }
+
+        .q-entry:hover { border-color: var(--border-glow); }
+
+        .q-entry.running {
+            border-color: rgba(0,255,170,0.3);
+            background: rgba(0,255,170,0.04);
+            box-shadow: 0 0 18px rgba(0,255,170,0.06);
+        }
+
+        .q-num {
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 700;
+            background: rgba(0,230,255,0.08);
+            border: 1px solid rgba(0,230,255,0.2);
+            color: var(--cyan);
+            flex-shrink: 0;
+        }
+
+        .q-entry.running .q-num {
+            background: rgba(0,255,170,0.1);
+            border-color: rgba(0,255,170,0.3);
+            color: var(--green);
+        }
+
+        .q-info { flex: 1; }
+        .q-name { font-size: 0.85rem; font-weight: 600; }
+        .q-detail { font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; }
+
+        .q-status {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 3px 9px;
+            border-radius: 999px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .q-status.running { background: rgba(0,255,170,0.12); color: var(--green); border: 1px solid rgba(0,255,170,0.25); }
+        .q-status.waiting { background: rgba(83,96,120,0.15);  color: var(--text-muted); border: 1px solid var(--border); }
+
+        .q-del {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px 9px;
+            font-size: 0.72rem;
+            font-family: 'Outfit', sans-serif;
+            transition: all 0.2s;
+        }
+
+        .q-del:hover { background: rgba(255,59,107,0.1); border-color: rgba(255,59,107,0.35); color: var(--red); }
+
+        /* ─── LOG ENTRY ─── */
+        .log-line {
+            display: flex;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-bottom: 5px;
+            border-left: 2px solid transparent;
+            font-size: 0.77rem;
+            line-height: 1.55;
+            background: rgba(255,255,255,0.015);
+            transition: background 0.2s;
+        }
+
+        .log-line:hover { background: rgba(255,255,255,0.03); }
+        .log-line.info   { border-left-color: var(--cyan); }
+        .log-line.warn   { border-left-color: var(--amber); background: rgba(255,179,64,0.03); }
+        .log-line.error  { border-left-color: var(--red);  background: rgba(255,59,107,0.04); }
+
+        .log-ts  { color: var(--text-muted); flex-shrink: 0; font-family: 'JetBrains Mono', monospace; font-size: 0.67rem; padding-top: 1px; }
+        .log-txt { color: var(--text-dim); word-break: break-word; }
+
+        /* ─── EMPTY STATE ─── */
+        .empty {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            height: 100%; gap: 10px;
+            color: var(--text-muted);
+            text-align: center;
+            padding: 40px;
+        }
+
+        .empty-glyph { font-size: 2.4rem; opacity: 0.25; }
+
+        .empty p {
+            font-size: 0.82rem;
+            opacity: 0.55;
+            line-height: 1.6;
+        }
+
+        /* ─── GLOWING HORIZONTAL RULE ─── */
+        hr.glow {
+            border: none;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(0,230,255,0.3), transparent);
+            margin: 4px 0;
+        }
+    </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+    <div class="topbar-left">
+        <div class="logo">LARA 5</div>
+        <div class="logo-divider"></div>
+        <div class="logo-sub">System Monitor · Live View</div>
+    </div>
+    <div class="topbar-right">
+        <div class="update-time" id="update-ts">Connecting…</div>
+        <div class="live-pill"><div class="live-dot"></div>Live</div>
+    </div>
+</div>
+
+<!-- INTENT STREAMING BANNER -->
+<div class="intent-banner" id="intent-banner">
+    <div class="intent-col">
+        <div class="intent-label">Natural Language Intent</div>
+        <div class="intent-val" id="intent-nl">Awaiting voice command...</div>
+    </div>
+    <div class="intent-col">
+        <div class="intent-label">Extracted Structured Context</div>
+        <div class="intent-val" id="intent-ctx" style="color:var(--cyan)">--</div>
+    </div>
+    <div class="intent-col" style="flex: 0 0 200px;">
+        <div class="intent-label">System Status</div>
+        <div class="intent-val" id="intent-status" style="color:var(--green)">Idle</div>
+    </div>
+</div>
+
+<div class="page">
+
+    <!-- STAT ROW -->
+    <div class="stat-row">
+        <div class="glass stat-card">
+            <div class="stat-icon cyan">🤖</div>
+            <div>
+                <div class="stat-label">Active Assistant</div>
+                <div class="stat-value" id="persona-name">Syncing…</div>
+                <div class="stat-sub">Currently speaking with you</div>
+            </div>
+        </div>
+        <div class="glass stat-card">
+            <div class="stat-icon green">⚡</div>
+            <div>
+                <div class="stat-label">Actions Taken</div>
+                <div class="stat-value" id="total-calls" style="color:var(--cyan)">0</div>
+                <div class="stat-sub">Robot tool calls this session</div>
+            </div>
+        </div>
+        <div class="glass stat-card">
+            <div class="stat-icon amber">🕐</div>
+            <div>
+                <div class="stat-label">Last Update</div>
+                <div class="stat-value" id="last-time" style="font-size:1rem; color:var(--text-dim)">–</div>
+                <div class="stat-sub">Data refreshes automatically</div>
+            </div>
+        </div>
+        <div class="glass stat-card">
+            <div class="stat-icon purple">🖥️</div>
+            <div>
+                <div class="stat-label">Server</div>
+                <div class="stat-value" style="color:var(--green)">Online</div>
+                <div class="stat-sub">Running on Port 3000</div>
+            </div>
+        </div>
+        <div class="glass stat-card" id="robot-state-card">
+            <div class="stat-icon red" id="robot-state-icon">🦾</div>
+            <div>
+                <div class="stat-label">Robot State</div>
+                <div class="stat-value" id="robot-state-val" style="color:var(--text); font-size:1.1rem; white-space:nowrap;">Operational</div>
+                <div class="stat-sub" id="robot-state-sub">Monitoring for faults</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONNECTIONS -->
+    <div class="glass conn-bar">
+        <div class="conn-bar-label">🔌 Connections</div>
+        <div class="conn-items">
+            <div class="conn-chip">
+                <div class="conn-dot" id="dot-emoji"></div>
+                <div class="conn-chip-text">
+                    <div class="conn-chip-name">Emoji Service</div>
+                    <div class="conn-chip-desc">Reaction animations</div>
+                </div>
+                <div class="conn-badge offline" id="status-emoji">Offline</div>
+            </div>
+            <div class="conn-chip">
+                <div class="conn-dot" id="dot-vision"></div>
+                <div class="conn-chip-text">
+                    <div class="conn-chip-name">Camera Vision</div>
+                    <div class="conn-chip-desc">RealSense object detection</div>
+                </div>
+                <div class="conn-badge offline" id="status-vision">Offline</div>
+            </div>
+            <div class="conn-chip">
+                <div class="conn-dot" id="dot-robot"></div>
+                <div class="conn-chip-text">
+                    <div class="conn-chip-name">Robot Arm</div>
+                    <div class="conn-chip-desc">LARA physical movements</div>
+                </div>
+                <div class="conn-badge offline" id="status-robot">Offline</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3 PANELS -->
+    <div class="panels">
+
+        <!-- PANEL 1: RECENT ACTIONS -->
+        <div class="glass panel">
+            <div class="panel-head">
+                <div class="panel-head-left">
+                    <div class="ph-icon cyan">🛠️</div>
+                    <div>
+                        <div class="ph-title">MCP Telemetry Workflow</div>
+                        <div class="ph-subtitle">Historical MCP Tool calls and returns</div>
+                    </div>
+                </div>
+            </div>
+            <div class="panel-body" id="log-feed">
+                <div class="empty"><div class="empty-glyph">💤</div><p>No actions yet.<br>Ask John or Linda to do something!</p></div>
+            </div>
+        </div>
+
+        <!-- PANEL 2: TASK QUEUE -->
+        <div class="glass panel">
+            <div class="panel-head">
+                <div class="panel-head-left">
+                    <div class="ph-icon green">📋</div>
+                    <div>
+                        <div class="ph-title">Task Queue</div>
+                        <div class="ph-subtitle">Upcoming jobs for the robot arm</div>
+                    </div>
+                </div>
+                <button class="btn-danger" onclick="clearQueue()">Clear All</button>
+            </div>
+            <div class="queue-toolbar">
+                <select class="qt-select" id="manualTaskName">
+                    <option value="locate_object">📍 Locate Object</option>
+                    <option value="pick_and_place_object">🤏 Pick &amp; Place</option>
+                    <option value="relocate_object">🔀 Move Out of Way</option>
+                    <option value="return_home">🏠 Return Home</option>
+                    <option value="clear_startup_lock">dY"" Clear Startup Lock</option>
+                    <option value="clear_emergency_stop">🔓 Clear E-Stop</option>
+                </select>
+                <select class="qt-input" id="manualTaskTarget">
+                    <option value="cube" selected>Cube (Any)</option>
+                    <option value="red cube">Red Cube</option>
+                    <option value="blue cube">Blue Cube</option>
+                    <option value="green cube">Green Cube</option>
+                    <option value="yellow cube">Yellow Cube</option>
+                    <option value="medicine">Medicine</option>
+                    <option value="sponge">Sponge</option>
+                    <option value="screwdriver">Screwdriver</option>
+                    <option value="nut">Nut</option>
+                    <option value="black marker">Black Marker</option>
+                    <option value="soy milk">Soy Milk</option>
+                    <option value="umbrella">Umbrella</option>
+                    <option value="wrench">Wrench</option>
+                    <option value="hat">Hat</option>
+                </select>
+                <button class="btn-add" onclick="addManualTask()">+ Add</button>
+            </div>
+            <div class="panel-body" id="queue-feed">
+                <div class="empty"><div class="empty-glyph">✅</div><p>Queue is empty.<br>The robot is ready for a new task!</p></div>
+            </div>
+        </div>
+
+        <!-- PANEL 3: SYSTEM MESSAGES (TABBED) -->
+        <div class="glass panel">
+            <div class="panel-head" style="flex-direction: column; align-items: stretch; gap: 10px; padding-bottom: 0;">
+                <div class="panel-head-left">
+                    <div class="ph-icon purple">📡</div>
+                    <div>
+                        <div class="ph-title">System Messages</div>
+                        <div class="ph-subtitle">Live updates — filter by source</div>
+                    </div>
+                </div>
+                <div class="log-tabs" id="log-tabs">
+                    <button class="log-tab active" onclick="switchTab('all')">All</button>
+                    <button class="log-tab" onclick="switchTab('server')">🖥️ Server</button>
+                    <button class="log-tab" onclick="switchTab('robot_mcp')">🤖 Robot Arm</button>
+                    <button class="log-tab" onclick="switchTab('vision_mcp')">📷 Vision</button>
+                    <button class="log-tab" onclick="switchTab('qwen')">🧠 Qwen</button>
+                </div>
+            </div>
+            <div class="panel-body" id="console-feed">
+                <div class="empty"><div class="empty-glyph">📭</div><p>Waiting for system messages…</p></div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    const TOOLS = {
+        locate_object:          { label:'Locate Object',       icon:'📍' },
+        pick_and_place_object:  { label:'Pick & Place',        icon:'' },
+        relocate_object:        { label:'Move Out of Way',     icon:'' },
+        return_home:            { label:'Return to Home',      icon:'' },
+        clear_emergency_stop:   { label:'Clear Emergency',     icon:'' },
+        emergency_stop:         { label:'Emergency Stop',      icon:'' },
+        'ask-gpt_prompt':       { label:'GPT Prompt',          icon:'' },
+        'ask-gpt_response':     { label:'GPT Response',        icon:'' },
+        tts_request:            { label:'TTS_REQUEST',         icon:'' },
+        tts_success:            { label:'TTS_SUCCESS',         icon:'' },
+        transcribe_request:     { label:'Transcribe Audio',    icon:'' },
+        transcribe_success:     { label:'Transcription Done',  icon:'' },
+        progress_sse:           { label:'Progress Update',     icon:'' },
+        get_status_emoji:       { label:'Status Update',       icon:'' },
+        robot_event_received:   { label:'Robot Event',         icon:'' },
+    };
+
+    function friendlyTool(name) {
+        return name.toUpperCase();
+    }
+
+    function friendlyArgs(name, args) {
+        if (!args || Object.keys(args).length === 0) return 'No extra details';
+        if (name === 'locate_object'         && args.target_name)   return `Target: ${args.target_name}`;
+        if (name === 'pick_and_place_object' && args.object_name)   return `Target: ${args.object_name}`;
+        if (name === 'relocate_object'       && args.obstacle_name) return `Target: ${args.obstacle_name}`;
+        if (name === 'tts_request'           && args.text)          return `text: ${args.text.substring(0,120)}${args.text.length>120?'…':''}`;
+        if (name === 'tts_success'           && args.text)          return `text: ${args.text.substring(0,120)}${args.text.length>120?'…':''} · attempt: ${args.attempt||1}`;
+        if (name === 'transcribe_request'    && args.size)          return `size: ${(args.size/1024).toFixed(1)} KB · type: ${args.mimetype}`;
+        if (name === 'transcribe_success')                          return 'No extra details';
+        if (name === 'ask-gpt_response'      && args.persona) {
+            let msg = args.message ? ` · message: "${args.message}"` : '';
+            return `persona: ${args.persona} ${args.emoji||''}${msg}`;
+        }
+        if (name === 'progress_sse'          && args.status)        return `status: ${args.status}`;
+        if (name === 'robot_event_received'  && args.event)         return `event: ${args.event}`;
+        if (name === 'get_status_emoji'      && args.state)         return `state: ${args.state}`;
+        return Object.entries(args).map(([k,v]) => `${k}: ${v}`).join(' · ');
+    }
+
+    function friendlyResult(r) {
+        if (!r) return '<span class="eval">–</span>';
+        const lo = String(r).toLowerCase();
+        if (lo.includes('success') || lo.includes('complete') || lo.includes('done'))
+            return '<span class="eval ok">✅ Success</span>';
+        if (lo.includes('error') || lo.includes('fail'))
+            return '<span class="eval err">❌ Failed</span>';
+        return `<span class="eval">${r}</span>`;
+    }
+
+    // ── TOOL LOGS ──
+    let toolLogs = [];
+    function renderToolLogs() {
+        const f = document.getElementById('log-feed');
+        if (!toolLogs.length) {
+            f.innerHTML = `<div class="empty"><div class="empty-glyph">💤</div><p>No actions yet.<br>Ask John or Linda to do something!</p></div>`;
+            return;
+        }
+        f.innerHTML = [...toolLogs].reverse().map(log => {
+            const ts = new Date(log.timestamp).toLocaleTimeString('en-SG',{timeZone:'Asia/Singapore',hour12:true});
+            return `<div class="entry">
+                <div class="entry-top">
+                    <span class="action-pill">${friendlyTool(log.toolName)}</span>
+                    <span class="entry-time">${ts}</span>
+                </div>
+                ${log.userQuestion ? `<div class="entry-question">"${log.userQuestion}"</div>` : ''}
+                <div class="entry-row"><span class="ekey">Details</span><span class="eval">${friendlyArgs(log.toolName, log.args)}</span></div>
+                <div class="entry-row"><span class="ekey">Result</span>${friendlyResult(log.result)}</div>
+            </div>`;
+        }).join('');
+    }
+
+    // ── QUEUE ──
+    function renderQueue(queue, isBusy) {
+        const f = document.getElementById('queue-feed');
+        if (!queue || !queue.length) {
+            f.innerHTML = `<div class="empty"><div class="empty-glyph">✅</div><p>Queue is empty.<br>The robot is ready for a new task!</p></div>`;
+            return;
+        }
+        f.innerHTML = queue.map((task, i) => {
+            const active = i === 0 && isBusy;
+            const t = TOOLS[task.name];
+            const icon = t && t.icon ? t.icon + ' ' : '';
+            const label = t ? t.label : task.name;
+            let detail = '';
+            if (task.args) {
+                const v = task.args.object_name || task.args.target_name || task.args.obstacle_name || '';
+                if (v) detail = `Target: ${v}`;
+            }
+            return `<div class="q-entry ${active ? 'running' : ''}">
+                <div class="q-num">${active ? '▶' : i+1}</div>
+                <div class="q-info">
+                    <div class="q-name">${icon}${label}</div>
+                    ${detail ? `<div class="q-detail">${detail}</div>` : ''}
+                </div>
+                <span class="q-status ${active ? 'running' : 'waiting'}">${active ? 'Running' : 'Waiting'}</span>
+                <button class="q-del" onclick="deleteQueueTask('${task.id}')">Remove</button>
+            </div>`;
+        }).join('');
+    }
+
+    // ── CONSOLE LOGS ──
+    let systemLogs = [];
+    let activeTab = 'all';
+
+    const TAB_SOURCES = {
+        all:        null,
+        server:     null, // all logs without a source field = server
+        robot_mcp:  'robot_mcp',
+        vision_mcp: 'vision_mcp',
+        qwen:       'qwen',
+    };
+
+    const TAB_EMPTY = {
+        all:        'No messages yet.',
+        server:     'No server messages yet.',
+        robot_mcp:  'No Robot Arm logs yet.\nMake sure robot_mcp.py is running and SERVER_HOST is set.',
+        vision_mcp: 'No Vision logs yet.\nMake sure vision_mcp.py is running and SERVER_HOST is set.',
+        qwen:       'No Qwen output yet.\nQwen logs appear when the vision MCP sends an image for analysis.',
+    };
+
+    function switchTab(tab) {
+        activeTab = tab;
+        document.querySelectorAll('.log-tab').forEach((btn, i) => {
+            const tabs = ['all','server','robot_mcp','vision_mcp','qwen'];
+            btn.classList.toggle('active', tabs[i] === tab);
+        });
+        renderConsoleLogs();
+    }
+
+    function friendlyMsg(msg) {
+        if (!msg) return '';
+        msg = String(msg).replace(/^\[(GPT|Server|MCP|OWW|WAKE WS|VisionMCP|RobotMCP)\]\s*/i, '');
+        msg = msg.replace(/\b(connected|success|ready|completed|online)\b/gi, '<strong style="color:var(--green)">$1</strong>');
+        msg = msg.replace(/\b(error|failed|disconnected|timeout|offline)\b/gi,  '<strong style="color:var(--red)">$1</strong>');
+        msg = msg.replace(/\b(warning|warn)\b/gi, '<strong style="color:var(--amber)">$1</strong>');
+        return msg;
+    }
+
+    function renderConsoleLogs() {
+        const f = document.getElementById('console-feed');
+        let filtered;
+        if (activeTab === 'all') {
+            filtered = systemLogs;
+        } else if (activeTab === 'server') {
+            filtered = systemLogs.filter(l => !l.source || l.source === 'server');
+        } else {
+            filtered = systemLogs.filter(l => l.source === activeTab);
+        }
+        if (!filtered.length) {
+            f.innerHTML = `<div class="empty"><div class="empty-glyph">📭</div><p>${TAB_EMPTY[activeTab]}</p></div>`;
+            return;
+        }
+        f.innerHTML = filtered.map(log => {
+            const ts  = new Date(log.timestamp).toLocaleTimeString('en-SG',{timeZone:'Asia/Singapore',hour12:true});
+            const cls = log.level === 'error' ? 'error' : log.level === 'warn' ? 'warn' : 'info';
+            const srcBadge = log.source && log.source !== 'server'
+                ? `<span class="src-badge src-${log.source}">${log.source.replace('_',' ')}</span>` : '';
+            return `<div class="log-line ${cls}">
+                <div class="log-ts">${ts}</div>
+                <div class="log-txt">${srcBadge}${friendlyMsg(log.message)}</div>
+            </div>`;
+        }).join('');
+        f.scrollTop = f.scrollHeight;
+    }
+
+    // ── UI ──
+    function updateUI(data) {
+        if (data.currentPersona) {
+            const n = data.currentPersona;
+            document.getElementById('persona-name').innerText = n.charAt(0).toUpperCase() + n.slice(1);
+        }
+        if (data.mcpStatus) {
+            setBadge('status-emoji',  'dot-emoji',  data.mcpStatus.emoji  === 'Online');
+            setBadge('status-vision', 'dot-vision', data.mcpStatus.vision === 'Online');
+            setBadge('status-robot',  'dot-robot',  data.mcpStatus.robot  === 'Online');
+        }
+    }
+
+    function setBadge(badgeId, dotId, online) {
+        const b = document.getElementById(badgeId);
+        const d = document.getElementById(dotId);
+        if (b) { b.className = 'conn-badge ' + (online ? 'online' : 'offline'); b.innerText = online ? 'Online' : 'Offline'; }
+        if (d) { d.className = 'conn-dot ' + (online ? 'on' : ''); }
+    }
+
+    // ── QUEUE ACTIONS (MOCKED) ──
+    async function clearQueue() {
+        if (!confirm('Remove all tasks from the queue?')) return;
+        mockQueue = [];
+        renderQueue(mockQueue, false);
+    }
+
+    async function deleteQueueTask(id) {
+        mockQueue = mockQueue.filter(t => t.id !== id);
+        renderQueue(mockQueue, false);
+    }
+
+    async function addManualTask() {
+        const name   = document.getElementById('manualTaskName').value;
+        const target = document.getElementById('manualTaskTarget').value.trim();
+        
+        const task = { id: Math.random().toString(36).substr(2, 9), name, args:{}, question:'Manual entry from monitor' };
+        if (name === 'locate_object')         task.args.target_name   = target;
+        if (name === 'pick_and_place_object') task.args.object_name   = target;
+        if (name === 'relocate_object')       task.args.obstacle_name = target;
+        
+        mockQueue.push(task);
+        renderQueue(mockQueue, isRobotBusy);
+        document.getElementById('manualTaskTarget').value = '';
+    }
+
+    // ── MOCK DATA SIMULATOR ──
+    let mockQueue = [];
+    let isRobotBusy = false;
+
+    const MOCK_SCENARIO = [
+        // ── BOOT / INIT (0–4 s) ──────────────────────────────────────────────
+        { t:   200, type: 'console', src: 'server',     msg: '[Server] Node.js orchestrator v2.1.4 starting on port 3000...' },
+        { t:   380, type: 'console', src: 'server',     msg: '[Server] Environment: production | PID: 14823 | Node: v18.17.0' },
+        { t:   500, type: 'console', src: 'server',     msg: '[Server] Loading persona config: john.json' },
+        { t:   650, type: 'console', src: 'server',     msg: '[Server] Persona "John" loaded — wake words: ["hey john", "john"]' },
+        { t:   820, type: 'console', src: 'server',     msg: '[Server] MCP client initialising — vision_mcp (stdio)' },
+        { t:  1050, type: 'console', src: 'server',     msg: '[Server] MCP client initialising — robot_mcp (stdio)' },
+        { t:  1280, type: 'console', src: 'vision_mcp', msg: '[VisionMCP] Python 3.11.9 | OpenCV 4.8.1 | OpenAI SDK 1.35.0' },
+        { t:  1450, type: 'console', src: 'vision_mcp', msg: '[VisionMCP] OpenCV camera opened: /dev/video0 @ 1280×720 30 fps (YUYV)' },
+        { t:  1680, type: 'console', src: 'vision_mcp', msg: '[VisionMCP] Auto-exposure calibration — exposure=8200 µs, gain=3.8' },
+        { t:  1900, type: 'console', src: 'robot_mcp',  msg: '[RobotMCP] Python 3.11.9 | LARA SDK 4.2.1 | Modbus v2.1' },
+        { t:  2100, type: 'console', src: 'robot_mcp',  msg: '[RobotMCP] Connecting to LARA arm via Modbus TCP 192.168.1.100:502' },
+        { t:  2350, type: 'console', src: 'robot_mcp',  msg: '[RobotMCP] Connection established — RTT: 1.2 ms | Firmware: v1.8.4' },
+        { t:  2600, type: 'console', src: 'robot_mcp',  msg: '[RobotMCP] Joint positions read — J1:0.00 J2:0.00 J3:0.00 J4:0.00 J5:0.00 J6:0.00' },
+        { t:  2850, type: 'console', src: 'robot_mcp',  msg: '[RobotMCP] Gripper state: OPEN (0 N) — torque limit: 5 Nm' },
+        { t:  3100, type: 'console', src: 'server',     msg: '[Server] All MCP servers connected — tools registered: 7' },
+        { t:  3400, type: 'console', src: 'server',     msg: '[Server] Express HTTP server listening on http://0.0.0.0:3000' },
+        { t:  3700, type: 'init' },
+
+        // ── IDLE — system live, waiting for voice (4–8 s) ───────────────────
+        { t:  4000, type: 'intent',  nl: 'Awaiting voice command...', ctx: '--', status: 'Idle', statusColor: 'var(--green)' },
+        { t:  4200, type: 'console', src: 'server',     msg: '[Server] SSE client connected from 127.0.0.1 (debug monitor)' },
+        { t:  4500, type: 'console', src: 'server',     msg: '[Server] WebSocket clients connected: 1' },
+        { t:  4900, type: 'console', src: 'vision_mcp', msg: '[VisionMCP] Frame 001 captured — 1280×720 @ 30 fps — no objects of interest detected' },
+        { t:  5400, type: 'console', src: 'robot_mcp',  msg: '[RobotMCP] Heartbeat OK — arm idle, no faults detected (Temp: 32°C)' },
+        { t:  5800, type: 'console', src: 'vision_mcp', msg: '[VisionMCP] Frame 002 captured — no objects of interest detected' },
+        { t:  6300, type: 'console', src: 'server',     msg: '[Server] Queue state polled — tasks pending: 0' },
+        { t:  6800, type: 'console', src: 'vision_mcp', msg: '[VisionMCP] Auto-exposure adjusted: gain=4.0, exposure=8500 µs' },
+
+        // ── TURN 1: WAKE WORD (8s) ───────────────────────────────────────────
+        { t:  8000, type: 'intent', nl: 'User: "Okay John."', ctx: '--', status: 'Listening...', statusColor: 'var(--amber)' },
+        { t:  8100, type: 'console', src: 'server',     msg: '[Server] Wake word detected: "okay john" (confidence 0.98) — activating persona' },
+        { t:  8300, type: 'tool', tool: 'ask-gpt_response', args: { persona: 'john', message: 'Yes?' }, q: 'System Event' },
+        { t:  8500, type: 'tool_result', res: 'success' },
+        { t:  8700, type: 'intent', nl: 'John: "Yes?"', ctx: '<span style="color:var(--cyan)">ask-gpt_response</span> <span style="color:var(--text)">{"persona":"john"}</span>', status: 'Speaking', statusColor: 'var(--green)' },
+        { t:  8900, type: 'tool', tool: 'tts_request', args: { text: 'Yes?' }, q: 'System Event' },
+        { t:  9100, type: 'tool_result', res: 'success' },
+
+        // ── TURN 2: ALL OBJECTS TOGETHER (11s) ───────────────────────────────
+        { t: 11000, type: 'intent', nl: 'User: "I am not feeling well can you get something for me, I need something to write with, then finally I need a screwdriver."', ctx: '--', status: 'Listening...', statusColor: 'var(--amber)' },
+        { t: 11100, type: 'console', src: 'server',     msg: '[Server] Raw audio transcript: "I am not feeling well can you get something for me, I need something to write with, then finally I need a screwdriver."' },
+        { t: 11200, type: 'console', src: 'server',     msg: '[Server] Forwarding prompt to GPT-5.4-nano for intent parsing...' },
+        { t: 11600, type: 'tool', tool: 'ask-gpt_response', args: { persona: 'john', message: 'I can get you some medicine, a black marker, and a screwdriver. I will pick them up in sequence.' }, q: 'System Event' },
+        { t: 11800, type: 'tool_result', res: 'success' },
+        
+        { t: 12000, type: 'console', src: 'server',     msg: '[Server] Queuing locate_object task for medicine...' },
+        { t: 12100, type: 'queue_add', task: 'locate_object', target: 'medicine' },
+        { t: 12200, type: 'console', src: 'server',     msg: '[Server] Queuing locate_object task for black marker...' },
+        { t: 12300, type: 'queue_add', task: 'locate_object', target: 'black marker' },
+        { t: 12400, type: 'console', src: 'server',     msg: '[Server] Queuing locate_object task for screwdriver...' },
+        { t: 12500, type: 'queue_add', task: 'locate_object', target: 'screwdriver' },
+
+        // Match screenshot for final state
+        { t: 13000, type: 'intent', nl: 'Can you pick up the medicine first, followed by th...', ctx: '<span style="color:var(--cyan)">ask-gpt_response</span> <span style="color:var(--text)">{"persona":"john","emoji":"🤖"}</span>', status: 'Completed', statusColor: 'var(--green)' },
+        
+        { t: 13200, type: 'console', src: 'server', msg: '[DEBUG] Calling clear_return_home...' },
+        { t: 13400, type: 'console', src: 'robot_mcp', msg: '[ROBOT MCP] ✅ Return home latch manually cleared by user/system.' },
+        { t: 13600, type: 'console', src: 'server', msg: '[DEBUG] clear_return_home succeeded.' },
+        
+        { t: 13800, type: 'tool', tool: 'tts_request', args: { text: 'I am checking the workspace for the requested objects. Once the path is clear, I will pick them up in sequence.' }, q: 'System Event', total_calls: 49 },
+        { t: 14000, type: 'tool_result', res: 'success' },
+        { t: 14200, type: 'tool', tool: 'tts_success', args: { text: 'I am checking the workspace for the requested objects. Once the path is clear, I will pick them up in sequence.', attempt: 1 }, q: 'System Event', total_calls: 50 },
+        { t: 14400, type: 'tool_result', res: 'success' },
+        
+        { t: 14600, type: 'queue_start' },
+        { t: 15000, type: 'console', src: 'server', msg: '[DEBUG] Calling locate_object with target_name: \'medicine\'' },
+        
+        // Pause in screenshot state for 5 seconds for viewing
+        { t: 20000, type: 'console', src: 'robot_mcp', msg: '[RobotMCP] Task pick_and_place_object -> "medicine" completed successfully.' },
+        { t: 21000, type: 'queue_end' },
+
+        { t: 22000, type: 'queue_start' },
+        { t: 22500, type: 'console', src: 'server', msg: '[DEBUG] Calling locate_object with target_name: \'black marker\'' },
+        { t: 26000, type: 'console', src: 'robot_mcp', msg: '[RobotMCP] Task pick_and_place_object -> "black marker" completed successfully.' },
+        { t: 27000, type: 'queue_end' },
+
+        { t: 28000, type: 'queue_start' },
+        { t: 28500, type: 'console', src: 'server', msg: '[DEBUG] Calling locate_object with target_name: \'screwdriver\'' },
+        { t: 32000, type: 'console', src: 'robot_mcp', msg: '[RobotMCP] Task pick_and_place_object -> "screwdriver" completed successfully.' },
+        { t: 33000, type: 'queue_end' },
+        
+        { t: 34000, type: 'intent', nl: 'Awaiting voice command...', ctx: '--', status: 'Idle', statusColor: 'var(--green)' },
+
+        // Restart simulation
+        { t: 40000, type: 'LOOP' }
+    ];
+
+    function runSimulation() {
+        let startTime = Date.now();
+        let scenarioIndex = 0;
+
+        let lastAmbientMs = 0;
+
+        // Set initial UI state
+        updateUI({
+            currentPersona: 'John',
+            mcpStatus: { emoji: 'Online', vision: 'Online', robot: 'Online' },
+        });
+
+        function tick() {
+            const elapsed = Date.now() - startTime;
+
+            // Realistic background log noise every ~4 s
+            if (elapsed - lastAmbientMs > 4000 && scenarioIndex > 0) {
+                lastAmbientMs = elapsed;
+                const pool = [
+                    { src:'vision_mcp', msg:'[VisionMCP] Background frame processed (no new detections, 14ms)' },
+                    { src:'robot_mcp',  msg:'[RobotMCP] Joint torque telemetry — J1:0.4 Nm  J2:1.2 Nm  J3:0.9 Nm' },
+                    { src:'server',     msg:'[Server] Queue state polled — tasks pending: ' + mockQueue.length },
+                    { src:'vision_mcp', msg:'[VisionMCP] Auto-exposure adjusted: gain=4.0, exposure=8500 µs' },
+                    { src:'robot_mcp',  msg:'[RobotMCP] Gripper pressure nominal — 0 N (OPEN state)' },
+                    { src:'server',     msg:'[Server] WebSocket clients connected: 1 (debug_monitor)' },
+                    { src:'server',     msg:'[Server] Heartbeat ping — all MCP servers responsive (RTT ~3ms)' },
+                    { src:'vision_mcp', msg:'[VisionMCP] Depth sensor calibration OK — baseline 842 mm' },
+                    { src:'robot_mcp',  msg:'[RobotMCP] Motor temperature telemetry — Peak: J2 at 34.1°C' },
+                    { src:'vision_mcp', msg:'[VisionMCP] Memory usage: 412 MB / 8096 MB' },
+                    { src:'server',     msg:'[Server] RSS memory: 84.5 MB | Heap: 48.2 MB' }
+                ];
+                const pick = pool[Math.floor(Math.random() * pool.length)];
+                systemLogs.push({ timestamp: Date.now(), source: pick.src, level: 'info', message: pick.msg });
+                if (systemLogs.length > 200) systemLogs.shift();
+                renderConsoleLogs();
+            }
+
+            // Advance scenario timeline
+            while (scenarioIndex < MOCK_SCENARIO.length && elapsed > MOCK_SCENARIO[scenarioIndex].t) {
+                const step = MOCK_SCENARIO[scenarioIndex];
+
+                if (step.type === 'LOOP') {
+                    // Hard reset — replay after a 4 s pause
+                    setTimeout(() => {
+                        toolLogs     = [];
+                        systemLogs   = [];
+                        mockQueue    = [];
+                        isRobotBusy  = false;
+                        scenarioIndex = 0;
+                        startTime    = Date.now();
+                        lastAmbientMs = 0;
+                        document.getElementById('total-calls').innerText = '0';
+                        renderToolLogs();
+                        renderQueue(mockQueue, false);
+                        requestAnimationFrame(tick);
+                    }, 4000);
+                    return; // stop the current tick chain; resumes after timeout
+                }
+
+                else if (step.type === 'console') {
+                    systemLogs.push({ timestamp: Date.now(), source: step.src, level: step.lvl || 'info', message: step.msg });
+                    if (systemLogs.length > 200) systemLogs.shift();
+                    renderConsoleLogs();
+                }
+
+                else if (step.type === 'intent') {
+                    document.getElementById('intent-nl').innerText = step.nl;
+                    document.getElementById('intent-ctx').innerHTML = step.ctx === '--' ? '--' : step.ctx;
+                    document.getElementById('intent-status').innerText  = step.status;
+                    document.getElementById('intent-status').style.color = step.statusColor;
+                }
+
+                else if (step.type === 'tool') {
+                    toolLogs.push({ toolName: step.tool, args: step.args, userQuestion: step.q, result: null, timestamp: Date.now() });
+                    if (toolLogs.length > 50) toolLogs.shift();
+                    document.getElementById('total-calls').innerText = step.total_calls || toolLogs.length;
+                    renderToolLogs();
+                }
+
+                else if (step.type === 'tool_result') {
+                    // Resolve the most recent pending tool log entry
+                    const pending = [...toolLogs].reverse().find(l => l.result === null);
+                    if (pending) pending.result = step.res;
+                    renderToolLogs();
+                }
+
+                else if (step.type === 'queue_add') {
+                    mockQueue.push({ id: Math.random().toString(36).substr(2,9), name: step.task, args: { object_name: step.target } });
+                    renderQueue(mockQueue, isRobotBusy);
+                }
+
+                else if (step.type === 'queue_start') {
+                    isRobotBusy = true;
+                    renderQueue(mockQueue, isRobotBusy);
+                }
+
+                else if (step.type === 'queue_end') {
+                    isRobotBusy = false;
+                    mockQueue.shift();
+                    renderQueue(mockQueue, isRobotBusy);
+                }
+
+                else if (step.type === 'exception') {
+                    const card = document.getElementById('robot-state-card');
+                    card.classList.add('flash-red');
+                    document.getElementById('robot-state-val').innerText = step.error;
+                    document.getElementById('robot-state-val').style.color = 'var(--red)';
+                    document.getElementById('robot-state-sub').innerText = step.msg;
+                    document.getElementById('robot-state-icon').innerText = '⚠️';
+                }
+
+                else if (step.type === 'exception_clear') {
+                    const card = document.getElementById('robot-state-card');
+                    card.classList.remove('flash-red');
+                    document.getElementById('robot-state-val').innerText = 'Operational';
+                    document.getElementById('robot-state-val').style.color = 'var(--text)';
+                    document.getElementById('robot-state-sub').innerText = 'Monitoring for faults';
+                    document.getElementById('robot-state-icon').innerText = '🦾';
+                }
+
+                const now = new Date();
+                const ts = now.toLocaleTimeString('en-SG',{timeZone:'Asia/Singapore',hour12:true});
+                document.getElementById('update-ts').innerText = ts;
+                document.getElementById('last-time').innerText = ts;
+
+                scenarioIndex++;
+            }
+            
+            requestAnimationFrame(tick);
+        }
+        
+        
+        requestAnimationFrame(tick);
+    }
+
+    runSimulation();
+</script>
+</body>
+</html>
