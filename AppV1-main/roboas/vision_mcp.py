@@ -1354,6 +1354,19 @@ async def qwen_plan_next_action(
     
     return plan
 
+async def notify_queue_override(action: str, target: str = None):
+    try:
+        payload = {"action": action, "target": target}
+        req = urllib.request.Request(
+            f"http://{_SERVER_HOST}:3000/queue-override",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=3).read())
+    except Exception as e:
+        logger.warning(f"Failed to notify Node queue override: {e}")
+
 # ==========================================
 # ROBOT MCP COMMUNICATION
 # ==========================================
@@ -1935,6 +1948,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     }))]
 
             if next_action == "relocate" and obs is not None:
+                await notify_queue_override("relocate", obs["object_name"])
                 reloc_result = await call_robot_tool("relocate_object", {
                     "obstacle_name": obs["object_name"],
                     "obstacle_x": obs["x"],
@@ -1944,6 +1958,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     "detections": detections,
                     "target_name": target,
                 })
+                await notify_queue_override("clear")
 
                 if reloc_result.get("error"):
                     return [TextContent(type="text", text=json.dumps({

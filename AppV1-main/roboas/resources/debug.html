@@ -909,7 +909,7 @@
     }
 
     // ── QUEUE ──
-    function renderQueue(queue, isBusy) {
+    function renderQueue(queue, isBusy, override) {
         const f = document.getElementById('queue-feed');
         if (!queue || !queue.length) {
             f.innerHTML = `<div class="empty"><div class="empty-glyph">✅</div><p>Queue is empty.<br>The robot is ready for a new task!</p></div>`;
@@ -918,10 +918,15 @@
         f.innerHTML = queue.map((task, i) => {
             const active = i === 0 && isBusy;
             const t = TOOLS[task.name];
-            const icon = t ? t.icon : '⚙️';
-            const label = t ? t.label : task.name;
+            let icon = t ? t.icon : '⚙️';
+            let label = t ? t.label : task.name;
             let detail = '';
-            if (task.args) {
+            
+            if (active && override && override.action === 'relocate') {
+                icon = '🚧';
+                label = 'Relocating Object';
+                detail = `Target: ${override.target}`;
+            } else if (task.args) {
                 const v = task.args.object_name || task.args.target_name || task.args.obstacle_name || '';
                 if (v) detail = `Target: ${v}`;
             }
@@ -1093,7 +1098,7 @@
                     if (toolLogs.length > 50) toolLogs.shift();
                     renderToolLogs();
                 } else if (p.type === 'queue') {
-                    renderQueue(p.data.queue, p.data.isRobotBusy);
+                    renderQueue(p.data.queue, p.data.isRobotBusy, p.data.override);
                 } else if (p.type === 'console') {
                     systemLogs.push(p.data);
                     if (systemLogs.length > 500) systemLogs.shift();

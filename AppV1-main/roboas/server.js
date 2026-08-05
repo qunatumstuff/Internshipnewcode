@@ -883,15 +883,28 @@ async function processRobotQueue() {
   }
 }
 
+let currentQueueOverride = null;
+
 function broadcastQueueUpdate() {
-  broadcastDebugEvent('queue', { queue: robotTaskQueue, isRobotBusy });
+  broadcastDebugEvent('queue', { queue: robotTaskQueue, isRobotBusy, override: currentQueueOverride });
 }
 
 // === Endpoints ===
 
 // Queue API
 app.get('/queue-status', (req, res) => {
-  res.json({ queue: robotTaskQueue, isRobotBusy });
+  res.json({ queue: robotTaskQueue, isRobotBusy, override: currentQueueOverride });
+});
+
+app.post('/queue-override', express.json(), (req, res) => {
+  const { action, target } = req.body;
+  if (action === 'clear') {
+    currentQueueOverride = null;
+  } else if (action === 'relocate') {
+    currentQueueOverride = { action: 'relocate', target: target || 'object' };
+  }
+  broadcastQueueUpdate();
+  res.json({ success: true });
 });
 
 app.post('/queue-clear', (req, res) => {
