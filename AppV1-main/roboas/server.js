@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const cors = require('cors');
@@ -155,7 +155,7 @@ console.warn = function(...args) {
 function logToolCall(userQuestion, toolName, args, result) {
   const entry = {
     timestamp: new Date().toISOString(),
-    userQuestion: userQuestion.substring(0, 50) + (userQuestion.length > 50 ? '...' : ''),
+    userQuestion: userQuestion,
     toolName,
     args,
     result
@@ -1419,10 +1419,10 @@ The robot is currently executing physical tasks!
 Pending Queue: [${tasks}]
 If the user asks to pick up another object (or multiple objects), you MUST STILL call the 'locate_object' tool to add them to the queue. 
 CRITICAL RULE: When doing so, you MUST EXACTLY say "I am still picking up the current object and will handle the requested object later." Do not say anything else about the queue.
-You can also call the 'return_home' tool if the user explicitly asks you to go home.`;
+CRITICAL RULE: DO NOT call the 'return_home' tool unless the user EXPLICITLY asks you to go home, stop, or cancel. Do not call it automatically.`;
     } else {
       queueState = `\n\nCURRENT ROBOT STATE: IDLE
-You can call 'return_home' if the user asks you to go home.`;
+CRITICAL RULE: DO NOT call the 'return_home' tool unless the user EXPLICITLY asks you to go home, stop, or cancel. Do not call it automatically.`;
     }
 
     const messages = [
@@ -2066,6 +2066,12 @@ app.post('/debug/clear-logs', (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: `Failed to clear logs: ${err.message}` });
   }
+});
+
+app.post('/debug/clear-system-logs', (req, res) => {
+  console.log(`[DEBUG HUD] Clearing system messages...`);
+  systemLogs.length = 0;
+  res.json({ success: true, message: 'System logs cleared successfully' });
 });
 
 // Debug vector state

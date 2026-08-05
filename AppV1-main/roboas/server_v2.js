@@ -42,7 +42,7 @@ try {
 function logToolCall(userQuestion, toolName, args, result) {
   const entry = {
     timestamp: new Date().toISOString(),
-    userQuestion: userQuestion.substring(0, 50) + (userQuestion.length > 50 ? '...' : ''),
+    userQuestion: userQuestion,
     toolName,
     args,
     result

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LARA 5 · System Monitor</title>
+    <title>VLA & Scene Reasoning Integration for NEURA LARA 5 Robotics Arm · System Monitor</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -180,7 +180,7 @@
         }
         .intent-col { display: flex; flex-direction: column; gap: 4px; flex: 1; overflow: hidden; }
         .intent-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 1px; }
-        .intent-val { font-size: 1.1rem; font-weight: 600; color: var(--text); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .intent-val { font-size: 1.1rem; font-weight: 600; color: var(--text); font-style: italic; white-space: normal; line-height: 1.4; }
         
         /* ─── FLASH RED ─── */
         @keyframes flashRed {
@@ -194,7 +194,7 @@
 
         /* ─── STAT ROW ─── */
         .stat-row {
-            display: grid;
+            display: none;
             grid-template-columns: repeat(5, 1fr);
             gap: 16px;
         }
@@ -246,8 +246,8 @@
 
         /* ─── CONNECTIONS ─── */
         .conn-bar {
+            display: none;
             padding: 18px 24px;
-            display: flex;
             align-items: center;
             gap: 24px;
             flex-wrap: wrap;
@@ -315,7 +315,7 @@
         .panel {
             display: flex;
             flex-direction: column;
-            height: calc(100vh - 370px);
+            height: calc(100vh - 190px);
             min-height: 320px;
             overflow: hidden;
         }
@@ -646,7 +646,7 @@
 <!-- TOP BAR -->
 <div class="topbar">
     <div class="topbar-left">
-        <div class="logo">LARA 5</div>
+        <div class="logo">VLA & Scene Reasoning Integration for NEURA LARA 5 Robotics Arm</div>
         <div class="logo-divider"></div>
         <div class="logo-sub">System Monitor · Live View</div>
     </div>
@@ -661,14 +661,6 @@
     <div class="intent-col">
         <div class="intent-label">Natural Language Intent</div>
         <div class="intent-val" id="intent-nl">Awaiting voice command...</div>
-    </div>
-    <div class="intent-col">
-        <div class="intent-label">Extracted Structured Context</div>
-        <div class="intent-val" id="intent-ctx" style="color:var(--cyan)">--</div>
-    </div>
-    <div class="intent-col" style="flex: 0 0 200px;">
-        <div class="intent-label">System Status</div>
-        <div class="intent-val" id="intent-status" style="color:var(--green)">Idle</div>
     </div>
 </div>
 
@@ -762,6 +754,7 @@
                         <div class="ph-subtitle">Historical MCP Tool calls and returns</div>
                     </div>
                 </div>
+                <button class="btn-danger" onclick="clearTelemetry()">Clear All</button>
             </div>
             <div class="panel-body" id="log-feed">
                 <div class="empty"><div class="empty-glyph">💤</div><p>No actions yet.<br>Ask John or Linda to do something!</p></div>
@@ -784,7 +777,7 @@
                 <select class="qt-select" id="manualTaskName">
                     <option value="locate_object">📍 Locate Object</option>
                     <option value="pick_and_place_object">🤏 Pick &amp; Place</option>
-                    <option value="relocate_object">🔀 Move Out of Way</option>
+                    <option value="relocate_object">🔀 Relocating Object</option>
                     <option value="return_home">🏠 Return Home</option>
                     <option value="clear_startup_lock">dY"" Clear Startup Lock</option>
                     <option value="clear_emergency_stop">🔓 Clear E-Stop</option>
@@ -815,12 +808,15 @@
         <!-- PANEL 3: SYSTEM MESSAGES (TABBED) -->
         <div class="glass panel">
             <div class="panel-head" style="flex-direction: column; align-items: stretch; gap: 10px; padding-bottom: 0;">
-                <div class="panel-head-left">
-                    <div class="ph-icon purple">📡</div>
-                    <div>
-                        <div class="ph-title">System Messages</div>
-                        <div class="ph-subtitle">Live updates — filter by source</div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="panel-head-left">
+                        <div class="ph-icon purple">📡</div>
+                        <div>
+                            <div class="ph-title">System Messages</div>
+                            <div class="ph-subtitle">Live updates — filter by source</div>
+                        </div>
                     </div>
+                    <button class="btn-danger" onclick="clearSystemMessages()">Clear All</button>
                 </div>
                 <div class="log-tabs" id="log-tabs">
                     <button class="log-tab active" onclick="switchTab('all')">All</button>
@@ -840,25 +836,44 @@
 
 <script>
     const TOOLS = {
-        locate_object:        { label:'Locate Object',    icon:'📍' },
-        pick_and_place_object:{ label:'Pick & Place',     icon:'🤏' },
-        relocate_object:      { label:'Move Out of Way',  icon:'🔀' },
-        return_home:          { label:'Return to Home',   icon:'🏠' },
-        clear_emergency_stop: { label:'Clear Emergency',  icon:'🔓' },
-        emergency_stop:       { label:'Emergency Stop',   icon:'🛑' },
+        locate_object:          { label:'Locate Object',       icon:'' },
+        pick_and_place_object:  { label:'Pick & Place',        icon:'' },
+        relocate_object:        { label:'Relocating Object',   icon:'' },
+        return_home:            { label:'Return to Home',      icon:'' },
+        clear_emergency_stop:   { label:'Clear Emergency',     icon:'' },
+        emergency_stop:         { label:'Emergency Stop',      icon:'' },
+        'ask-gpt_prompt':       { label:'GPT Prompt',          icon:'' },
+        'ask-gpt_response':     { label:'GPT Response',        icon:'' },
+        tts_request:            { label:'TTS_REQUEST',         icon:'' },
+        tts_success:            { label:'TTS_SUCCESS',         icon:'' },
+        transcribe_request:     { label:'Transcribe Audio',    icon:'' },
+        transcribe_success:     { label:'Transcription Done',  icon:'' },
+        progress_sse:           { label:'Progress Update',     icon:'' },
+        get_status_emoji:       { label:'Status Update',       icon:'' },
+        robot_event_received:   { label:'Robot Event',         icon:'' },
     };
 
     function friendlyTool(name) {
-        const t = TOOLS[name];
-        return t ? `${t.icon} ${t.label}` : name;
+        return name.toUpperCase();
     }
 
     function friendlyArgs(name, args) {
         if (!args || Object.keys(args).length === 0) return 'No extra details';
-        if (name === 'locate_object'         && args.target_name)   return `Looking for: <strong>${args.target_name}</strong>`;
-        if (name === 'pick_and_place_object' && args.object_name)   return `Picking up: <strong>${args.object_name}</strong>`;
-        if (name === 'relocate_object'       && args.obstacle_name) return `Moving: <strong>${args.obstacle_name}</strong>`;
-        return Object.entries(args).map(([k,v]) => `${k}: <strong>${v}</strong>`).join(' · ');
+        if (name === 'locate_object'         && args.target_name)   return `Target: ${args.target_name}`;
+        if (name === 'pick_and_place_object' && args.object_name)   return `Target: ${args.object_name}`;
+        if (name === 'relocate_object'       && args.obstacle_name) return `Target: ${args.obstacle_name}`;
+        if (name === 'tts_request'           && args.text)          return `text: ${args.text.substring(0,120)}${args.text.length>120?'…':''}`;
+        if (name === 'tts_success'           && args.text)          return `text: ${args.text.substring(0,120)}${args.text.length>120?'…':''} · attempt: ${args.attempt||1}`;
+        if (name === 'transcribe_request'    && args.size)          return `size: ${(args.size/1024).toFixed(1)} KB · type: ${args.mimetype}`;
+        if (name === 'transcribe_success')                          return 'No extra details';
+        if (name === 'ask-gpt_response'      && args.persona) {
+            let msg = args.message ? ` · message: "${args.message}"` : '';
+            return `persona: ${args.persona} ${args.emoji||''}${msg}`;
+        }
+        if (name === 'progress_sse'          && args.status)        return `status: ${args.status}`;
+        if (name === 'robot_event_received'  && args.event)         return `event: ${args.event}`;
+        if (name === 'get_status_emoji'      && args.state)         return `state: ${args.state}`;
+        return Object.entries(args).map(([k,v]) => `${k}: ${v}`).join(' · ');
     }
 
     function friendlyResult(r) {
@@ -1007,6 +1022,22 @@
         if (d) { d.className = 'conn-dot ' + (online ? 'on' : ''); }
     }
 
+    // ── CLEAR ACTIONS ──
+    async function clearTelemetry() {
+        if (!confirm('Clear MCP Telemetry logs?')) return;
+        await fetch('/debug/clear-logs', { method:'POST' });
+        toolLogs = [];
+        renderToolLogs();
+        document.getElementById('total-calls').innerText = '0';
+    }
+
+    async function clearSystemMessages() {
+        if (!confirm('Clear all System Messages?')) return;
+        await fetch('/debug/clear-system-logs', { method:'POST' });
+        systemLogs = [];
+        renderConsoleLogs();
+    }
+
     // ── QUEUE ACTIONS ──
     async function clearQueue() {
         if (!confirm('Remove all tasks from the queue?')) return;
@@ -1072,14 +1103,16 @@
                 // Update Intent Streaming
                 const latestIntent = [...toolLogs].reverse().find(l => l.userQuestion && !l.userQuestion.startsWith('System '));
                 if (latestIntent) {
-                    document.getElementById('intent-nl').innerText = latestIntent.userQuestion;
-                    document.getElementById('intent-ctx').innerHTML = `${friendlyTool(latestIntent.toolName)} <span style="color:var(--text-dim);font-size:0.85em;margin-left:8px;">${JSON.stringify(latestIntent.args)}</span>`;
-                    if (!latestIntent.result) {
-                        document.getElementById('intent-status').innerText = 'Executing';
-                        document.getElementById('intent-status').style.color = 'var(--amber)';
-                    } else {
-                        document.getElementById('intent-status').innerText = 'Completed';
-                        document.getElementById('intent-status').style.color = 'var(--green)';
+                    if (document.getElementById('intent-nl')) document.getElementById('intent-nl').innerText = latestIntent.userQuestion;
+                    if (document.getElementById('intent-ctx')) document.getElementById('intent-ctx').innerHTML = `${friendlyTool(latestIntent.toolName)} <span style="color:var(--text-dim);font-size:0.85em;margin-left:8px;">${JSON.stringify(latestIntent.args)}</span>`;
+                    if (document.getElementById('intent-status')) {
+                        if (!latestIntent.result) {
+                            document.getElementById('intent-status').innerText = 'Executing';
+                            document.getElementById('intent-status').style.color = 'var(--amber)';
+                        } else {
+                            document.getElementById('intent-status').innerText = 'Completed';
+                            document.getElementById('intent-status').style.color = 'var(--green)';
+                        }
                     }
                 }
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LARA 5 · System Monitor</title>
+    <title>VLA & Scene Reasoning Integration for NEURA LARA 5 Robotics Arm · System Monitor</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -180,7 +180,7 @@
         }
         .intent-col { display: flex; flex-direction: column; gap: 4px; flex: 1; overflow: hidden; }
         .intent-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 1px; }
-        .intent-val { font-size: 1.1rem; font-weight: 600; color: var(--text); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .intent-val { font-size: 1.1rem; font-weight: 600; color: var(--text); font-style: italic; white-space: normal; line-height: 1.4; }
         
         /* ─── FLASH RED ─── */
         @keyframes flashRed {
@@ -194,7 +194,7 @@
 
         /* ─── STAT ROW ─── */
         .stat-row {
-            display: grid;
+            display: none;
             grid-template-columns: repeat(5, 1fr);
             gap: 16px;
         }
@@ -246,8 +246,8 @@
 
         /* ─── CONNECTIONS ─── */
         .conn-bar {
+            display: none;
             padding: 18px 24px;
-            display: flex;
             align-items: center;
             gap: 24px;
             flex-wrap: wrap;
@@ -315,7 +315,7 @@
         .panel {
             display: flex;
             flex-direction: column;
-            height: calc(100vh - 370px);
+            height: calc(100vh - 190px);
             min-height: 320px;
             overflow: hidden;
         }
@@ -646,7 +646,7 @@
 <!-- TOP BAR -->
 <div class="topbar">
     <div class="topbar-left">
-        <div class="logo">LARA 5</div>
+        <div class="logo">VLA & Scene Reasoning Integration for NEURA LARA 5 Robotics Arm</div>
         <div class="logo-divider"></div>
         <div class="logo-sub">System Monitor · Live View</div>
     </div>
@@ -661,14 +661,6 @@
     <div class="intent-col">
         <div class="intent-label">Natural Language Intent</div>
         <div class="intent-val" id="intent-nl">Awaiting voice command...</div>
-    </div>
-    <div class="intent-col">
-        <div class="intent-label">Extracted Structured Context</div>
-        <div class="intent-val" id="intent-ctx" style="color:var(--cyan)">--</div>
-    </div>
-    <div class="intent-col" style="flex: 0 0 200px;">
-        <div class="intent-label">System Status</div>
-        <div class="intent-val" id="intent-status" style="color:var(--green)">Idle</div>
     </div>
 </div>
 
@@ -784,7 +776,7 @@
                 <select class="qt-select" id="manualTaskName">
                     <option value="locate_object">📍 Locate Object</option>
                     <option value="pick_and_place_object">🤏 Pick &amp; Place</option>
-                    <option value="relocate_object">🔀 Move Out of Way</option>
+                    <option value="relocate_object">🔀 Relocating Object</option>
                     <option value="return_home">🏠 Return Home</option>
                     <option value="clear_startup_lock">dY"" Clear Startup Lock</option>
                     <option value="clear_emergency_stop">🔓 Clear E-Stop</option>
@@ -842,7 +834,7 @@
     const TOOLS = {
         locate_object:          { label:'Locate Object',       icon:'📍' },
         pick_and_place_object:  { label:'Pick & Place',        icon:'' },
-        relocate_object:        { label:'Move Out of Way',     icon:'' },
+        relocate_object:        { label:'Relocating Object',   icon:'' },
         return_home:            { label:'Return to Home',      icon:'' },
         clear_emergency_stop:   { label:'Clear Emergency',     icon:'' },
         emergency_stop:         { label:'Emergency Stop',      icon:'' },
@@ -1089,10 +1081,10 @@
         // ── TURN 1: WAKE WORD (8s) ───────────────────────────────────────────
         { t:  8000, type: 'intent', nl: 'User: "Okay John."', ctx: '--', status: 'Listening...', statusColor: 'var(--amber)' },
         { t:  8100, type: 'console', src: 'server',     msg: '[Server] Wake word detected: "okay john" (confidence 0.98) — activating persona' },
-        { t:  8300, type: 'tool', tool: 'ask-gpt_response', args: { persona: 'john', message: 'Yes?' }, q: 'System Event' },
+        { t:  8300, type: 'tool', tool: 'ask-gpt_response', args: { persona: 'john', message: 'Hey' }, q: 'System Event' },
         { t:  8500, type: 'tool_result', res: 'success' },
-        { t:  8700, type: 'intent', nl: 'John: "Yes?"', ctx: '<span style="color:var(--cyan)">ask-gpt_response</span> <span style="color:var(--text)">{"persona":"john"}</span>', status: 'Speaking', statusColor: 'var(--green)' },
-        { t:  8900, type: 'tool', tool: 'tts_request', args: { text: 'Yes?' }, q: 'System Event' },
+        { t:  8700, type: 'intent', nl: 'John: "Hey"', ctx: '<span style="color:var(--cyan)">ask-gpt_response</span> <span style="color:var(--text)">{"persona":"john"}</span>', status: 'Speaking', statusColor: 'var(--green)' },
+        { t:  8900, type: 'tool', tool: 'tts_request', args: { text: 'Hey' }, q: 'System Event' },
         { t:  9100, type: 'tool_result', res: 'success' },
 
         // ── TURN 2: ALL OBJECTS TOGETHER (11s) ───────────────────────────────
@@ -1110,7 +1102,7 @@
         { t: 12500, type: 'queue_add', task: 'locate_object', target: 'screwdriver' },
 
         // Match screenshot for final state
-        { t: 13000, type: 'intent', nl: 'Can you pick up the medicine first, followed by th...', ctx: '<span style="color:var(--cyan)">ask-gpt_response</span> <span style="color:var(--text)">{"persona":"john","emoji":"🤖"}</span>', status: 'Completed', statusColor: 'var(--green)' },
+        { t: 13000, type: 'intent', nl: 'User: "I am not feeling well can you get something for me, I need something to write with, then finally I need a screwdriver."', ctx: '<span style="color:var(--cyan)">ask-gpt_response</span> <span style="color:var(--text)">{"persona":"john","emoji":"🤖"}</span>', status: 'Completed', statusColor: 'var(--green)' },
         
         { t: 13200, type: 'console', src: 'server', msg: '[DEBUG] Calling clear_return_home...' },
         { t: 13400, type: 'console', src: 'robot_mcp', msg: '[ROBOT MCP] ✅ Return home latch manually cleared by user/system.' },
@@ -1125,23 +1117,30 @@
         { t: 15000, type: 'console', src: 'server', msg: '[DEBUG] Calling locate_object with target_name: \'medicine\'' },
         
         // Pause in screenshot state for 5 seconds for viewing
-        { t: 20000, type: 'console', src: 'robot_mcp', msg: '[RobotMCP] Task pick_and_place_object -> "medicine" completed successfully.' },
-        { t: 21000, type: 'queue_end' },
-
-        { t: 22000, type: 'queue_start' },
-        { t: 22500, type: 'console', src: 'server', msg: '[DEBUG] Calling locate_object with target_name: \'black marker\'' },
-        { t: 26000, type: 'console', src: 'robot_mcp', msg: '[RobotMCP] Task pick_and_place_object -> "black marker" completed successfully.' },
-        { t: 27000, type: 'queue_end' },
-
-        { t: 28000, type: 'queue_start' },
-        { t: 28500, type: 'console', src: 'server', msg: '[DEBUG] Calling locate_object with target_name: \'screwdriver\'' },
-        { t: 32000, type: 'console', src: 'robot_mcp', msg: '[RobotMCP] Task pick_and_place_object -> "screwdriver" completed successfully.' },
-        { t: 33000, type: 'queue_end' },
+        { t: 20000, type: 'console', src: 'robot_mcp', msg: '[RobotMCP] Obstacle detected: green cube blocking path.' },
+        { t: 21000, type: 'queue_update_top', task: 'relocate_object', target: 'green cube' },
+        { t: 22000, type: 'console', src: 'server', msg: '[DEBUG] Calling relocate_object with target_name: \'green cube\'' },
+        { t: 25000, type: 'console', src: 'robot_mcp', msg: '[RobotMCP] Task relocate_object -> "green cube" completed successfully.' },
         
-        { t: 34000, type: 'intent', nl: 'Awaiting voice command...', ctx: '--', status: 'Idle', statusColor: 'var(--green)' },
+        { t: 26000, type: 'queue_update_top', task: 'locate_object', target: 'medicine' },
+        { t: 27000, type: 'console', src: 'server', msg: '[DEBUG] Resuming locate_object with target_name: \'medicine\'' },
+        { t: 30000, type: 'console', src: 'robot_mcp', msg: '[RobotMCP] Task pick_and_place_object -> "medicine" completed successfully.' },
+        { t: 31000, type: 'queue_end' },
+
+        { t: 32000, type: 'queue_start' },
+        { t: 32500, type: 'console', src: 'server', msg: '[DEBUG] Calling locate_object with target_name: \'black marker\'' },
+        { t: 36000, type: 'console', src: 'robot_mcp', msg: '[RobotMCP] Task pick_and_place_object -> "black marker" completed successfully.' },
+        { t: 37000, type: 'queue_end' },
+
+        { t: 38000, type: 'queue_start' },
+        { t: 38500, type: 'console', src: 'server', msg: '[DEBUG] Calling locate_object with target_name: \'screwdriver\'' },
+        { t: 42000, type: 'console', src: 'robot_mcp', msg: '[RobotMCP] Task pick_and_place_object -> "screwdriver" completed successfully.' },
+        { t: 43000, type: 'queue_end' },
+        
+        { t: 44000, type: 'intent', nl: 'Awaiting voice command...', ctx: '--', status: 'Idle', statusColor: 'var(--green)' },
 
         // Restart simulation
-        { t: 40000, type: 'LOOP' }
+        { t: 50000, type: 'LOOP' }
     ];
 
     function runSimulation() {
@@ -1210,10 +1209,12 @@
                 }
 
                 else if (step.type === 'intent') {
-                    document.getElementById('intent-nl').innerText = step.nl;
-                    document.getElementById('intent-ctx').innerHTML = step.ctx === '--' ? '--' : step.ctx;
-                    document.getElementById('intent-status').innerText  = step.status;
-                    document.getElementById('intent-status').style.color = step.statusColor;
+                    if (document.getElementById('intent-nl')) document.getElementById('intent-nl').innerText = step.nl;
+                    if (document.getElementById('intent-ctx')) document.getElementById('intent-ctx').innerHTML = step.ctx === '--' ? '--' : step.ctx;
+                    if (document.getElementById('intent-status')) {
+                        document.getElementById('intent-status').innerText  = step.status;
+                        document.getElementById('intent-status').style.color = step.statusColor;
+                    }
                 }
 
                 else if (step.type === 'tool') {
@@ -1233,6 +1234,14 @@
                 else if (step.type === 'queue_add') {
                     mockQueue.push({ id: Math.random().toString(36).substr(2,9), name: step.task, args: { object_name: step.target } });
                     renderQueue(mockQueue, isRobotBusy);
+                }
+
+                else if (step.type === 'queue_update_top') {
+                    if (mockQueue.length > 0) {
+                        mockQueue[0].name = step.task;
+                        mockQueue[0].args.object_name = step.target;
+                        renderQueue(mockQueue, isRobotBusy);
+                    }
                 }
 
                 else if (step.type === 'queue_start') {
