@@ -23,6 +23,11 @@ inference_lock = threading.Lock()
 # Tweak this value to add a global Z offset (in meters) to all detected objects.
 # E.g., setting it to 0.02 will raise the target pick point by 2 cm.
 Z_OFFSET = 0
+
+# MUST match vision_mcp.py
+PERMA_OFFSET_X = 0.00937
+PERMA_OFFSET_Y = -0.01086
+
 DISPLAY_ONLY_TARGET = True
 
 
@@ -458,36 +463,34 @@ def _vision_loop_inner():
                         center_topx, center_topy = get_interpolated_center(obb)
                         center_x = center_topx
                         center_y = center_topy
+
+                        # Use EXACTLY the same depth method as vision_mcp.py
+                        distance = depth_frame.get_distance(center_x, center_y)
+
+                        if not np.isfinite(distance) or distance <= 0.0:
+                             continue
+                        spatial_coords = rs.rs2_deproject_pixel_to_point(intrinsics,[center_x, center_y],distance)
+
+                        robot = CAM_TO_ROBOT_T @ np.array([spatial_coords[0],spatial_coords[1],spatial_coords[2],1.0])
+                        # Same calibration correction as vision_mcp.py
+                        x_val = float(robot[0]) - PERMA_OFFSET_X
+                        y_val = float(robot[1]) - PERMA_OFFSET_Y
+                        z_val = float(robot[2]) + Z_OFFSET
+
+                        # Same rounding as vision_mcp.py
+                        x_val = round(x_val, 4)
+                        y_val = round(y_val, 4)
+                        z_val = round(z_val, 4)
+
+                        latest_3d_coords["x"] = x_val
+                        latest_3d_coords["y"] = y_val
+                        latest_3d_coords["z"] = z_val
                         
-
-                        distance = get_median_depth(depth_frame, center_x, center_y, radius=4)
-                        if distance is None or distance <= 0:
-                            continue
-                        spatial_coords = rs.rs2_deproject_pixel_to_point(intrinsics, [center_x, center_y], distance)
-                        robot = CAM_TO_ROBOT_T @ np.array([
-                             spatial_coords[0],
-                             spatial_coords[1],
-                             spatial_coords[2],
-                             1.0
-                        ])
-                        latest_3d_coords["x"] = smooth_coord(
-                             latest_3d_coords["x"],
-                             robot[0]
-                            )
-                        latest_3d_coords["y"] = smooth_coord(   
-                         latest_3d_coords["y"],
-                         robot[1]
-                        )
-
-                        latest_3d_coords["z"] = smooth_coord(
-                             latest_3d_coords["z"],
-                             robot[2] + Z_OFFSET
-                        )
-
+                       
 
                         cv2.putText(
                             color_image,
-                            f"TARGET {cls_name}: X:{robot[0]*1000:.1f} Y:{robot[1]*1000:.1f} Z:{robot[2]*1000:.1f}mm",
+                            f"TARGET {cls_name}: X:{x_val*1000:.1f} Y:{y_val*1000:.1f} Z:{z_val*1000:.1f}mm",
                             (20, 70),
                             cv2.FONT_HERSHEY_SIMPLEX,
                             0.7,

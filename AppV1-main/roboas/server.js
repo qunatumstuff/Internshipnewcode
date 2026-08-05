@@ -772,9 +772,14 @@ async function processRobotQueue() {
         await Promise.all([completionPromise, toolPromise]);
         if (global._taskAborted) throw new Error("Task cancelled by user.");
         
-        sendProgress(`Successfully picked up the ${args.target_name}!`, true, `Successfully picked up the ${args.target_name}!`);
+        sendProgress(`Successfully picked up the ${args.target_name}!`, true);
         setTimeout(async () => {
-          sendProgress(null, false, `I have finished picking and placing the requested object, ${args.target_name}.`);
+          let ttsMessage = `I have finished picking and placing the requested object, ${args.target_name}.`;
+          const nextTask = robotTaskQueue.find(t => t.name === 'locate_object');
+          if (nextTask && nextTask.args && nextTask.args.target_name) {
+            ttsMessage += ` I will now pick up the next object, ${nextTask.args.target_name}.`;
+          }
+          sendProgress(null, false, ttsMessage);
           await sendWakewordCommand('unmute');
         }, 3000);
       }
@@ -832,7 +837,9 @@ async function processRobotQueue() {
       let friendlyFailMsg = '';
       const lowerErr = err.message.toLowerCase();
       
-      if (lowerErr.includes('emergency stop') || lowerErr.includes('estop') || lowerErr.includes('powered off') || lowerErr.includes('hardware is locked') || lowerErr.includes('error state') || lowerErr.includes('failed to execute function') || lowerErr.includes('3104')) {
+      if (lowerErr.includes('protective stop')) {
+        friendlyFailMsg = null; // TTS already handled by requestEmergencyStop
+      } else if (lowerErr.includes('emergency stop') || lowerErr.includes('estop') || lowerErr.includes('powered off') || lowerErr.includes('hardware is locked') || lowerErr.includes('error state') || lowerErr.includes('failed to execute function') || lowerErr.includes('3104')) {
         isSafetyStopLatched = true;
         lastSafetyStopError = err.message;
         friendlyFailMsg = "The robot hardware encountered an error state. Please clear the emergency stop or reset the system to proceed.";

@@ -95,11 +95,7 @@ ARM TRANSIT:
   but Z is still capped at Z_MAX (0.850 m) to protect joint limits.
   There is no hard XY cap on transit beyond the conveyor no-go zone.
 
-CONVEYOR BELT NO-GO ZONE (physical + 50 mm safety margin):
-  Physical footprint : X -0.800->0.800   Y 0.200->0.800
-  + 50 mm margin     : X -0.850->0.850   Y 0.150->0.850
-  Blocked at ALL Z heights (same treatment as camera stand).
-  Gripper-body checks expand these further by GRIPPER_RADIUS.
+
 ═══════════════════════════════════════════════════════════
 """
 
@@ -120,10 +116,10 @@ except ImportError:
     pass  # print removed for MCP quiet operation
 
 try:
-    from neurapy.robot import Robot  # type: ignore
+    from neurapy.robot import Robot
 except ImportError:
     sys.path.append(r"C:\Module-A\PythonAPI")
-    from neurapy.robot import Robot  # type: ignore
+    from neurapy.robot import Robot
 
 r = Robot()
 
@@ -142,7 +138,7 @@ EMERGENCY_STOP_ACTIVE = False
 #   X=420.7974mm  Y=-0.15297mm  Z=-20.11582mm
 # Only Z matters here -- this defines where the table surface actually
 # sits in robot base coordinates, independent of gripper length.
-TABLE_Z_M = 0 #-0.02011582
+TABLE_Z_M = -0.02011582
 
 GRIPPER_SAFETY_LENGTH = 0.000
 
@@ -250,7 +246,7 @@ DEFAULT_GRIPPER_SPEED = 50
 # of the catalogue default. This avoids adding a manual angle-selection menu.
 DEFAULT_OBJECT_ORIENTATION_DEG = 90.0
 DEFAULT_PREFERRED_GRASP_ANGLE_DEG = 0.0
-CAMERA_ANGLE_OFFSET_DEG = 0 #20
+CAMERA_ANGLE_OFFSET_DEG = 20
 
 # Object selection catalogue. Add more objects here later.
 # Dimensions are in metres.
@@ -420,6 +416,9 @@ MCP_DYNAMIC_OBSTACLES = []
 # They are NOT valid pick targets, but they reserve area inside the box so
 # the drop planner avoids overlapping them.
 MCP_PLACEMENT_BOX_DETECTIONS = []
+# Placement slots successfully used during this running session.
+# These remain stored between separate voice commands.
+PERSISTENT_PLACED_OBJECTS = []
 
 # Keep normal MCP operation quiet. Only these two diagnostics are printed:
 #   1) first pickup coordinate
@@ -500,31 +499,6 @@ _STAND_GRP_X_MAX = _STAND_EFF_X_MAX + GRIPPER_RADIUS
 _STAND_GRP_Y_MIN = _STAND_EFF_Y_MIN - GRIPPER_RADIUS
 _STAND_GRP_Y_MAX = _STAND_EFF_Y_MAX + GRIPPER_RADIUS
 
-# =================================================================
-# CONVEYOR BELT — PERMANENT NO-GO ZONE
-# =================================================================
-CONV_X_MIN    = -0.800
-CONV_X_MAX    =  0.800
-CONV_Y_MIN    =  0.200
-CONV_Y_MAX    =  0.800
-
-_CONV_EFF_X_MIN = CONV_X_MIN - FIXED_MARGIN
-_CONV_EFF_X_MAX = CONV_X_MAX + FIXED_MARGIN
-_CONV_EFF_Y_MIN = CONV_Y_MIN - FIXED_MARGIN
-_CONV_EFF_Y_MAX = CONV_Y_MAX + FIXED_MARGIN
-
-_CONV_GRP_X_MIN = _CONV_EFF_X_MIN - GRIPPER_RADIUS
-_CONV_GRP_X_MAX = _CONV_EFF_X_MAX + GRIPPER_RADIUS
-_CONV_GRP_Y_MIN = _CONV_EFF_Y_MIN - GRIPPER_RADIUS
-_CONV_GRP_Y_MAX = _CONV_EFF_Y_MAX + GRIPPER_RADIUS
-
-# =================================================================
-# CAMERA SCAN ZONE  (informational)
-# =================================================================
-CAM_X_MIN = 0.25
-CAM_X_MAX = 0.60
-CAM_Y_MIN = -0.37
-CAM_Y_MAX =  0.03
 
 # =================================================================
 # WORKSPACE LIMITS
@@ -1129,30 +1103,6 @@ def _stand_zone_contains_xy(x, y, expanded_for_gripper=False):
     )
 
 
-def _conveyor_zone_contains_xy(x, y, expanded_for_gripper=False):
-    """
-    Conveyor-zone check.
-
-    expanded_for_gripper=False:
-        Uses TCP-level conveyor zone.
-    expanded_for_gripper=True:
-        Uses gripper-body expanded conveyor zone.
-    """
-    if PLACEMENT_BOX_OVERRIDES_CONVEYOR and point_in_placement_box_xy(x, y):
-        return False
-
-    if expanded_for_gripper:
-        return _point_in_rect_xy(
-            x, y,
-            _CONV_GRP_X_MIN, _CONV_GRP_X_MAX,
-            _CONV_GRP_Y_MIN, _CONV_GRP_Y_MAX,
-        )
-
-    return _point_in_rect_xy(
-        x, y,
-        _CONV_EFF_X_MIN, _CONV_EFF_X_MAX,
-        _CONV_EFF_Y_MIN, _CONV_EFF_Y_MAX,
-    )
 
 # =================================================================
 # HEIGHTS & SPEED
@@ -1191,13 +1141,12 @@ DETOUR_CLEARANCE = 0.01   # metres
 # =================================================================
 PLACEMENT_BOX_ENABLED = True
 PLACEMENT_BOX_SHAPE = "rectangle"
-PLACEMENT_BOX_OVERRIDES_CONVEYOR = True
 
 PLACEMENT_BOX_CORNERS = [
     (0.586, 0.055),
-    (0.516, 0.28),
-    (0.252, 0.28),
-    (0.248, 0.055),
+    (0.586, 0.30),
+    (0.250, 0.30),
+    (0.250, 0.055),
 ]
 
 PLACEMENT_BOX_X_MIN = min(p[0] for p in PLACEMENT_BOX_CORNERS)
@@ -1561,8 +1510,7 @@ def _gripper_shaft_z_samples(tcp_z):
 def gripper_in_stand(tcp_x, tcp_y, tcp_z):  # tcp_z unused: stand blocked at ALL heights
     return _stand_zone_contains_xy(tcp_x, tcp_y, expanded_for_gripper=True)
 
-def gripper_in_conveyor(tcp_x, tcp_y, tcp_z):  # tcp_z unused: conyeor blocked at ALL heights
-    return _conveyor_zone_contains_xy(tcp_x, tcp_y, expanded_for_gripper=True)
+
 
 def gripper_in_extra_obs(tcp_x, tcp_y, tcp_z):
     if not HAS_EXTRA_OBS or _BYPASS_EXTRA_OBS:
@@ -1630,7 +1578,6 @@ def mcp_point_in_dynamic_obstacle(px, py, pz=None):
 def gripper_hits_obstacle(tcp_x, tcp_y, tcp_z):
     return (
         gripper_in_stand(tcp_x, tcp_y, tcp_z)
-        or gripper_in_conveyor(tcp_x, tcp_y, tcp_z)
         or gripper_in_extra_obs(tcp_x, tcp_y, tcp_z)
         or carried_object_hits_extra_obs(tcp_x, tcp_y, tcp_z)
         or mcp_point_in_dynamic_obstacle(tcp_x, tcp_y, tcp_z)
@@ -1652,8 +1599,6 @@ def gripper_in_transit_bounds(tcp_x, tcp_y, tcp_z):
 def point_in_stand(px, py):
     return _stand_zone_contains_xy(px, py, expanded_for_gripper=False)
 
-def point_in_conveyor(px, py):
-    return _conveyor_zone_contains_xy(px, py, expanded_for_gripper=False)
 
 
 def _axis_aligned_box_contains_xy(px, py, cx, cy, half_x, half_y, margin=0.0):
@@ -1674,13 +1619,11 @@ def point_in_extra_obs(px, py, pz):
 def point_in_obstacle(px, py, pz):
     return (
         point_in_stand(px, py)
-        or point_in_conveyor(px, py)
         or point_in_extra_obs(px, py, pz)
         or mcp_point_in_dynamic_obstacle(px, py, pz)
     )
 
 # Only Z is checked here intentionally — via-point candidates may be generated
-# outside the pick workspace XY box (e.g. lateral detours around the conveyor).
 # To also enforce XY bounds, use gripper_in_workspace() instead.
 def point_in_workspace(px, py, pz):
     return Z_MIN <= pz <= Z_MAX
@@ -1744,7 +1687,7 @@ def validate_kinematics(waypoints, label="trajectory"):
 def validate_trajectory(waypoints, label="trajectory", bypass_extra_obs=False):
     """
     Final gate before any move_linear command is issued.
-    Checks Z bounds, gripper vs stand, gripper vs conveyor,
+    Checks Z bounds, gripper vs stand
     gripper vs extra obstacle for every waypoint.
     Raises RuntimeError on first violation.
     """
@@ -1783,19 +1726,6 @@ def validate_trajectory(waypoints, label="trajectory", bypass_extra_obs=False):
                 + _stand_box_message()
             )
 
-        if gripper_in_conveyor(tcp_x, tcp_y, tcp_z):
-            raise RuntimeError(
-                f"\n  {'='*62}\n"
-                f"  PRE-FLIGHT ABORT\n"
-                f"  Waypoint {i} in {label}: gripper body enters conveyor belt zone.\n"
-                f"    TCP   X={tcp_x:.3f}  Y={tcp_y:.3f}  Z={tcp_z:.3f}\n"
-                f"    (Gripper-body exclusion zone expands conveyor by {GRIPPER_RADIUS:.3f}m)\n"
-                f"    Conveyor TCP-level zone: "
-                f"X[{_CONV_EFF_X_MIN:.3f}-{_CONV_EFF_X_MAX:.3f}]  "
-                f"Y[{_CONV_EFF_Y_MIN:.3f}-{_CONV_EFF_Y_MAX:.3f}]\n"
-                f"  {'='*62}\n"
-                f"  No motion has been sent to the robot.\n"
-            )
 
         if not bypass_extra_obs and gripper_in_extra_obs(tcp_x, tcp_y, tcp_z):
             raise RuntimeError(
@@ -1823,9 +1753,6 @@ def _in_workspace_xy(x, y):
 
 def _in_stand(x, y):
     return _stand_zone_contains_xy(x, y, expanded_for_gripper=False)
-
-def _in_conveyor(x, y):
-    return _conveyor_zone_contains_xy(x, y, expanded_for_gripper=False)
 
 # -----------------------------------------------------------------
 # SECTION 2d — FIXED PLACEMENT BOX HELPERS
@@ -2438,15 +2365,18 @@ def preplan_all_drop_slots(pick_sequence):
     """
     Pre-calculate all drop locations before robot motion starts.
 
-    For MCP/camera mode, PLACED_OBJECTS is first seeded with any objects that
-    the camera already sees inside the placement box, PLUS any objects we 
-    already successfully placed in previous voice commands (PERSISTENT_PLACED_OBJECTS).
+    Uses both:
+    1. slots successfully used during earlier commands
+    2. objects currently detected by the camera inside the box
     """
+
     PLACED_OBJECTS.clear()
-    
 
+    # Restore placements completed during earlier MCP commands.
+    for slot in PERSISTENT_PLACED_OBJECTS:
+        PLACED_OBJECTS.append(dict(slot))
 
-    # 2. Load any newly detected objects physically inside the box
+    # Add objects currently detected inside the placement box.
     _load_mcp_placement_occupancy_into_planner()
 
     for seq_item in pick_sequence:
@@ -2916,22 +2846,6 @@ def _collect_via_candidates(start, end, ori):
             raw.append((px, sy_max + clearance, pz))
             raw.append((px, sy_min - clearance, pz))
 
-    # Conveyor belt face candidates (lateral only)
-    cy_min = _CONV_EFF_Y_MIN
-    cy_max = _CONV_EFF_Y_MAX
-    cx_min = _CONV_EFF_X_MIN
-    cx_max = _CONV_EFF_X_MAX
-    cx_sample_lo = min(start[0], end[0]) - clearance
-    cx_sample_hi = max(start[0], end[0]) + clearance
-    c_x_samples  = _face_samples(cx_sample_lo, cx_sample_hi)
-
-    for pz in z_lateral:
-        for px in c_x_samples:
-            raw.append((px, cy_min - clearance, pz))
-        c_y_samples = _face_samples(cy_min, cy_max)
-        for py in c_y_samples:
-            raw.append((cx_max + clearance, py, pz))
-            raw.append((cx_min - clearance, py, pz))
 
     # Extra obstacle face candidates (lateral + over-top)
     if HAS_EXTRA_OBS:
@@ -3256,6 +3170,10 @@ def resolve_object_runtime_variables(selected_object, move_x, move_y, drop_slot)
         placement_angle_deg=placement_angle_deg,
         reference_angle_deg=pick_rz_deg,
     )
+    # During relocation, preserve the exact orientation used to pick the object.
+    # # This prevents the robot from rotating the carried object before releasing it.
+    if MCP_IS_RELOCATING:
+        drop_rz_deg = pick_rz_deg
 
     if not isinstance(drop_slot, dict):
         raise RuntimeError("Missing planned drop slot for selected object.")
@@ -3395,6 +3313,7 @@ def set_active_pick_item(seq_item, cycle_index=1, total_cycles=1):
     DROP_RELEASE_Z = max(DROP_RELEASE_Z_RAW, MIN_SAFE_PICK_Z)
 
 def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
+    global PERSISTENT_PLACED_OBJECTS
     """Execute one full pick-and-place cycle using the selected sequence item."""
     global CARRIED_OBJECT_ENABLED, _BYPASS_EXTRA_OBS
 
@@ -3419,16 +3338,13 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
             power_off_robot()
             sys.exit(1)
 
-        if _in_conveyor(cx, cy):
-            power_off_robot()
-            sys.exit(1)
 
-    if not (CAM_X_MIN <= MOVE_X <= CAM_X_MAX and CAM_Y_MIN <= MOVE_Y <= CAM_Y_MAX):
+    if not (X_MIN <= MOVE_X <= X_MAX and Y_MIN <= MOVE_Y <= Y_MAX):
         raise RuntimeError(
             f"Pick target is outside camera scan zone: "
             f"X={MOVE_X:.3f}, Y={MOVE_Y:.3f}. "
-            f"Allowed camera zone: X[{CAM_X_MIN:.3f},{CAM_X_MAX:.3f}], "
-            f"Y[{CAM_Y_MIN:.3f},{CAM_Y_MAX:.3f}]."
+            f"Allowed camera zone: X[{X_MIN:.3f},{X_MAX:.3f}], "
+            f"Y[{Y_MIN:.3f},{Y_MAX:.3f}]."
         )
 
     current = r.get_tcp_pose()
@@ -3529,6 +3445,19 @@ def execute_one_pick_cycle(seq_item, cycle_index, total_cycles):
     execute_joint_transit(r, lift_drop, home, label="Phase 3 transit — lift_drop -> Home")
 
     if not MCP_IS_RELOCATING:
+        completed_slot = SELECTED_OBJECT.get("_planned_drop_slot")
+
+        if completed_slot is not None:
+            already_saved = any(
+                math.hypot(
+                    float(saved["x"]) - float(completed_slot["x"]),
+                    float(saved["y"]) - float(completed_slot["y"]),
+                ) < 0.01
+                for saved in PERSISTENT_PLACED_OBJECTS
+            )
+            if not already_saved:
+                PERSISTENT_PLACED_OBJECTS.append(dict(completed_slot))
+
         if ROBOT_EVENT_CALLBACK:
             ROBOT_EVENT_CALLBACK("pick_and_place_completed")
 
@@ -4047,7 +3976,7 @@ def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, tar
     RELOCATION_CLEARANCE_M = 0.01   # minimum edge-to-edge gap from other objects
     TARGET_CLEARANCE_M     = 0.01   # extra edge-to-edge clearance from target specifically
     GRID_STEP_M            = 0.02   # search grid resolution (finer grid)
-    BORDER_M               = 0.02   # minimum distance from workspace edge
+    BORDER_M               = 0.045   # minimum distance from workspace edge
 
     def get_obb(obj_name, cx, cy, angle_deg, extra_clearance=0.0):
         info = OBJECT_CATALOGUE.get(obj_name, {})
@@ -4082,14 +4011,11 @@ def _find_relocation_spot(obstacle_name, obstacle_x, obstacle_y, detections, tar
     best_score = -1
     best_xy = None
 
-    x = CAM_X_MIN + BORDER_M
-    while x <= CAM_X_MAX - BORDER_M:
-        y = CAM_Y_MIN + BORDER_M
-        while y <= CAM_Y_MAX - BORDER_M:
-            # Skip conveyor and stand no-go zones.
-            if gripper_in_conveyor(x, y, Z_MIN):
-                y += GRID_STEP_M
-                continue
+    x = X_MIN + BORDER_M
+    while x <= X_MAX - BORDER_M:
+        y = Y_MIN + BORDER_M
+        while y <= Y_MAX - BORDER_M:
+            
             if gripper_in_stand(x, y, Z_MIN):
                 y += GRID_STEP_M
                 continue
@@ -4195,12 +4121,21 @@ def run_mcp_relocate_object(
         reloc_z = estimate_drop_tcp_z_for_object(selected_object)
 
         reloc_slot = {
-            "x":        reloc_x,
-            "y":        reloc_y,
-            "z":        reloc_z,
-            "angle_deg": float(obstacle_angle) if obstacle_angle is not None else HOME_RZ,
-            "length_m": float(selected_object.get("length_m", selected_object.get("width_m", 0.04))),
-            "width_m":  float(selected_object.get("width_m", 0.04)),
+            "x": reloc_x,
+            "y": reloc_y,
+            "z": reloc_z,
+
+            # The runtime specifically reads "placement_angle_deg".
+            "placement_angle_deg": None,
+            
+
+            "length_m": float(
+                selected_object.get(
+                    "length_m",
+                    selected_object.get("width_m", 0.04),
+                )
+            ),
+            "width_m": float(selected_object.get("width_m", 0.04)),
         }
 
         selected_object["_planned_drop_slot"] = reloc_slot

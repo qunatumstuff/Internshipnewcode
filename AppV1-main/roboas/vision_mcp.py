@@ -154,15 +154,15 @@ OBJECT_CATALOGUE = {
 # Grasping offsets (X, Y, Z) in meters for each object class.
 # Edit these values to fine-tune the robot's grasping position for specific objects.
 
-PERMA_OFFSET_X = 0.01067 
+PERMA_OFFSET_X = 0.00937
 PERMA_OFFSET_Y = -0.01086 
 GRASP_OFFSETS = {
     "black marker": {"x": 0.0, "y": 0.0, "z": -0.007},
     "blue cube":    {"x": 0.0, "y": 0.0, "z": 0.0},
     "red cube":     {"x": 0.0, "y": 0.0, "z": 0.0},
     "green cube":   {"x": 0.0, "y": 0.0, "z": 0.0},
-    "medicine":     {"x": 0.0, "y": 0.0, "z": -0.005},
-    "nut":          {"x": 0.0, "y": 0.0, "z": 0.0},
+    "medicine":     {"x": 0.002, "y": 0.0, "z": -0.0055},
+    "nut":          {"x": 0.008, "y": -0.004, "z": 0.0},
     "yellow cube":  {"x": 0.0, "y": 0.0, "z": 0.0},
     "sponge":       {"x": 0.0, "y": -0.005, "z": -0.009},
     "screwdriver":  {"x": 0.0, "y": 0.0, "z": -0.007},
@@ -186,7 +186,7 @@ CAM_TO_ROBOT_T = np.array([
 # on the top surface of the object rather than its centre.
 # 25mm raises the robot's approach height so the gripper doesn't
 # dig into the object on descent.
-Z_OFFSET_M = -0.02
+Z_OFFSET_M = 0
 
 server = Server("vision-mcp-server")
 
@@ -289,12 +289,29 @@ def _pixel_to_robot(
         R_cam_to_robot @ R_obj_in_camera
     )
 
+    # Apply permanent calibration offsets
+    x_val = float(robot_pt[0]) - PERMA_OFFSET_X
+    y_val = float(robot_pt[1]) - PERMA_OFFSET_Y
+    z_val = float(robot_pt[2]) + Z_OFFSET_M
+
+    # Apply object-specific grasp offsets
+    grasp_offset = GRASP_OFFSETS.get(
+        cls_name,
+        {"x": 0.0, "y": 0.0, "z": 0.0}
+    )
+
+    x_val += float(grasp_offset.get("x", 0.0))
+    y_val += float(grasp_offset.get("y", 0.0))
+    z_val += float(grasp_offset.get("z", 0.0))
+
     return {
-        "x": round(float(robot_pt[0]), 4),
-        "y": round(float(robot_pt[1]), 4),
-        "z": round(float(robot_pt[2]), 4),
+        "x": round(x_val, 4),
+        "y": round(y_val, 4),
+        "z": round(z_val, 4),
         "angle_deg": round(math.degrees(yaw), 2),
     }
+
+    
 
 
 def run_yolo_detection(color_image, depth_frame, intrinsics):
@@ -313,7 +330,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
         minAreaRect on a complex L-shaped or flat contour).
         Falls back to minAreaRect angle if OBB did not detect that class.
 
-    All coordinates include the +25mm Z offset (Z_OFFSET_M).
+    
     """
     detections   = []
 
@@ -325,7 +342,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
     if camera.inference_lock.acquire(timeout=2.0):
         try:
             obb_results = camera.model(
-            color_image, verbose=False, agnostic_nms=False, iou=0.35, conf=0.35
+            color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35
         )
         finally:
             camera.inference_lock.release()
@@ -339,7 +356,7 @@ def run_yolo_detection(color_image, depth_frame, intrinsics):
             if camera.inference_lock.acquire(timeout=2.0):
                 try:
                     disc_results = camera.obb_discontinuity(
-                        color_image, verbose=False, agnostic_nms=False, iou=0.35, conf=0.35
+                        color_image, verbose=False, agnostic_nms=True, iou=0.35, conf=0.35
                     )
                 finally:
                     camera.inference_lock.release()
@@ -841,8 +858,8 @@ def is_inside_placement_box(det: dict) -> bool:
         x = float(det["x"])
         y = float(det["y"])
         return (
-            0.248 - INBOX_TOLERANCE_M <= x <= 0.586 + INBOX_TOLERANCE_M and
-            0.055 - INBOX_TOLERANCE_M <= y <= 0.280 + INBOX_TOLERANCE_M
+            0.250 - INBOX_TOLERANCE_M <= x <= 0.586 + INBOX_TOLERANCE_M and
+            0.055 - INBOX_TOLERANCE_M <= y <= 0.30 + INBOX_TOLERANCE_M
         )
     except Exception:
         return False
@@ -1111,30 +1128,26 @@ async def qwen_plan_next_action(
     """
     # 1. Resolve sticker -> colour mapping and find the base target name
     STICKER_MAPPINGS = {
-        "umbrella": "yellow cube",
-        "wrench": "blue cube",
-        "soy milk": "green cube",
-        "soymilk": "green cube",
-        "hat": "red cube"
+        "umbrella": "yellow",
+        "wrench": "blue",
+        "soy milk": "green",
+        "soymilk": "green",
+        "hat": "red"
     }
 
-    target = target.lower()
-    target_base = STICKER_MAPPINGS.get(target, target)
-    for sticker, mapped in STICKER_MAPPINGS.items():
-        if sticker in target or sticker in user_context.lower():
-            target_base = mapped
+    target = target.lower().strip()
+    target_base = target
+    for sticker in STICKER_MAPPINGS.keys():
+        if sticker in target_base or sticker in user_context.lower():
+            target_base = "cube"
             break
+    if "cube" in target_base:
+        target_base = "cube"
 
-    # Strictly filter candidates by the mapped base target (e.g. 'red cube' for 'hat')
     target_dets = [
         d for d in detections
-        if d.get("object_name", "").lower() == target_base.lower() and not is_inside_placement_box(d)
+        if is_target_match(target_base, d.get("object_name", "").lower())
     ]
-    if not target_dets:
-        target_dets = [
-            d for d in detections
-            if is_target_match(target_base, d.get("object_name", "").lower()) and not is_inside_placement_box(d)
-        ]
 
     # 2. Map implied colours to disambiguate targets
     COLOUR_WORDS = ["blue", "red", "green", "yellow", "black", "white", "orange", "purple"]
@@ -1143,7 +1156,7 @@ async def qwen_plan_next_action(
     
     for sticker, mapped_color in STICKER_MAPPINGS.items():
         if sticker in request_text and mapped_color not in mentioned_colours:
-            mentioned_colours.append(mapped_color.split()[0])
+            mentioned_colours.append(mapped_color)
 
     resolved_target = target_base
     colour_matches = []
@@ -1538,15 +1551,11 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             if target_base in STICKER_MAPPINGS_EXACT:
                 target_base = STICKER_MAPPINGS_EXACT[target_base]
                 
+            # Restore original fuzzy match array for Qwen fallback and depth analysis
             target_detections = [
                 d for d in detections
-                if d.get("object_name", "").lower() == target_base.lower() and not is_inside_placement_box(d)
+                if is_target_match(target, d.get("object_name", "")) and not is_inside_placement_box(d)
             ]
-            if not target_detections:
-                target_detections = [
-                    d for d in detections
-                    if is_target_match(target, d.get("object_name", "")) and not is_inside_placement_box(d)
-                ]
                 
             exact_matches_outside = [
                 d for d in detections
